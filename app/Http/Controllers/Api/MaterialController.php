@@ -3,14 +3,17 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Traits\ApiResponseTrait;
 use App\Services\MaterialService;
 use Illuminate\Http\Request;
 
 class MaterialController extends Controller
 {
+    use ApiResponseTrait;
     public function __construct(
         protected MaterialService $materialService
-    ) {}
+    ) {
+    }
 
     /**
      * Get materials for a course
@@ -20,10 +23,7 @@ class MaterialController extends Controller
     {
         $materials = $this->materialService->getCourseMaterials($courseId);
 
-        return response()->json([
-            'success' => true,
-            'data' => $materials,
-        ]);
+        return $this->success($materials);
     }
 
     /**
@@ -34,10 +34,7 @@ class MaterialController extends Controller
     {
         $material = $this->materialService->getMaterialById($id);
 
-        return response()->json([
-            'success' => true,
-            'data' => $material,
-        ]);
+        return $this->success($material);
     }
 
     /**
@@ -48,10 +45,7 @@ class MaterialController extends Controller
     {
         $metadata = $this->materialService->getMaterialMetadata($id);
 
-        return response()->json([
-            'success' => true,
-            'data' => $metadata,
-        ]);
+        return $this->success($metadata);
     }
 
     /**
@@ -70,11 +64,7 @@ class MaterialController extends Controller
 
         $material = $this->materialService->createMaterial($request->all());
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Material uploaded successfully',
-            'data' => $material,
-        ], 201);
+        return $this->created($material, 'Material uploaded successfully');
     }
 
     /**
@@ -90,11 +80,7 @@ class MaterialController extends Controller
 
         $material = $this->materialService->updateMaterial($id, $request->all());
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Material updated successfully',
-            'data' => $material,
-        ]);
+        return $this->success($material, 'Material updated successfully');
     }
 
     /**
@@ -105,9 +91,6 @@ class MaterialController extends Controller
     {
         $this->materialService->deleteMaterial($id);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Material deleted successfully',
-        ]);
+        return $this->success(null, 'Material deleted successfully');
     }
 }

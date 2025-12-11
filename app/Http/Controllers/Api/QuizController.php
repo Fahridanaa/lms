@@ -3,14 +3,17 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Traits\ApiResponseTrait;
 use App\Services\QuizService;
 use Illuminate\Http\Request;
 
 class QuizController extends Controller
 {
+    use ApiResponseTrait;
     public function __construct(
         protected QuizService $quizService
-    ) {}
+    ) {
+    }
 
     /**
      * Get all quizzes
@@ -20,10 +23,7 @@ class QuizController extends Controller
     {
         $quizzes = $this->quizService->getAllQuizzes();
 
-        return response()->json([
-            'success' => true,
-            'data' => $quizzes,
-        ]);
+        return $this->success($quizzes);
     }
 
     /**
@@ -34,10 +34,7 @@ class QuizController extends Controller
     {
         $quiz = $this->quizService->getQuizWithQuestions($id);
 
-        return response()->json([
-            'success' => true,
-            'data' => $quiz,
-        ]);
+        return $this->success($quiz);
     }
 
     /**
@@ -48,10 +45,7 @@ class QuizController extends Controller
     {
         $questions = $this->quizService->getQuizQuestions($id);
 
-        return response()->json([
-            'success' => true,
-            'data' => $questions,
-        ]);
+        return $this->success($questions);
     }
 
     /**
@@ -66,11 +60,7 @@ class QuizController extends Controller
 
         $attempt = $this->quizService->startQuizAttempt($id, $request->user_id);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Quiz attempt started successfully',
-            'data' => $attempt,
-        ], 201);
+        return $this->created($attempt, 'Quiz attempt started successfully');
     }
 
     /**
@@ -85,11 +75,7 @@ class QuizController extends Controller
 
         $attempt = $this->quizService->submitQuizAnswers($attemptId, $request->answers);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Quiz submitted successfully',
-            'data' => $attempt,
-        ]);
+        return $this->success($attempt, 'Quiz submitted successfully');
     }
 
     /**
@@ -100,10 +86,7 @@ class QuizController extends Controller
     {
         $result = $this->quizService->getAttemptResult($attemptId);
 
-        return response()->json([
-            'success' => true,
-            'data' => $result,
-        ]);
+        return $this->success($result);
     }
 
     /**
@@ -115,9 +98,6 @@ class QuizController extends Controller
         $quizId = $request->query('quiz_id');
         $attempts = $this->quizService->getUserQuizAttempts($userId, $quizId);
 
-        return response()->json([
-            'success' => true,
-            'data' => $attempts,
-        ]);
+        return $this->success($attempts);
     }
 }

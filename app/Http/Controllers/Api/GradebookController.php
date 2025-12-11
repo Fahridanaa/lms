@@ -3,14 +3,17 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Traits\ApiResponseTrait;
 use App\Services\GradebookService;
 use Illuminate\Http\Request;
 
 class GradebookController extends Controller
 {
+    use ApiResponseTrait;
     public function __construct(
         protected GradebookService $gradebookService
-    ) {}
+    ) {
+    }
 
     /**
      * Get full gradebook for a course
@@ -20,10 +23,7 @@ class GradebookController extends Controller
     {
         $gradebook = $this->gradebookService->getCourseGradebook($courseId);
 
-        return response()->json([
-            'success' => true,
-            'data' => $gradebook,
-        ]);
+        return $this->success($gradebook);
     }
 
     /**
@@ -34,10 +34,7 @@ class GradebookController extends Controller
     {
         $grades = $this->gradebookService->getUserGrades($userId);
 
-        return response()->json([
-            'success' => true,
-            'data' => $grades,
-        ]);
+        return $this->success($grades);
     }
 
     /**
@@ -48,10 +45,7 @@ class GradebookController extends Controller
     {
         $grades = $this->gradebookService->getUserCourseGrades($courseId, $userId);
 
-        return response()->json([
-            'success' => true,
-            'data' => $grades,
-        ]);
+        return $this->success($grades);
     }
 
     /**
@@ -67,11 +61,7 @@ class GradebookController extends Controller
 
         $grade = $this->gradebookService->updateGrade($id, $request->all());
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Grade updated successfully',
-            'data' => $grade,
-        ]);
+        return $this->success($grade, 'Grade updated successfully');
     }
 
     /**
@@ -82,10 +72,7 @@ class GradebookController extends Controller
     {
         $statistics = $this->gradebookService->getCourseStatistics($courseId);
 
-        return response()->json([
-            'success' => true,
-            'data' => $statistics,
-        ]);
+        return $this->success($statistics);
     }
 
     /**
@@ -96,10 +83,7 @@ class GradebookController extends Controller
     {
         $performance = $this->gradebookService->getUserPerformanceSummary($userId);
 
-        return response()->json([
-            'success' => true,
-            'data' => $performance,
-        ]);
+        return $this->success($performance);
     }
 
     /**
@@ -111,9 +95,6 @@ class GradebookController extends Controller
         $limit = $request->query('limit', 10);
         $topPerformers = $this->gradebookService->getTopPerformers($courseId, $limit);
 
-        return response()->json([
-            'success' => true,
-            'data' => $topPerformers,
-        ]);
+        return $this->success($topPerformers);
     }
 }

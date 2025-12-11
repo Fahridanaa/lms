@@ -5,12 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\AssignmentService;
 use Illuminate\Http\Request;
+use App\Http\Controllers\Traits\ApiResponseTrait;
 
 class AssignmentController extends Controller
 {
+    use ApiResponseTrait;
     public function __construct(
         protected AssignmentService $assignmentService
-    ) {}
+    ) {
+    }
 
     /**
      * Get assignments for a course
@@ -20,10 +23,7 @@ class AssignmentController extends Controller
     {
         $assignments = $this->assignmentService->getCourseAssignments($courseId);
 
-        return response()->json([
-            'success' => true,
-            'data' => $assignments,
-        ]);
+        return $this->success($assignments);
     }
 
     /**
@@ -34,10 +34,7 @@ class AssignmentController extends Controller
     {
         $assignment = $this->assignmentService->getAssignmentById($id);
 
-        return response()->json([
-            'success' => true,
-            'data' => $assignment,
-        ]);
+        return $this->success($assignment);
     }
 
     /**
@@ -57,11 +54,7 @@ class AssignmentController extends Controller
             $request->all()
         );
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Assignment submitted successfully',
-            'data' => $submission,
-        ], 201);
+        return $this->created($submission, 'Assignment submitted successfully');
     }
 
     /**
@@ -72,10 +65,7 @@ class AssignmentController extends Controller
     {
         $submissions = $this->assignmentService->getAssignmentSubmissions($id);
 
-        return response()->json([
-            'success' => true,
-            'data' => $submissions,
-        ]);
+        return $this->success($submissions);
     }
 
     /**
@@ -86,10 +76,7 @@ class AssignmentController extends Controller
     {
         $submissions = $this->assignmentService->getPendingSubmissions($id);
 
-        return response()->json([
-            'success' => true,
-            'data' => $submissions,
-        ]);
+        return $this->success($submissions);
     }
 
     /**
@@ -109,11 +96,7 @@ class AssignmentController extends Controller
             $request->feedback
         );
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Submission graded successfully',
-            'data' => $submission,
-        ]);
+        return $this->success($submission, 'Submission graded successfully');
     }
 
     /**
@@ -124,9 +107,6 @@ class AssignmentController extends Controller
     {
         $statistics = $this->assignmentService->getAssignmentStatistics($id);
 
-        return response()->json([
-            'success' => true,
-            'data' => $statistics,
-        ]);
+        return $this->success($statistics);
     }
 }
