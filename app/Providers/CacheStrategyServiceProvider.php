@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use App\Contracts\CacheStrategyInterface;
 use App\Services\Cache\CacheAsideStrategy;
+use App\Services\Cache\ReadThroughStrategy;
+use App\Services\Cache\WriteThroughStrategy;
 use Illuminate\Support\ServiceProvider;
 
 /**
@@ -26,9 +28,8 @@ class CacheStrategyServiceProvider extends ServiceProvider
 
             return match ($strategy) {
                 'cache-aside' => $app->make(CacheAsideStrategy::class),
-                // Will add read-through and write-through implementations later
-                // 'read-through' => $app->make(ReadThroughStrategy::class),
-                // 'write-through' => $app->make(WriteThroughStrategy::class),
+                'read-through' => $app->make(ReadThroughStrategy::class),
+                'write-through' => $app->make(WriteThroughStrategy::class),
                 default => throw new \InvalidArgumentException("Unknown caching strategy: {$strategy}"),
             };
         });
