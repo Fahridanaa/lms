@@ -127,9 +127,7 @@ lms/
 │   ├── Feature/
 │   │   └── Api/
 │   └── Benchmark/
-│       └── jmeter/
-│           ├── read-heavy-scenario.jmx
-│           └── write-heavy-scenario.jmx
+│       └── k6/
 ├── compose.yml
 └── .env.example
 ```
@@ -336,7 +334,7 @@ Operations:
 ```bash
 # Clone repository
 git clone https://github.com/Fahridanaa/lms.git
-cd lms-cache-benchmark
+cd lms
 
 # Copy environment file
 cp .env.example .env
