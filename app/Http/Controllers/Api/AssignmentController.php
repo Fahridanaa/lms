@@ -58,7 +58,7 @@ class AssignmentController extends Controller
      */
     public function submissions(int $id)
     {
-        $submissions = $this->assignmentService->getAssignmentSubmissions($id);
+        $submissions = $this->assignmentService->getAssignmentSubmissions($id) ?? [];
 
         return $this->success($submissions);
     }
