@@ -85,6 +85,27 @@ abstract class BaseRepository implements RepositoryInterface
         return $record->delete();
     }
 
+    public function forceDelete(int $id): bool
+    {
+        $record = $this->findOrFail($id);
+
+        return $record->forceDelete();
+    }
+
+    public function restore(int $id): bool
+    {
+        $query = $this->model->newQuery();
+
+        // Check if model uses SoftDeletes
+        if (method_exists($this->model, 'withTrashed')) {
+            $query = $query->withTrashed();
+        }
+
+        $record = $query->findOrFail($id);
+
+        return $record->restore();
+    }
+
     public function paginate(int $perPage = 15, array $relations = [])
     {
         $query = $this->model->newQuery();

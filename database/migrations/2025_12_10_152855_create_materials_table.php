@@ -18,7 +18,9 @@ return new class extends Migration
             $table->string('file_path');
             $table->bigInteger('file_size')->comment('File size in bytes');
             $table->enum('type', ['pdf', 'video', 'document', 'image', 'other'])->default('other');
+            $table->boolean('is_active')->default(true)->comment('Lifecycle control: active/inactive material');
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

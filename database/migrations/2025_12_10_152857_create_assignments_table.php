@@ -18,7 +18,9 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->timestamp('due_date');
             $table->integer('max_score')->default(100);
+            $table->boolean('is_active')->default(true)->comment('Lifecycle control: active/inactive assignment');
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

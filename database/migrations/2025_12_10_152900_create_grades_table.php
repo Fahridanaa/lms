@@ -20,6 +20,7 @@ return new class extends Migration
             $table->decimal('max_score', 5, 2);
             $table->decimal('percentage', 5, 2);
             $table->timestamps();
+            $table->softDeletes();
 
             $table->index(['user_id', 'course_id']);
         });

@@ -16,7 +16,9 @@ return new class extends Migration
             $table->string('name');
             $table->text('description')->nullable();
             $table->foreignId('instructor_id')->constrained('users')->onDelete('cascade');
+            $table->boolean('is_active')->default(true)->comment('Lifecycle control: active/inactive course');
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

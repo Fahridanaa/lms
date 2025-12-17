@@ -17,7 +17,9 @@ return new class extends Migration {
             $table->text('description')->nullable();
             $table->integer('time_limit');
             $table->decimal('passing_score', 5, 2)->default(60.00);
+            $table->boolean('is_active')->default(true)->comment('Lifecycle control: active/inactive quiz');
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

@@ -4,10 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Assignment extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'course_id',
@@ -15,6 +16,7 @@ class Assignment extends Model
         'description',
         'due_date',
         'max_score',
+        'is_active',
     ];
 
     protected function casts(): array

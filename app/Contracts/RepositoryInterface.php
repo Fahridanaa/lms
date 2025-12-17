@@ -43,9 +43,19 @@ interface RepositoryInterface
     public function update(int $id, array $data): Model;
 
     /**
-     * Delete record
+     * Delete record (soft delete if model supports it)
      */
     public function delete(int $id): bool;
+
+    /**
+     * Permanently delete record
+     */
+    public function forceDelete(int $id): bool;
+
+    /**
+     * Restore soft deleted record
+     */
+    public function restore(int $id): bool;
 
     /**
      * Get paginated results
