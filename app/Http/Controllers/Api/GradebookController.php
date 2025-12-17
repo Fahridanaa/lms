@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponseTrait;
+use App\Http\Requests\UpdateGradebookRequest;
 use App\Services\GradebookService;
 use Illuminate\Http\Request;
 
@@ -16,7 +17,6 @@ class GradebookController extends Controller
     }
 
     /**
-     * Get full gradebook for a course
      * GET /api/courses/{courseId}/gradebook
      */
     public function courseGradebook(int $courseId)
@@ -27,7 +27,6 @@ class GradebookController extends Controller
     }
 
     /**
-     * Get all grades for a user
      * GET /api/users/{userId}/grades
      */
     public function userGrades(int $userId)
@@ -38,7 +37,6 @@ class GradebookController extends Controller
     }
 
     /**
-     * Get user's grades in a specific course
      * GET /api/courses/{courseId}/users/{userId}/grades
      */
     public function userCourseGrades(int $courseId, int $userId)
@@ -49,23 +47,16 @@ class GradebookController extends Controller
     }
 
     /**
-     * Update a grade
      * PUT /api/grades/{id}
      */
-    public function update(Request $request, int $id)
+    public function update(UpdateGradebookRequest $request, int $id)
     {
-        $request->validate([
-            'score' => 'sometimes|numeric|min:0',
-            'max_score' => 'sometimes|numeric|min:0',
-        ]);
+        $grade = $this->gradebookService->updateGrade($id, $request->validated());
 
-        $grade = $this->gradebookService->updateGrade($id, $request->all());
-
-        return $this->success($grade, 'Grade updated successfully');
+        return $this->success($grade, 'Nilai berhasil diperbarui');
     }
 
     /**
-     * Get course statistics
      * GET /api/courses/{courseId}/statistics
      */
     public function courseStatistics(int $courseId)
@@ -76,7 +67,6 @@ class GradebookController extends Controller
     }
 
     /**
-     * Get user performance summary
      * GET /api/users/{userId}/performance
      */
     public function userPerformance(int $userId)
@@ -87,7 +77,6 @@ class GradebookController extends Controller
     }
 
     /**
-     * Get top performers in a course
      * GET /api/courses/{courseId}/top-performers?limit=10
      */
     public function topPerformers(Request $request, int $courseId)

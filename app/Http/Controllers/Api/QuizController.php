@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponseTrait;
+use App\Http\Requests\StartAttemptQuizRequest;
+use App\Http\Requests\SubmitAttemptQuizRequest;
 use App\Services\QuizService;
 use Illuminate\Http\Request;
 
@@ -16,7 +18,6 @@ class QuizController extends Controller
     }
 
     /**
-     * Get all quizzes
      * GET /api/quizzes
      */
     public function index()
@@ -27,7 +28,6 @@ class QuizController extends Controller
     }
 
     /**
-     * Get quiz detail with questions
      * GET /api/quizzes/{id}
      */
     public function show(int $id)
@@ -38,7 +38,6 @@ class QuizController extends Controller
     }
 
     /**
-     * Get questions for a quiz
      * GET /api/quizzes/{id}/questions
      */
     public function questions(int $id)
@@ -49,37 +48,26 @@ class QuizController extends Controller
     }
 
     /**
-     * Start a quiz attempt
      * POST /api/quizzes/{id}/attempts
      */
-    public function startAttempt(Request $request, int $id)
+    public function startAttempt(StartAttemptQuizRequest $request, int $id)
     {
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
-        ]);
+        $attempt = $this->quizService->startQuizAttempt($id, $request->validated()['user_id']);
 
-        $attempt = $this->quizService->startQuizAttempt($id, $request->user_id);
-
-        return $this->created($attempt, 'Quiz attempt started successfully');
+        return $this->created($attempt, 'Percobaan kuis berhasil dimulai');
     }
 
     /**
-     * Submit quiz answers
      * PUT /api/quizzes/{quizId}/attempts/{attemptId}
      */
-    public function submitAttempt(Request $request, int $quizId, int $attemptId)
+    public function submitAttempt(SubmitAttemptQuizRequest $request, int $quizId, int $attemptId)
     {
-        $request->validate([
-            'answers' => 'required|array',
-        ]);
+        $attempt = $this->quizService->submitQuizAnswers($attemptId, $request->validated()['answers']);
 
-        $attempt = $this->quizService->submitQuizAnswers($attemptId, $request->answers);
-
-        return $this->success($attempt, 'Quiz submitted successfully');
+        return $this->success($attempt, 'Kuis berhasil dikumpulkan');
     }
 
     /**
-     * Get attempt result
      * GET /api/quizzes/{quizId}/attempts/{attemptId}/result
      */
     public function attemptResult(int $quizId, int $attemptId)
@@ -90,7 +78,6 @@ class QuizController extends Controller
     }
 
     /**
-     * Get user's quiz attempts
      * GET /api/users/{userId}/quiz-attempts?quiz_id={quizId}
      */
     public function userAttempts(Request $request, int $userId)

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\GradeSubmissionAssignmentRequest;
+use App\Http\Requests\SubmitAssignmentRequest;
 use App\Services\AssignmentService;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Traits\ApiResponseTrait;
@@ -16,7 +18,6 @@ class AssignmentController extends Controller
     }
 
     /**
-     * Get assignments for a course
      * GET /api/courses/{courseId}/assignments
      */
     public function index(int $courseId)
@@ -27,7 +28,6 @@ class AssignmentController extends Controller
     }
 
     /**
-     * Get assignment detail
      * GET /api/assignments/{id}
      */
     public function show(int $id)
@@ -38,27 +38,22 @@ class AssignmentController extends Controller
     }
 
     /**
-     * Submit assignment
      * POST /api/assignments/{id}/submissions
      */
-    public function submit(Request $request, int $id)
+    public function submit(SubmitAssignmentRequest $request, int $id)
     {
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'file_path' => 'required|string',
-        ]);
+        $validated = $request->validated();
 
         $submission = $this->assignmentService->submitAssignment(
             $id,
-            $request->user_id,
-            $request->all()
+            $validated['user_id'],
+            $validated['file_path']
         );
 
-        return $this->created($submission, 'Assignment submitted successfully');
+        return $this->created($submission, 'Tugas berhasil dikumpulkan');
     }
 
     /**
-     * Get all submissions for an assignment
      * GET /api/assignments/{id}/submissions
      */
     public function submissions(int $id)
@@ -69,7 +64,6 @@ class AssignmentController extends Controller
     }
 
     /**
-     * Get pending (ungraded) submissions
      * GET /api/assignments/{id}/submissions/pending
      */
     public function pendingSubmissions(int $id)
@@ -80,27 +74,22 @@ class AssignmentController extends Controller
     }
 
     /**
-     * Grade a submission
      * PUT /api/submissions/{id}/grade
      */
-    public function gradeSubmission(Request $request, int $id)
+    public function gradeSubmission(GradeSubmissionAssignmentRequest $request, int $id)
     {
-        $request->validate([
-            'score' => 'required|numeric|min:0',
-            'feedback' => 'nullable|string',
-        ]);
+        $validated = $request->validated();
 
         $submission = $this->assignmentService->gradeSubmission(
             $id,
-            $request->score,
-            $request->feedback
+            $validated['score'],
+            $validated['feedback'] ?? null
         );
 
-        return $this->success($submission, 'Submission graded successfully');
+        return $this->success($submission, 'Pengumpulan tugas berhasil dinilai');
     }
 
     /**
-     * Get assignment statistics
      * GET /api/assignments/{id}/statistics
      */
     public function statistics(int $id)

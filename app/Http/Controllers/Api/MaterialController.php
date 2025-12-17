@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponseTrait;
+use App\Http\Requests\StoreMaterialRequest;
+use App\Http\Requests\UpdateMaterialRequest;
 use App\Services\MaterialService;
 use Illuminate\Http\Request;
 
@@ -16,7 +18,6 @@ class MaterialController extends Controller
     }
 
     /**
-     * Get materials for a course
      * GET /api/courses/{courseId}/materials
      */
     public function index(int $courseId)
@@ -27,7 +28,6 @@ class MaterialController extends Controller
     }
 
     /**
-     * Get material detail
      * GET /api/materials/{id}
      */
     public function show(int $id)
@@ -38,7 +38,6 @@ class MaterialController extends Controller
     }
 
     /**
-     * Get material download metadata
      * GET /api/materials/{id}/download
      */
     public function download(int $id)
@@ -49,48 +48,32 @@ class MaterialController extends Controller
     }
 
     /**
-     * Upload new material
      * POST /api/materials
      */
-    public function store(Request $request)
+    public function store(StoreMaterialRequest $request)
     {
-        $request->validate([
-            'course_id' => 'required|exists:courses,id',
-            'title' => 'required|string|max:255',
-            'file_path' => 'required|string',
-            'file_size' => 'required|integer',
-            'type' => 'required|in:pdf,video,document,image,other',
-        ]);
+        $material = $this->materialService->createMaterial($request->validated());
 
-        $material = $this->materialService->createMaterial($request->all());
-
-        return $this->created($material, 'Material uploaded successfully');
+        return $this->created($material, 'Materi berhasil diunggah');
     }
 
     /**
-     * Update material
      * PUT /api/materials/{id}
      */
-    public function update(Request $request, int $id)
+    public function update(UpdateMaterialRequest $request, int $id)
     {
-        $request->validate([
-            'title' => 'sometimes|string|max:255',
-            'type' => 'sometimes|in:pdf,video,document,image,other',
-        ]);
+        $material = $this->materialService->updateMaterial($id, $request->validated());
 
-        $material = $this->materialService->updateMaterial($id, $request->all());
-
-        return $this->success($material, 'Material updated successfully');
+        return $this->success($material, 'Materi berhasil diperbarui');
     }
 
     /**
-     * Delete material
      * DELETE /api/materials/{id}
      */
     public function destroy(int $id)
     {
         $this->materialService->deleteMaterial($id);
 
-        return $this->success(null, 'Material deleted successfully');
+        return $this->success(null, 'Materi berhasil dihapus');
     }
 }

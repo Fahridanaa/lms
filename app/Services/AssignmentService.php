@@ -10,7 +10,8 @@ class AssignmentService
 {
     public function __construct(
         protected CacheStrategyInterface $cacheStrategy
-    ) {}
+    ) {
+    }
 
     /**
      * Get all assignments for a course (cached)
@@ -46,7 +47,7 @@ class AssignmentService
         $submission = Submission::create([
             'assignment_id' => $assignmentId,
             'user_id' => $userId,
-            'file_path' => $data['file_path'],
+            'file_path' => $data,
             'submitted_at' => now(),
         ]);
 
