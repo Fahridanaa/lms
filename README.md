@@ -171,7 +171,7 @@ lms/
 
 ### ERD Overview
 
-> Belom ada, soon!
+![ERD](./docs/erd.png)
 
 ### Data Seeding Specification
 
