@@ -11,7 +11,8 @@ class GradebookService
 {
     public function __construct(
         protected CacheStrategyInterface $cacheStrategy
-    ) {}
+    ) {
+    }
 
     /**
      * Get full gradebook for a course (cached)
@@ -55,12 +56,13 @@ class GradebookService
     {
         return $this->cacheStrategy
             ->tags(['gradebook', "user:{$userId}:grades"])
-            ->get("user:{$userId}:grades:all", function () use ($userId) {
-                return Grade::with(['course', 'gradeable'])
+            ->get(
+                "user:{$userId}:grades:all",
+                fn() => Grade::with(['course', 'gradeable'])
                     ->where('user_id', $userId)
                     ->orderBy('created_at', 'desc')
-                    ->get();
-            });
+                    ->get()
+            );
     }
 
     /**

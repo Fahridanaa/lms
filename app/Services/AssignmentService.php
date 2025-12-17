@@ -20,11 +20,12 @@ class AssignmentService
     {
         return $this->cacheStrategy
             ->tags(['assignments', "course:{$courseId}"])
-            ->get("course:{$courseId}:assignments", function () use ($courseId) {
-                return Assignment::where('course_id', $courseId)
+            ->get(
+                "course:{$courseId}:assignments",
+                fn() => Assignment::where('course_id', $courseId)
                     ->orderBy('due_date', 'asc')
-                    ->get();
-            });
+                    ->get()
+            );
     }
 
     /**
@@ -34,9 +35,11 @@ class AssignmentService
     {
         return $this->cacheStrategy
             ->tags(['assignments', "assignment:{$assignmentId}"])
-            ->get("assignment:{$assignmentId}", function () use ($assignmentId) {
-                return Assignment::with('course')->findOrFail($assignmentId);
-            });
+            ->get(
+                "assignment:{$assignmentId}",
+                fn() =>
+                Assignment::with('course')->findOrFail($assignmentId)
+            );
     }
 
     /**
@@ -67,12 +70,10 @@ class AssignmentService
     {
         return $this->cacheStrategy
             ->tags(["assignment:{$assignmentId}:submissions"])
-            ->get("assignment:{$assignmentId}:submissions:all", function () use ($assignmentId) {
-                return Submission::with(['user'])
-                    ->where('assignment_id', $assignmentId)
-                    ->orderBy('submitted_at', 'desc')
-                    ->get();
-            });
+            ->get("assignment:{$assignmentId}:submissions:all", fn() => Submission::with(['user'])
+                ->where('assignment_id', $assignmentId)
+                ->orderBy('submitted_at', 'desc')
+                ->get());
     }
 
     /**
@@ -82,11 +83,9 @@ class AssignmentService
     {
         return $this->cacheStrategy
             ->tags(["user:{$userId}:submissions", "assignment:{$assignmentId}:submissions"])
-            ->get("assignment:{$assignmentId}:user:{$userId}:submission", function () use ($assignmentId, $userId) {
-                return Submission::where('assignment_id', $assignmentId)
-                    ->where('user_id', $userId)
-                    ->first();
-            });
+            ->get("assignment:{$assignmentId}:user:{$userId}:submission", fn() => Submission::where('assignment_id', $assignmentId)
+                ->where('user_id', $userId)
+                ->first());
     }
 
     /**
@@ -119,13 +118,14 @@ class AssignmentService
     {
         return $this->cacheStrategy
             ->tags(["assignment:{$assignmentId}:submissions"])
-            ->get("assignment:{$assignmentId}:submissions:pending", function () use ($assignmentId) {
-                return Submission::with(['user'])
+            ->get(
+                "assignment:{$assignmentId}:submissions:pending",
+                fn() => Submission::with(['user'])
                     ->where('assignment_id', $assignmentId)
                     ->whereNull('graded_at')
                     ->orderBy('submitted_at', 'asc')
-                    ->get();
-            });
+                    ->get()
+            );
     }
 
     /**
@@ -135,12 +135,13 @@ class AssignmentService
     {
         return $this->cacheStrategy
             ->tags(["user:{$userId}:submissions"])
-            ->get("user:{$userId}:submissions:all", function () use ($userId) {
-                return Submission::with(['assignment.course'])
+            ->get(
+                "user:{$userId}:submissions:all",
+                fn() => Submission::with(['assignment.course'])
                     ->where('user_id', $userId)
                     ->orderBy('submitted_at', 'desc')
-                    ->get();
-            });
+                    ->get()
+            );
     }
 
     /**

@@ -9,7 +9,8 @@ class MaterialService
 {
     public function __construct(
         protected CacheStrategyInterface $cacheStrategy
-    ) {}
+    ) {
+    }
 
     /**
      * Get all materials for a course (cached)
@@ -18,11 +19,12 @@ class MaterialService
     {
         return $this->cacheStrategy
             ->tags(['materials', "course:{$courseId}"])
-            ->get("course:{$courseId}:materials", function () use ($courseId) {
-                return Material::where('course_id', $courseId)
+            ->get(
+                "course:{$courseId}:materials",
+                fn() => Material::where('course_id', $courseId)
                     ->orderBy('created_at', 'desc')
-                    ->get();
-            });
+                    ->get()
+            );
     }
 
     /**
@@ -32,9 +34,10 @@ class MaterialService
     {
         return $this->cacheStrategy
             ->tags(['materials', "material:{$materialId}"])
-            ->get("material:{$materialId}", function () use ($materialId) {
-                return Material::with('course')->findOrFail($materialId);
-            });
+            ->get(
+                "material:{$materialId}",
+                fn() => Material::with('course')->findOrFail($materialId)
+            );
     }
 
     /**
@@ -119,12 +122,13 @@ class MaterialService
     {
         return $this->cacheStrategy
             ->tags(['materials', "course:{$courseId}"])
-            ->get("course:{$courseId}:materials:type:{$type}", function () use ($courseId, $type) {
-                return Material::where('course_id', $courseId)
+            ->get(
+                "course:{$courseId}:materials:type:{$type}",
+                fn() => Material::where('course_id', $courseId)
                     ->where('type', $type)
                     ->orderBy('created_at', 'desc')
-                    ->get();
-            });
+                    ->get()
+            );
     }
 
     /**
@@ -134,8 +138,9 @@ class MaterialService
     {
         return $this->cacheStrategy
             ->tags(["course:{$courseId}"])
-            ->get("course:{$courseId}:materials:count", function () use ($courseId) {
-                return Material::where('course_id', $courseId)->count();
-            });
+            ->get(
+                "course:{$courseId}:materials:count",
+                fn() => Material::where('course_id', $courseId)->count()
+            );
     }
 }

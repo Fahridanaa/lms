@@ -9,8 +9,10 @@ use App\Models\QuizAttempt;
 class QuizService
 {
     public function __construct(
-        protected CacheStrategyInterface $cacheStrategy
-    ) {}
+        protected CacheStrategyInterface $cacheStrategy,
+        protected QuizScoringService $quizScoringService
+    ) {
+    }
 
     /**
      * Get all quizzes (cached)
@@ -19,9 +21,10 @@ class QuizService
     {
         return $this->cacheStrategy
             ->tags(['quizzes'])
-            ->get('quizzes:all', function () {
-                return Quiz::with('course')->get();
-            });
+            ->get(
+                'quizzes:all',
+                fn() => Quiz::with('course')->get()
+            );
     }
 
     /**
@@ -31,9 +34,10 @@ class QuizService
     {
         return $this->cacheStrategy
             ->tags(['quizzes', "quiz:{$quizId}"])
-            ->get("quiz:{$quizId}:with-questions", function () use ($quizId) {
-                return Quiz::with(['questions', 'course'])->findOrFail($quizId);
-            });
+            ->get(
+                "quiz:{$quizId}:with-questions",
+                fn() => Quiz::with(['questions', 'course'])->findOrFail($quizId)
+            );
     }
 
     /**
@@ -43,10 +47,10 @@ class QuizService
     {
         return $this->cacheStrategy
             ->tags(['quizzes', "quiz:{$quizId}"])
-            ->get("quiz:{$quizId}:questions", function () use ($quizId) {
-                $quiz = Quiz::findOrFail($quizId);
-                return $quiz->questions;
-            });
+            ->get(
+                "quiz:{$quizId}:questions",
+                fn() => Quiz::findOrFail($quizId)->questions
+            );
     }
 
     /**
@@ -75,7 +79,7 @@ class QuizService
         $attempt = QuizAttempt::with('quiz.questions')->findOrFail($attemptId);
 
         // Calculate score
-        $score = $this->calculateScore($attempt->quiz, $answers);
+        $score = $this->quizScoringService->calculate($attempt->quiz, $answers);
 
         $attempt->update([
             'answers' => $answers,
@@ -99,10 +103,11 @@ class QuizService
     {
         return $this->cacheStrategy
             ->tags(['quiz-attempts'])
-            ->get("attempt:{$attemptId}:result", function () use ($attemptId) {
-                return QuizAttempt::with(['quiz.questions', 'user'])
-                    ->findOrFail($attemptId);
-            });
+            ->get(
+                "attempt:{$attemptId}:result",
+                fn() => QuizAttempt::with(['quiz.questions', 'user'])
+                    ->findOrFail($attemptId)
+            );
     }
 
     /**
@@ -126,27 +131,5 @@ class QuizService
 
                 return $query->orderBy('created_at', 'desc')->get();
             });
-    }
-
-    /**
-     * Calculate quiz score based on answers
-     */
-    protected function calculateScore(Quiz $quiz, array $answers): float
-    {
-        $totalPoints = 0;
-        $earnedPoints = 0;
-
-        foreach ($quiz->questions as $question) {
-            $totalPoints += $question->points;
-
-            $userAnswer = $answers[$question->id] ?? null;
-            if ($userAnswer === $question->correct_answer) {
-                $earnedPoints += $question->points;
-            }
-        }
-
-        return $totalPoints > 0
-            ? ($earnedPoints / $totalPoints) * 100
-            : 0;
     }
 }
