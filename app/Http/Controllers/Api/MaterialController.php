@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Constants\Messages\MaterialMessage;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponseTrait;
 use App\Http\Requests\StoreMaterialRequest;
@@ -54,7 +55,7 @@ class MaterialController extends Controller
     {
         $material = $this->materialService->createMaterial($request->validated());
 
-        return $this->created($material, 'Materi berhasil diunggah');
+        return $this->created($material, MaterialMessage::UPLOADED);
     }
 
     /**
@@ -64,7 +65,7 @@ class MaterialController extends Controller
     {
         $material = $this->materialService->updateMaterial($id, $request->validated());
 
-        return $this->success($material, 'Materi berhasil diperbarui');
+        return $this->success($material, MaterialMessage::UPDATED);
     }
 
     /**
@@ -74,6 +75,6 @@ class MaterialController extends Controller
     {
         $this->materialService->deleteMaterial($id);
 
-        return $this->success(null, 'Materi berhasil dihapus');
+        return $this->success(null, MaterialMessage::DELETED);
     }
 }

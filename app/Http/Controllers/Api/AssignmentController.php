@@ -2,12 +2,12 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Constants\Messages\AssignmentMessage;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Traits\ApiResponseTrait;
 use App\Http\Requests\GradeSubmissionAssignmentRequest;
 use App\Http\Requests\SubmitAssignmentRequest;
 use App\Services\AssignmentService;
-use Illuminate\Http\Request;
-use App\Http\Controllers\Traits\ApiResponseTrait;
 
 class AssignmentController extends Controller
 {
@@ -50,7 +50,7 @@ class AssignmentController extends Controller
             $validated['file_path']
         );
 
-        return $this->created($submission, 'Tugas berhasil dikumpulkan');
+        return $this->created($submission, AssignmentMessage::SUBMITTED);
     }
 
     /**
@@ -86,7 +86,7 @@ class AssignmentController extends Controller
             $validated['feedback'] ?? null
         );
 
-        return $this->success($submission, 'Pengumpulan tugas berhasil dinilai');
+        return $this->success($submission, AssignmentMessage::GRADED);
     }
 
     /**

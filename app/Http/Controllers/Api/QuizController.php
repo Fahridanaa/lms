@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Constants\Messages\QuizMessage;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponseTrait;
 use App\Http\Requests\StartAttemptQuizRequest;
@@ -54,7 +55,7 @@ class QuizController extends Controller
     {
         $attempt = $this->quizService->startQuizAttempt($id, $request->validated()['user_id']);
 
-        return $this->created($attempt, 'Percobaan kuis berhasil dimulai');
+        return $this->created($attempt, QuizMessage::ATTEMPT_STARTED);
     }
 
     /**
@@ -64,7 +65,7 @@ class QuizController extends Controller
     {
         $attempt = $this->quizService->submitQuizAnswers($attemptId, $request->validated()['answers']);
 
-        return $this->success($attempt, 'Kuis berhasil dikumpulkan');
+        return $this->success($attempt, QuizMessage::QUIZ_SUBMITTED);
     }
 
     /**

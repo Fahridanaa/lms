@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Traits;
 
+use App\Constants\ResponseMessage;
+
 trait ApiResponseTrait
 {
-    protected function success($data = null, $message = 'Success', $code = 200)
+    protected function success($data = null, $message = ResponseMessage::SUCCESS, $code = 200)
     {
         return response()->json([
             'success' => true,
@@ -13,7 +15,7 @@ trait ApiResponseTrait
         ], $code);
     }
 
-    protected function error($message = 'Error', $code = 400, $errors = null)
+    protected function error($message = ResponseMessage::SERVER_ERROR, $code = 400, $errors = null)
     {
         $response = [
             'success' => false,
@@ -27,17 +29,17 @@ trait ApiResponseTrait
         return response()->json($response, $code);
     }
 
-    protected function created($data = null, $message = 'Resource created successfully')
+    protected function created($data = null, $message = ResponseMessage::CREATED)
     {
         return $this->success($data, $message, 201);
     }
 
-    protected function noContent($message = 'No content')
+    protected function noContent($message = ResponseMessage::NO_CONTENT)
     {
         return $this->success(null, $message, 204);
     }
 
-    protected function notFound($message = 'Resource not found')
+    protected function notFound($message = ResponseMessage::NOT_FOUND)
     {
         return $this->error($message, 404);
     }

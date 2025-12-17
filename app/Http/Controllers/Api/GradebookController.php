@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Constants\Messages\GradeMessage;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponseTrait;
 use App\Http\Requests\UpdateGradebookRequest;
@@ -53,7 +54,7 @@ class GradebookController extends Controller
     {
         $grade = $this->gradebookService->updateGrade($id, $request->validated());
 
-        return $this->success($grade, 'Nilai berhasil diperbarui');
+        return $this->success($grade, GradeMessage::UPDATED);
     }
 
     /**
