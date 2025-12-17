@@ -2,12 +2,19 @@
 
 namespace App\Providers;
 
+use App\Models\Assignment;
+use App\Models\Grade;
+use App\Models\Material;
+use App\Models\Quiz;
+use App\Models\QuizAttempt;
+use App\Models\Submission;
 use App\Repositories\AssignmentRepository;
 use App\Repositories\GradeRepository;
 use App\Repositories\MaterialRepository;
 use App\Repositories\QuizAttemptRepository;
 use App\Repositories\QuizRepository;
 use App\Repositories\SubmissionRepository;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -18,22 +25,22 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(QuizRepository::class, function ($app) {
-            return new QuizRepository($app->make(\App\Models\Quiz::class));
+            return new QuizRepository($app->make(Quiz::class));
         });
         $this->app->singleton(QuizAttemptRepository::class, function ($app) {
-            return new QuizAttemptRepository($app->make(\App\Models\QuizAttempt::class));
+            return new QuizAttemptRepository($app->make(QuizAttempt::class));
         });
         $this->app->singleton(GradeRepository::class, function ($app) {
-            return new GradeRepository($app->make(\App\Models\Grade::class));
+            return new GradeRepository($app->make(Grade::class));
         });
         $this->app->singleton(AssignmentRepository::class, function ($app) {
-            return new AssignmentRepository($app->make(\App\Models\Assignment::class));
+            return new AssignmentRepository($app->make(Assignment::class));
         });
         $this->app->singleton(SubmissionRepository::class, function ($app) {
-            return new SubmissionRepository($app->make(\App\Models\Submission::class));
+            return new SubmissionRepository($app->make(Submission::class));
         });
         $this->app->singleton(MaterialRepository::class, function ($app) {
-            return new MaterialRepository($app->make(\App\Models\Material::class));
+            return new MaterialRepository($app->make(Material::class));
         });
     }
 
@@ -42,6 +49,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        Relation::enforceMorphMap([
+            'quiz_attempt' => QuizAttempt::class,
+            'submission' => Submission::class,
+        ]);
     }
 }

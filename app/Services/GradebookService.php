@@ -76,8 +76,8 @@ class GradebookService
                     'grades' => $grades,
                     'average_percentage' => $grades->avg('percentage'),
                     'total_grades' => $grades->count(),
-                    'quiz_grades' => $grades->where('gradeable_type', 'App\Models\QuizAttempt'),
-                    'assignment_grades' => $grades->where('gradeable_type', 'App\Models\Submission'),
+                    'quiz_grades' => $grades->where('gradeable_type', 'quiz_attempt'),
+                    'assignment_grades' => $grades->where('gradeable_type', 'submission'),
                 ];
             });
     }
@@ -133,8 +133,8 @@ class GradebookService
                     'total_courses' => $grades->pluck('course_id')->unique()->count(),
                     'total_grades' => $grades->count(),
                     'overall_average' => $grades->avg('percentage'),
-                    'quiz_average' => $grades->where('gradeable_type', 'App\Models\QuizAttempt')->avg('percentage'),
-                    'assignment_average' => $grades->where('gradeable_type', 'App\Models\Submission')->avg('percentage'),
+                    'quiz_average' => $grades->where('gradeable_type', 'quiz_attempt')->avg('percentage'),
+                    'assignment_average' => $grades->where('gradeable_type', 'submission')->avg('percentage'),
                     'courses_performance' => $grades->groupBy('course_id')->map(function ($courseGrades) {
                         return [
                             'course' => $courseGrades->first()->course,
