@@ -3,14 +3,17 @@
 namespace App\Services;
 
 use App\Contracts\CacheStrategyInterface;
-use App\Models\Quiz;
 use App\Models\QuizAttempt;
+use App\Repositories\QuizAttemptRepository;
+use App\Repositories\QuizRepository;
 
 class QuizService
 {
     public function __construct(
         protected CacheStrategyInterface $cacheStrategy,
-        protected QuizScoringService $quizScoringService
+        protected QuizScoringService $quizScoringService,
+        protected QuizRepository $quizRepository,
+        protected QuizAttemptRepository $quizAttemptRepository
     ) {
     }
 
@@ -23,7 +26,7 @@ class QuizService
             ->tags(['quizzes'])
             ->get(
                 'quizzes:all',
-                fn() => Quiz::with('course')->get()
+                fn() => $this->quizRepository->getAllWithCourse()
             );
     }
 
@@ -36,7 +39,7 @@ class QuizService
             ->tags(['quizzes', "quiz:{$quizId}"])
             ->get(
                 "quiz:{$quizId}:with-questions",
-                fn() => Quiz::with(['questions', 'course'])->findOrFail($quizId)
+                fn() => $this->quizRepository->findWithQuestionsAndCourse($quizId)
             );
     }
 
@@ -49,7 +52,7 @@ class QuizService
             ->tags(['quizzes', "quiz:{$quizId}"])
             ->get(
                 "quiz:{$quizId}:questions",
-                fn() => Quiz::findOrFail($quizId)->questions
+                fn() => $this->quizRepository->getQuestions($quizId)
             );
     }
 
@@ -58,7 +61,7 @@ class QuizService
      */
     public function startQuizAttempt(int $quizId, int $userId): QuizAttempt
     {
-        $attempt = QuizAttempt::create([
+        $attempt = $this->quizAttemptRepository->create([
             'quiz_id' => $quizId,
             'user_id' => $userId,
             'answers' => [],
@@ -76,12 +79,12 @@ class QuizService
      */
     public function submitQuizAnswers(int $attemptId, array $answers): QuizAttempt
     {
-        $attempt = QuizAttempt::with('quiz.questions')->findOrFail($attemptId);
+        $attempt = $this->quizAttemptRepository->findWithQuizAndQuestions($attemptId);
 
         // Calculate score
         $score = $this->quizScoringService->calculate($attempt->quiz, $answers);
 
-        $attempt->update([
+        $updatedAttempt = $this->quizAttemptRepository->update($attemptId, [
             'answers' => $answers,
             'score' => $score,
             'completed_at' => now(),
@@ -93,7 +96,7 @@ class QuizService
             "quiz:{$attempt->quiz_id}:attempts",
         ]);
 
-        return $attempt->fresh();
+        return $updatedAttempt;
     }
 
     /**
@@ -105,8 +108,7 @@ class QuizService
             ->tags(['quiz-attempts'])
             ->get(
                 "attempt:{$attemptId}:result",
-                fn() => QuizAttempt::with(['quiz.questions', 'user'])
-                    ->findOrFail($attemptId)
+                fn() => $this->quizAttemptRepository->findWithFullDetails($attemptId)
             );
     }
 
@@ -121,15 +123,6 @@ class QuizService
 
         return $this->cacheStrategy
             ->tags(["user:{$userId}:attempts"])
-            ->get($cacheKey, function () use ($userId, $quizId) {
-                $query = QuizAttempt::with(['quiz'])
-                    ->where('user_id', $userId);
-
-                if ($quizId) {
-                    $query->where('quiz_id', $quizId);
-                }
-
-                return $query->orderBy('created_at', 'desc')->get();
-            });
+            ->get($cacheKey, fn() => $this->quizAttemptRepository->getUserAttempts($userId, $quizId));
     }
 }

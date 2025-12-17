@@ -4,13 +4,14 @@ namespace App\Services;
 
 use App\Contracts\CacheStrategyInterface;
 use App\Models\Course;
-use App\Models\Grade;
 use App\Models\User;
+use App\Repositories\GradeRepository;
 
 class GradebookService
 {
     public function __construct(
-        protected CacheStrategyInterface $cacheStrategy
+        protected CacheStrategyInterface $cacheStrategy,
+        protected GradeRepository $gradeRepository
     ) {
     }
 
@@ -18,7 +19,7 @@ class GradebookService
      * Get full gradebook for a course (cached)
      * Returns all students with their grades
      */
-    public function getCourseGradebook(int $courseId)
+    public function getCourseGradebook(int $courseId): array
     {
         return $this->cacheStrategy
             ->tags(['gradebook', "course:{$courseId}"])
@@ -28,10 +29,7 @@ class GradebookService
                 $gradebook = [];
 
                 foreach ($course->students as $student) {
-                    $grades = Grade::with(['gradeable'])
-                        ->where('course_id', $courseId)
-                        ->where('user_id', $student->id)
-                        ->get();
+                    $grades = $this->gradeRepository->getUserCourseGrades($student->id, $courseId);
 
                     $gradebook[] = [
                         'student' => [
@@ -58,10 +56,7 @@ class GradebookService
             ->tags(['gradebook', "user:{$userId}:grades"])
             ->get(
                 "user:{$userId}:grades:all",
-                fn() => Grade::with(['course', 'gradeable'])
-                    ->where('user_id', $userId)
-                    ->orderBy('created_at', 'desc')
-                    ->get()
+                fn() => $this->gradeRepository->getUserGrades($userId)
             );
     }
 
@@ -73,10 +68,7 @@ class GradebookService
         return $this->cacheStrategy
             ->tags(['gradebook', "course:{$courseId}", "user:{$userId}:grades"])
             ->get("course:{$courseId}:user:{$userId}:grades", function () use ($courseId, $userId) {
-                $grades = Grade::with(['gradeable'])
-                    ->where('course_id', $courseId)
-                    ->where('user_id', $userId)
-                    ->get();
+                $grades = $this->gradeRepository->getUserCourseGrades($userId, $courseId);
 
                 return [
                     'grades' => $grades,
@@ -91,10 +83,10 @@ class GradebookService
     /**
      * Update or create a grade
      */
-    public function updateGrade(int $gradeId, array $data): Grade
+    public function updateGrade(int $gradeId, array $data)
     {
-        $grade = Grade::findOrFail($gradeId);
-        $grade->update($data);
+        $grade = $this->gradeRepository->findOrFail($gradeId);
+        $updatedGrade = $this->gradeRepository->update($gradeId, $data);
 
         // Invalidate related caches
         $this->cacheStrategy->flushTags([
@@ -103,19 +95,15 @@ class GradebookService
             "user:{$grade->user_id}:grades",
         ]);
 
-        return $grade->fresh();
+        return $updatedGrade;
     }
 
     /**
      * Create a new grade entry
      */
-    public function createGrade(array $data): Grade
+    public function createGrade(array $data)
     {
-        // Calculate percentage
-        $percentage = ($data['score'] / $data['max_score']) * 100;
-        $data['percentage'] = $percentage;
-
-        $grade = Grade::create($data);
+        $grade = $this->gradeRepository->createWithPercentage($data);
 
         // Invalidate related caches
         $this->cacheStrategy->flushTags([
@@ -134,30 +122,18 @@ class GradebookService
     {
         return $this->cacheStrategy
             ->tags(['gradebook', "course:{$courseId}"])
-            ->get("course:{$courseId}:statistics", function () use ($courseId) {
-                $grades = Grade::where('course_id', $courseId)->get();
-
-                return [
-                    'total_grades' => $grades->count(),
-                    'average_percentage' => $grades->avg('percentage'),
-                    'highest_percentage' => $grades->max('percentage'),
-                    'lowest_percentage' => $grades->min('percentage'),
-                    'passing_rate' => $grades->where('percentage', '>=', 60)->count() / max($grades->count(), 1) * 100,
-                ];
-            });
+            ->get("course:{$courseId}:statistics", fn() => $this->gradeRepository->getCourseStatistics($courseId));
     }
 
     /**
      * Get user's overall performance summary (cached)
      */
-    public function getUserPerformanceSummary(int $userId)
+    public function getUserPerformanceSummary(int $userId): array
     {
         return $this->cacheStrategy
             ->tags(["user:{$userId}:grades"])
             ->get("user:{$userId}:performance:summary", function () use ($userId) {
-                $grades = Grade::with(['course'])
-                    ->where('user_id', $userId)
-                    ->get();
+                $grades = $this->gradeRepository->getUserGrades($userId);
 
                 return [
                     'total_courses' => $grades->pluck('course_id')->unique()->count(),
@@ -184,12 +160,7 @@ class GradebookService
         return $this->cacheStrategy
             ->tags(['gradebook', "course:{$courseId}"])
             ->get("course:{$courseId}:top-performers:{$limit}", function () use ($courseId, $limit) {
-                $studentAverages = Grade::where('course_id', $courseId)
-                    ->selectRaw('user_id, AVG(percentage) as average_percentage')
-                    ->groupBy('user_id')
-                    ->orderByDesc('average_percentage')
-                    ->limit($limit)
-                    ->get();
+                $studentAverages = $this->gradeRepository->getTopPerformers($courseId, $limit);
 
                 return $studentAverages->map(function ($item) {
                     $user = User::find($item->user_id);

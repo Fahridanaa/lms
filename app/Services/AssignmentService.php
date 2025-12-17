@@ -3,13 +3,16 @@
 namespace App\Services;
 
 use App\Contracts\CacheStrategyInterface;
-use App\Models\Assignment;
 use App\Models\Submission;
+use App\Repositories\AssignmentRepository;
+use App\Repositories\SubmissionRepository;
 
 class AssignmentService
 {
     public function __construct(
-        protected CacheStrategyInterface $cacheStrategy
+        protected CacheStrategyInterface $cacheStrategy,
+        protected AssignmentRepository $assignmentRepository,
+        protected SubmissionRepository $submissionRepository
     ) {
     }
 
@@ -22,9 +25,7 @@ class AssignmentService
             ->tags(['assignments', "course:{$courseId}"])
             ->get(
                 "course:{$courseId}:assignments",
-                fn() => Assignment::where('course_id', $courseId)
-                    ->orderBy('due_date', 'asc')
-                    ->get()
+                fn() => $this->assignmentRepository->getByCourse($courseId)
             );
     }
 
@@ -37,8 +38,7 @@ class AssignmentService
             ->tags(['assignments', "assignment:{$assignmentId}"])
             ->get(
                 "assignment:{$assignmentId}",
-                fn() =>
-                Assignment::with('course')->findOrFail($assignmentId)
+                fn() => $this->assignmentRepository->findWithCourse($assignmentId)
             );
     }
 
@@ -47,7 +47,7 @@ class AssignmentService
      */
     public function submitAssignment(int $assignmentId, int $userId, array $data): Submission
     {
-        $submission = Submission::create([
+        $submission = $this->submissionRepository->create([
             'assignment_id' => $assignmentId,
             'user_id' => $userId,
             'file_path' => $data,
@@ -70,10 +70,9 @@ class AssignmentService
     {
         return $this->cacheStrategy
             ->tags(["assignment:{$assignmentId}:submissions"])
-            ->get("assignment:{$assignmentId}:submissions:all", fn() => Submission::with(['user'])
-                ->where('assignment_id', $assignmentId)
-                ->orderBy('submitted_at', 'desc')
-                ->get());
+            ->get("assignment:{$assignmentId}:submissions:all",
+                fn() => $this->submissionRepository->getByAssignment($assignmentId)
+            );
     }
 
     /**
@@ -83,9 +82,9 @@ class AssignmentService
     {
         return $this->cacheStrategy
             ->tags(["user:{$userId}:submissions", "assignment:{$assignmentId}:submissions"])
-            ->get("assignment:{$assignmentId}:user:{$userId}:submission", fn() => Submission::where('assignment_id', $assignmentId)
-                ->where('user_id', $userId)
-                ->first());
+            ->get("assignment:{$assignmentId}:user:{$userId}:submission",
+                fn() => $this->submissionRepository->getUserSubmission($assignmentId, $userId)
+            );
     }
 
     /**
@@ -93,9 +92,9 @@ class AssignmentService
      */
     public function gradeSubmission(int $submissionId, float $score, ?string $feedback = null): Submission
     {
-        $submission = Submission::with('assignment')->findOrFail($submissionId);
+        $submission = $this->submissionRepository->findWithAssignment($submissionId);
 
-        $submission->update([
+        $updatedSubmission = $this->submissionRepository->update($submissionId, [
             'score' => $score,
             'feedback' => $feedback,
             'graded_at' => now(),
@@ -108,7 +107,7 @@ class AssignmentService
             "submission:{$submissionId}",
         ]);
 
-        return $submission->fresh();
+        return $updatedSubmission;
     }
 
     /**
@@ -120,11 +119,7 @@ class AssignmentService
             ->tags(["assignment:{$assignmentId}:submissions"])
             ->get(
                 "assignment:{$assignmentId}:submissions:pending",
-                fn() => Submission::with(['user'])
-                    ->where('assignment_id', $assignmentId)
-                    ->whereNull('graded_at')
-                    ->orderBy('submitted_at', 'asc')
-                    ->get()
+                fn() => $this->submissionRepository->getPendingByAssignment($assignmentId)
             );
     }
 
@@ -137,10 +132,7 @@ class AssignmentService
             ->tags(["user:{$userId}:submissions"])
             ->get(
                 "user:{$userId}:submissions:all",
-                fn() => Submission::with(['assignment.course'])
-                    ->where('user_id', $userId)
-                    ->orderBy('submitted_at', 'desc')
-                    ->get()
+                fn() => $this->submissionRepository->getUserSubmissions($userId)
             );
     }
 
@@ -151,15 +143,8 @@ class AssignmentService
     {
         return $this->cacheStrategy
             ->tags(["assignment:{$assignmentId}:submissions"])
-            ->get("assignment:{$assignmentId}:statistics", function () use ($assignmentId) {
-                $submissions = Submission::where('assignment_id', $assignmentId)->get();
-
-                return [
-                    'total_submissions' => $submissions->count(),
-                    'graded_submissions' => $submissions->whereNotNull('graded_at')->count(),
-                    'pending_submissions' => $submissions->whereNull('graded_at')->count(),
-                    'average_score' => $submissions->whereNotNull('score')->avg('score'),
-                ];
-            });
+            ->get("assignment:{$assignmentId}:statistics",
+                fn() => $this->submissionRepository->getStatistics($assignmentId)
+            );
     }
 }

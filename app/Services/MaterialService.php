@@ -4,11 +4,13 @@ namespace App\Services;
 
 use App\Contracts\CacheStrategyInterface;
 use App\Models\Material;
+use App\Repositories\MaterialRepository;
 
 class MaterialService
 {
     public function __construct(
-        protected CacheStrategyInterface $cacheStrategy
+        protected CacheStrategyInterface $cacheStrategy,
+        protected MaterialRepository $materialRepository
     ) {
     }
 
@@ -21,9 +23,7 @@ class MaterialService
             ->tags(['materials', "course:{$courseId}"])
             ->get(
                 "course:{$courseId}:materials",
-                fn() => Material::where('course_id', $courseId)
-                    ->orderBy('created_at', 'desc')
-                    ->get()
+                fn() => $this->materialRepository->getByCourse($courseId)
             );
     }
 
@@ -36,7 +36,7 @@ class MaterialService
             ->tags(['materials', "material:{$materialId}"])
             ->get(
                 "material:{$materialId}",
-                fn() => Material::with('course')->findOrFail($materialId)
+                fn() => $this->materialRepository->findWithCourse($materialId)
             );
     }
 
@@ -48,7 +48,7 @@ class MaterialService
         return $this->cacheStrategy
             ->tags(['materials', "material:{$materialId}"])
             ->get("material:{$materialId}:metadata", function () use ($materialId) {
-                $material = Material::findOrFail($materialId);
+                $material = $this->materialRepository->findOrFail($materialId);
 
                 return [
                     'id' => $material->id,
@@ -66,7 +66,7 @@ class MaterialService
      */
     public function createMaterial(array $data): Material
     {
-        $material = Material::create($data);
+        $material = $this->materialRepository->create($data);
 
         // Invalidate course materials cache
         $this->cacheStrategy->flushTags([
@@ -82,8 +82,8 @@ class MaterialService
      */
     public function updateMaterial(int $materialId, array $data): Material
     {
-        $material = Material::findOrFail($materialId);
-        $material->update($data);
+        $material = $this->materialRepository->findOrFail($materialId);
+        $updatedMaterial = $this->materialRepository->update($materialId, $data);
 
         // Invalidate material and course caches
         $this->cacheStrategy->flushTags([
@@ -92,7 +92,7 @@ class MaterialService
             "course:{$material->course_id}"
         ]);
 
-        return $material->fresh();
+        return $updatedMaterial;
     }
 
     /**
@@ -100,10 +100,10 @@ class MaterialService
      */
     public function deleteMaterial(int $materialId): bool
     {
-        $material = Material::findOrFail($materialId);
+        $material = $this->materialRepository->findOrFail($materialId);
         $courseId = $material->course_id;
 
-        $deleted = $material->delete();
+        $deleted = $this->materialRepository->delete($materialId);
 
         // Invalidate caches
         $this->cacheStrategy->flushTags([
@@ -124,10 +124,7 @@ class MaterialService
             ->tags(['materials', "course:{$courseId}"])
             ->get(
                 "course:{$courseId}:materials:type:{$type}",
-                fn() => Material::where('course_id', $courseId)
-                    ->where('type', $type)
-                    ->orderBy('created_at', 'desc')
-                    ->get()
+                fn() => $this->materialRepository->getByTypeAndCourse($courseId, $type)
             );
     }
 
@@ -140,7 +137,7 @@ class MaterialService
             ->tags(["course:{$courseId}"])
             ->get(
                 "course:{$courseId}:materials:count",
-                fn() => Material::where('course_id', $courseId)->count()
+                fn() => $this->materialRepository->countByCourse($courseId)
             );
     }
 }
