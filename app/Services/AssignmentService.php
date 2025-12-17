@@ -2,7 +2,10 @@
 
 namespace App\Services;
 
+use App\Constants\Messages\AssignmentMessage;
+use App\Constants\Messages\GradeMessage;
 use App\Contracts\CacheStrategyInterface;
+use App\Exceptions\BusinessException;
 use App\Models\Submission;
 use App\Repositories\AssignmentRepository;
 use App\Repositories\SubmissionRepository;
@@ -32,7 +35,7 @@ class AssignmentService
     /**
      * Get assignment by ID (cached)
      */
-    public function getAssignmentById(int $assignmentId)
+    public function getAssignmentById(int $assignmentId): array
     {
         return $this->cacheStrategy
             ->tags(['assignments', "assignment:{$assignmentId}"])
@@ -45,8 +48,19 @@ class AssignmentService
     /**
      * Submit assignment
      */
-    public function submitAssignment(int $assignmentId, int $userId, array $data): Submission
+    public function submitAssignment(int $assignmentId, int $userId, string $data): Submission
     {
+        $assignment = $this->assignmentRepository->findOrFail($assignmentId);
+
+        if ($assignment->due_date < now()) {
+            throw new BusinessException(AssignmentMessage::DEADLINE_PASSED, 400);
+        }
+
+        $existing = $this->submissionRepository->getUserSubmission($assignmentId, $userId);
+        if ($existing) {
+            throw new BusinessException(AssignmentMessage::ALREADY_SUBMITTED, 400);
+        }
+
         $submission = $this->submissionRepository->create([
             'assignment_id' => $assignmentId,
             'user_id' => $userId,
@@ -54,7 +68,6 @@ class AssignmentService
             'submitted_at' => now(),
         ]);
 
-        // Invalidate related caches
         $this->cacheStrategy->flushTags([
             "assignment:{$assignmentId}:submissions",
             "user:{$userId}:submissions",
@@ -70,20 +83,9 @@ class AssignmentService
     {
         return $this->cacheStrategy
             ->tags(["assignment:{$assignmentId}:submissions"])
-            ->get("assignment:{$assignmentId}:submissions:all",
+            ->get(
+                "assignment:{$assignmentId}:submissions:all",
                 fn() => $this->submissionRepository->getByAssignment($assignmentId)
-            );
-    }
-
-    /**
-     * Get user's submission for an assignment (cached)
-     */
-    public function getUserSubmission(int $assignmentId, int $userId)
-    {
-        return $this->cacheStrategy
-            ->tags(["user:{$userId}:submissions", "assignment:{$assignmentId}:submissions"])
-            ->get("assignment:{$assignmentId}:user:{$userId}:submission",
-                fn() => $this->submissionRepository->getUserSubmission($assignmentId, $userId)
             );
     }
 
@@ -94,13 +96,20 @@ class AssignmentService
     {
         $submission = $this->submissionRepository->findWithAssignment($submissionId);
 
+        if (!$submission->assignment) {
+            throw new BusinessException(AssignmentMessage::NOT_FOUND, 404);
+        }
+
+        if ($score > $submission->assignment->max_score) {
+            throw new BusinessException(GradeMessage::EXCEEDS_MAX, 400);
+        }
+
         $updatedSubmission = $this->submissionRepository->update($submissionId, [
             'score' => $score,
             'feedback' => $feedback,
             'graded_at' => now(),
         ]);
 
-        // Invalidate related caches
         $this->cacheStrategy->flushTags([
             "assignment:{$submission->assignment_id}:submissions",
             "user:{$submission->user_id}:submissions",
@@ -124,26 +133,14 @@ class AssignmentService
     }
 
     /**
-     * Get user's all submissions (cached)
-     */
-    public function getUserSubmissions(int $userId)
-    {
-        return $this->cacheStrategy
-            ->tags(["user:{$userId}:submissions"])
-            ->get(
-                "user:{$userId}:submissions:all",
-                fn() => $this->submissionRepository->getUserSubmissions($userId)
-            );
-    }
-
-    /**
      * Get assignment statistics (cached)
      */
     public function getAssignmentStatistics(int $assignmentId)
     {
         return $this->cacheStrategy
             ->tags(["assignment:{$assignmentId}:submissions"])
-            ->get("assignment:{$assignmentId}:statistics",
+            ->get(
+                "assignment:{$assignmentId}:statistics",
                 fn() => $this->submissionRepository->getStatistics($assignmentId)
             );
     }

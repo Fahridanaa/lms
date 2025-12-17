@@ -8,5 +8,6 @@ class QuizMessage
     public const QUIZ_SUBMITTED = 'Kuis berhasil dikumpulkan';
     public const NOT_FOUND = 'Kuis tidak ditemukan';
     public const ALREADY_ATTEMPTED = 'Anda sudah mengerjakan kuis ini';
+    public const ONGOING_ATTEMPT = 'Anda masih memiliki percobaan kuis yang sedang berjalan';
     public const TIME_EXPIRED = 'Waktu kuis telah habis';
 }

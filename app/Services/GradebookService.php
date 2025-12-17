@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Constants\Messages\GradeMessage;
 use App\Contracts\CacheStrategyInterface;
+use App\Exceptions\BusinessException;
 use App\Models\Course;
 use App\Models\User;
 use App\Repositories\GradeRepository;
@@ -86,9 +88,18 @@ class GradebookService
     public function updateGrade(int $gradeId, array $data)
     {
         $grade = $this->gradeRepository->findOrFail($gradeId);
+
+        if (isset($data['score']) && isset($data['max_score'])) {
+            if ($data['score'] > $data['max_score']) {
+                throw new BusinessException(GradeMessage::EXCEEDS_MAX, 400);
+            }
+            if ($data['score'] < 0 || $data['max_score'] < 0) {
+                throw new BusinessException(GradeMessage::NEGATIVE, 400);
+            }
+        }
+
         $updatedGrade = $this->gradeRepository->update($gradeId, $data);
 
-        // Invalidate related caches
         $this->cacheStrategy->flushTags([
             'gradebook',
             "course:{$grade->course_id}",
@@ -96,23 +107,6 @@ class GradebookService
         ]);
 
         return $updatedGrade;
-    }
-
-    /**
-     * Create a new grade entry
-     */
-    public function createGrade(array $data)
-    {
-        $grade = $this->gradeRepository->createWithPercentage($data);
-
-        // Invalidate related caches
-        $this->cacheStrategy->flushTags([
-            'gradebook',
-            "course:{$grade->course_id}",
-            "user:{$grade->user_id}:grades",
-        ]);
-
-        return $grade;
     }
 
     /**
@@ -155,7 +149,7 @@ class GradebookService
     /**
      * Get top performers in a course (cached)
      */
-    public function getTopPerformers(int $courseId, int $limit = 10)
+    public function getTopPerformers(int $courseId, int $limit = 10): array
     {
         return $this->cacheStrategy
             ->tags(['gradebook', "course:{$courseId}"])

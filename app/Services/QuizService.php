@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Constants\Messages\QuizMessage;
 use App\Contracts\CacheStrategyInterface;
+use App\Exceptions\BusinessException;
 use App\Models\QuizAttempt;
 use App\Repositories\QuizAttemptRepository;
 use App\Repositories\QuizRepository;
@@ -61,6 +63,16 @@ class QuizService
      */
     public function startQuizAttempt(int $quizId, int $userId): QuizAttempt
     {
+        $this->quizRepository->findOrFail($quizId);
+
+        $ongoingAttempt = $this->quizAttemptRepository->getUserAttempts($userId, $quizId)
+            ->where('completed_at', null)
+            ->first();
+
+        if ($ongoingAttempt) {
+            throw new BusinessException(QuizMessage::ONGOING_ATTEMPT, 400);
+        }
+
         $attempt = $this->quizAttemptRepository->create([
             'quiz_id' => $quizId,
             'user_id' => $userId,
@@ -68,7 +80,6 @@ class QuizService
             'started_at' => now(),
         ]);
 
-        // Invalidate user's quiz attempts cache
         $this->cacheStrategy->flushTags(["user:{$userId}:attempts"]);
 
         return $attempt;
@@ -81,7 +92,17 @@ class QuizService
     {
         $attempt = $this->quizAttemptRepository->findWithQuizAndQuestions($attemptId);
 
-        // Calculate score
+        if ($attempt->completed_at !== null) {
+            throw new BusinessException(QuizMessage::ALREADY_ATTEMPTED, 400);
+        }
+
+        if ($attempt->quiz->time_limit) {
+            $elapsedMinutes = now()->diffInMinutes($attempt->started_at);
+            if ($elapsedMinutes > $attempt->quiz->time_limit) {
+                throw new BusinessException(QuizMessage::TIME_EXPIRED, 400);
+            }
+        }
+
         $score = $this->quizScoringService->calculate($attempt->quiz, $answers);
 
         $updatedAttempt = $this->quizAttemptRepository->update($attemptId, [
@@ -90,7 +111,6 @@ class QuizService
             'completed_at' => now(),
         ]);
 
-        // Invalidate related caches
         $this->cacheStrategy->flushTags([
             "user:{$attempt->user_id}:attempts",
             "quiz:{$attempt->quiz_id}:attempts",

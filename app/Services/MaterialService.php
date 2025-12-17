@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Constants\Messages\MaterialMessage;
 use App\Contracts\CacheStrategyInterface;
+use App\Exceptions\BusinessException;
 use App\Models\Material;
 use App\Repositories\MaterialRepository;
 
@@ -66,9 +68,17 @@ class MaterialService
      */
     public function createMaterial(array $data): Material
     {
+        $maxFileSize = 104857600; // 100MB in bytes
+        if (isset($data['file_size']) && $data['file_size'] > $maxFileSize) {
+            throw new BusinessException(MaterialMessage::MAX_SIZE_EXCEEDED, 400);
+        }
+
+        if (isset($data['file_size']) && $data['file_size'] <= 0) {
+            throw new BusinessException(MaterialMessage::INVALID_SIZE, 400);
+        }
+
         $material = $this->materialRepository->create($data);
 
-        // Invalidate course materials cache
         $this->cacheStrategy->flushTags([
             'materials',
             "course:{$material->course_id}"
@@ -83,9 +93,19 @@ class MaterialService
     public function updateMaterial(int $materialId, array $data): Material
     {
         $material = $this->materialRepository->findOrFail($materialId);
+
+        if (isset($data['file_size'])) {
+            $maxFileSize = 104857600; // 100MB
+            if ($data['file_size'] > $maxFileSize) {
+                throw new BusinessException(MaterialMessage::MAX_SIZE_EXCEEDED, 400);
+            }
+            if ($data['file_size'] <= 0) {
+                throw new BusinessException(MaterialMessage::INVALID_SIZE, 400);
+            }
+        }
+
         $updatedMaterial = $this->materialRepository->update($materialId, $data);
 
-        // Invalidate material and course caches
         $this->cacheStrategy->flushTags([
             'materials',
             "material:{$materialId}",
@@ -113,31 +133,5 @@ class MaterialService
         ]);
 
         return $deleted;
-    }
-
-    /**
-     * Get materials by type (cached)
-     */
-    public function getMaterialsByType(int $courseId, string $type)
-    {
-        return $this->cacheStrategy
-            ->tags(['materials', "course:{$courseId}"])
-            ->get(
-                "course:{$courseId}:materials:type:{$type}",
-                fn() => $this->materialRepository->getByTypeAndCourse($courseId, $type)
-            );
-    }
-
-    /**
-     * Get total materials count for a course (cached)
-     */
-    public function getCourseMaterialsCount(int $courseId): int
-    {
-        return $this->cacheStrategy
-            ->tags(["course:{$courseId}"])
-            ->get(
-                "course:{$courseId}:materials:count",
-                fn() => $this->materialRepository->countByCourse($courseId)
-            );
     }
 }
