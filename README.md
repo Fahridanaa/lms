@@ -46,12 +46,12 @@
 │  │  - forget(key): bool                                │    │
 │  │  - remember(key, ttl, callback): mixed              │    │
 │  └─────────────────────────────────────────────────────┘    │
-│           ▲              ▲             ▲                    │
-│           │              │             │                    │
-│  ┌────────┴───┐  ┌───────┴────┐  ┌─────┴───────┐            │
-│  │Cache-Aside │  │Read-Through│  │Write-Through│            │
-│  │  Strategy  │  │  Strategy  │  │  Strategy   │            │
-│  └────────────┘  └────────────┘  └─────────────┘            │
+│           ▲              ▲             ▲             ▲      │
+│           │              │             │             │      │
+│  ┌────────┴────┐ ┌───────┴─────┐ ┌─────┴───────┐ ┌───┴────┐ │
+│  │Cache-Aside  │ │Read-Through │ │Write-Through│ │No-Cache│ │
+│  │  Strategy   │ │  Strategy   │ │  Strategy   │ │Strategy│ │
+│  └─────────────┘ └─────────────┘ └─────────────┘ └────────┘ │
 └─────────────────────────┬───────────────────────────────────┘
                           │
           ┌───────────────┼──────────────┐
@@ -66,7 +66,7 @@
 
 ```env
 # .env
-CACHE_STRATEGY=cache-aside  # Options: cache-aside, read-through, write-through
+CACHE_STRATEGY=cache-aside  # Options: cache-aside, read-through, write-through, no-cache
 CACHE_DRIVER=redis
 CACHE_TTL=3600
 ```
@@ -78,25 +78,55 @@ CACHE_TTL=3600
 ```
 lms/
 ├── app/
+│   ├── Constants/
+│   │   ├── ResponseMessage.php
+│   │   └── Messages/
+│   │       ├── AssignmentMessage.php
+│   │       ├── GradeMessage.php
+│   │       ├── MaterialMessage.php
+│   │       └── QuizMessage.php
 │   ├── Contracts/
-│   │   └── CacheStrategyInterface.php
+│   │   ├── CacheStrategyInterface.php
+│   │   └── RepositoryInterface.php
+│   ├── Exceptions/
+│   │   └── BusinessException.php
 │   ├── Services/
 │   │   ├── Cache/
 │   │   │   ├── CacheAsideStrategy.php
 │   │   │   ├── ReadThroughStrategy.php
 │   │   │   ├── WriteThroughStrategy.php
-│   │   │   └── CacheStrategyFactory.php
+│   │   │   └── NoCacheStrategy.php
 │   │   ├── QuizService.php
 │   │   ├── MaterialService.php
 │   │   ├── AssignmentService.php
-│   │   └── GradebookService.php
+│   │   ├── GradebookService.php
+│   │   └── QuizScoringService.php
+│   ├── Repositories/
+│   │   ├── BaseRepository.php
+│   │   ├── QuizRepository.php
+│   │   ├── MaterialRepository.php
+│   │   ├── AssignmentRepository.php
+│   │   ├── SubmissionRepository.php
+│   │   ├── QuizAttemptRepository.php
+│   │   └── GradeRepository.php
 │   ├── Http/
-│   │   └── Controllers/
-│   │       └── Api/
-│   │           ├── QuizController.php
-│   │           ├── MaterialController.php
-│   │           ├── AssignmentController.php
-│   │           └── GradebookController.php
+│   │   ├── Controllers/
+│   │   │   ├── Controller.php
+│   │   │   └── Api/
+│   │   │       ├── QuizController.php
+│   │   │       ├── MaterialController.php
+│   │   │       ├── AssignmentController.php
+│   │   │       └── GradebookController.php
+│   │   ├── Controllers/Traits/
+│   │   │   └── ApiResponseTrait.php
+│   │   └── Requests/
+│   │       ├── StoreMaterialRequest.php
+│   │       ├── UpdateMaterialRequest.php
+│   │       ├── SubmitAssignmentRequest.php
+│   │       ├── GradeSubmissionAssignmentRequest.php
+│   │       ├── StartAttemptQuizRequest.php
+│   │       ├── SubmitAttemptQuizRequest.php
+│   │       └── UpdateGradebookRequest.php
 │   ├── Models/
 │   │   ├── User.php
 │   │   ├── Course.php
@@ -106,9 +136,12 @@ lms/
 │   │   ├── Material.php
 │   │   ├── Assignment.php
 │   │   ├── Submission.php
-│   │   └── Grade.php
+│   │   ├── Grade.php
+│   │   └── CourseEnrollment.php
 │   └── Providers/
-│       └── CacheStrategyServiceProvider.php
+│       ├── AppServiceProvider.php
+│       ├── CacheStrategyServiceProvider.php
+│       └── TelescopeServiceProvider.php
 ├── config/
 │   └── caching-strategy.php
 ├── database/
@@ -162,10 +195,6 @@ lms/
 ### 1. Cache-Aside (Lazy Loading)
 
 ```php
-// Application manages cache explicitly
-// READ: Check cache → if miss, query DB → store in cache
-// WRITE: Update DB → invalidate cache
-
 public function get(string $key, callable $callback): mixed
 {
     if ($cached = Cache::get($key)) {
@@ -180,8 +209,6 @@ public function get(string $key, callable $callback): mixed
 
 public function put(string $key, mixed $value): bool
 {
-    // Write to database first (handled by caller)
-    // Then invalidate cache
     return Cache::forget($key);
 }
 ```
@@ -189,10 +216,6 @@ public function put(string $key, mixed $value): bool
 ### 2. Read-Through
 
 ```php
-// Cache layer handles DB reads transparently
-// READ: Cache intercepts → if miss, cache fetches from DB
-// WRITE: Update DB → invalidate cache
-
 public function get(string $key, callable $dataSource): mixed
 {
     return Cache::remember($key, $this->ttl, $dataSource);
@@ -202,18 +225,10 @@ public function get(string $key, callable $dataSource): mixed
 ### 3. Write-Through
 
 ```php
-// Synchronous write to both cache and DB
-// READ: Same as Read-Through
-// WRITE: Write to cache AND DB simultaneously
-
 public function put(string $key, mixed $value, callable $persist): bool
 {
-    // Write to database
     $persist($value);
-
-    // Write to cache
     Cache::put($key, $value, $this->ttl);
-
     return true;
 }
 ```
@@ -232,6 +247,7 @@ public function put(string $key, mixed $value, callable $persist): bool
 | POST   | `/api/quizzes/{id}/attempts`                    | Start quiz attempt             | Write              |
 | PUT    | `/api/quizzes/{id}/attempts/{attemptId}`        | Submit quiz answers            | Write + Invalidate |
 | GET    | `/api/quizzes/{id}/attempts/{attemptId}/result` | Get attempt result             | Cached             |
+| GET    | `/api/users/{userId}/quiz-attempts`             | Get user's quiz attempts       | Cached             |
 
 ### Material Module (Read-Heavy)
 
@@ -241,16 +257,20 @@ public function put(string $key, mixed $value, callable $persist): bool
 | GET    | `/api/materials/{id}`          | Get material detail    | Cached             |
 | GET    | `/api/materials/{id}/download` | Download material file | Cached metadata    |
 | POST   | `/api/materials`               | Upload new material    | Write + Invalidate |
+| PUT    | `/api/materials/{id}`          | Update material        | Write + Invalidate |
+| DELETE | `/api/materials/{id}`          | Delete material        | Write + Invalidate |
 
 ### Assignment Module (Write-Heavy)
 
-| Method | Endpoint                            | Description                   | Cache Behavior     |
-| ------ | ----------------------------------- | ----------------------------- | ------------------ |
-| GET    | `/api/courses/{id}/assignments`     | List assignments              | Cached             |
-| GET    | `/api/assignments/{id}`             | Get assignment detail         | Cached             |
-| POST   | `/api/assignments/{id}/submissions` | Submit assignment             | Write              |
-| GET    | `/api/assignments/{id}/submissions` | List submissions (instructor) | Cached             |
-| PUT    | `/api/submissions/{id}/grade`       | Grade submission              | Write + Invalidate |
+| Method | Endpoint                                    | Description                   | Cache Behavior     |
+| ------ | ------------------------------------------- | ----------------------------- | ------------------ |
+| GET    | `/api/courses/{id}/assignments`             | List assignments              | Cached             |
+| GET    | `/api/assignments/{id}`                     | Get assignment detail         | Cached             |
+| POST   | `/api/assignments/{id}/submissions`         | Submit assignment             | Write              |
+| GET    | `/api/assignments/{id}/submissions`         | List submissions (instructor) | Cached             |
+| GET    | `/api/assignments/{id}/submissions/pending` | List pending submissions      | Cached             |
+| GET    | `/api/assignments/{id}/statistics`          | Get assignment statistics     | Cached             |
+| PUT    | `/api/submissions/{id}/grade`               | Grade submission              | Write + Invalidate |
 
 ### Gradebook Module (Mixed)
 
@@ -260,6 +280,9 @@ public function put(string $key, mixed $value, callable $persist): bool
 | GET    | `/api/users/{id}/grades`                  | Get user's all grades    | Cached              |
 | GET    | `/api/courses/{id}/users/{userId}/grades` | Get user grade in course | Cached              |
 | PUT    | `/api/grades/{id}`                        | Update grade             | Write + Invalidate  |
+| GET    | `/api/courses/{id}/statistics`            | Get course statistics    | Cached              |
+| GET    | `/api/users/{id}/performance`             | Get user performance     | Cached              |
+| GET    | `/api/courses/{id}/top-performers`        | Get top performers       | Cached              |
 
 ---
 
@@ -280,8 +303,6 @@ public function put(string $key, mixed $value, callable $persist): bool
 
 #### Scenario 1: Read-Heavy (80% Read, 20% Write)
 
-Simulates normal LMS usage - students accessing quizzes, downloading materials.
-
 ```
 Concurrent Users: 100, 250, 500, 750, 1000
 Duration: 5 minutes per test
@@ -296,8 +317,6 @@ Operations:
 ```
 
 #### Scenario 2: Write-Heavy (40% Read, 60% Write)
-
-Simulates deadline period - heavy submissions and grading.
 
 ```
 Concurrent Users: 100, 250, 500, 750, 1000
@@ -332,29 +351,21 @@ Operations:
 ### Initial Setup
 
 ```bash
-# Clone repository
 git clone https://github.com/Fahridanaa/lms.git
 cd lms
 
-# Copy environment file
 cp .env.example .env
 
-# Start Docker containers
 ./vendor/bin/sail up -d
 
-# Install dependencies
 ./vendor/bin/sail composer install
 
-# Generate app key
 ./vendor/bin/sail artisan key:generate
 
-# Run migrations
 ./vendor/bin/sail artisan migrate
 
-# Seed database
 ./vendor/bin/sail artisan db:seed
 
-# Clear and warm up cache
 ./vendor/bin/sail artisan cache:clear
 ./vendor/bin/sail artisan config:cache
 ./vendor/bin/sail artisan route:cache
@@ -364,12 +375,20 @@ cp .env.example .env
 
 ```bash
 # Edit .env file
-CACHE_STRATEGY=cache-aside  # or read-through, write-through
+CACHE_STRATEGY=cache-aside  # / read-through, write-through, no-cache
 
-# Clear cache and restart
 ./vendor/bin/sail artisan cache:clear
 ./vendor/bin/sail artisan config:clear
 ./vendor/bin/sail down && ./vendor/bin/sail up -d
+```
+
+### Verifying Cache Strategy
+
+```bash
+./vendor/bin/sail artisan tinker --execute="
+$strategy = app(\App\Contracts\CacheStrategyInterface::class);
+echo 'Strategy Class: ' . get_class($strategy);
+"
 ```
 
 ### Telescope Access
@@ -389,21 +408,43 @@ URL: http://localhost/telescope
 3. **DocBlocks** untuk semua public methods
 4. **Interface-based** design untuk strategy pattern
 5. **Repository pattern** untuk data access
+6. **Form Request Validation** untuk semua input validation
+7. **SoftDeletes** untuk logical deletion pada semua model utama
+8. **BusinessException** untuk custom exception handling
+9. **Message Constants** untuk consistent response messages
 
 ### Naming Conventions
 
 ```php
 // Interfaces
 interface CacheStrategyInterface {}
+interface RepositoryInterface {}
 
 // Strategy Classes
 class CacheAsideStrategy implements CacheStrategyInterface {}
 class ReadThroughStrategy implements CacheStrategyInterface {}
 class WriteThroughStrategy implements CacheStrategyInterface {}
+class NoCacheStrategy implements CacheStrategyInterface {}
+
+// Repository Classes
+abstract class BaseRepository implements RepositoryInterface {}
+class QuizRepository extends BaseRepository {}
+class MaterialRepository extends BaseRepository {}
 
 // Service Classes
 class QuizService {}
 class MaterialService {}
+
+// Form Request Classes
+class StoreMaterialRequest extends FormRequest {}
+class UpdateMaterialRequest extends FormRequest {}
+
+// Exception Classes
+class BusinessException extends Exception {}
+
+// Message Constants
+class QuizMessage {}
+class MaterialMessage {}
 
 // Cache Keys (konsisten dan descriptive)
 "quiz:{id}"
@@ -417,13 +458,51 @@ class MaterialService {}
 
 ```php
 // Format: {entity}:{id}:{relation?}
-// Examples:
-"quiz:123"                    // Single quiz
-"quiz:123:questions"          // Quiz with questions
-"course:45:materials"         // Course materials list
-"course:45:gradebook"         // Course gradebook (aggregated)
-"user:789:grades"             // User's all grades
-"assignment:56:submissions"   // Assignment submissions
+// Contoh:
+"quiz:123"
+"quiz:123:questions"
+"course:45:materials"
+"course:45:gradebook"
+"user:789:grades"
+"assignment:56:submissions"
+```
+
+### Repository Pattern
+
+```php
+abstract class BaseRepository implements RepositoryInterface
+{
+    public function all(array $relations = []): Collection;
+    public function find(int $id, array $relations = []): ?Model;
+    public function create(array $data): Model;
+    public function update(int $id, array $data): Model;
+    public function delete(int $id): bool;
+}
+
+class QuizRepository extends BaseRepository
+{
+    public function getAllWithCourse(): Collection;
+    public function findWithQuestionsAndCourse(int $id): ?Quiz;
+    public function getByCourse(int $courseId): Collection;
+}
+```
+
+### Form Request Validation
+
+```php
+class StoreMaterialRequest extends FormRequest
+{
+    public function rules(): array
+    {
+        return [
+            'course_id' => 'required|exists:courses,id',
+            'title' => 'required|string|max:255',
+            'file_path' => 'required|string',
+            'file_size' => 'required|integer|max:104857600',
+            'type' => 'required|in:pdf,video,document,other',
+        ];
+    }
+}
 ```
 
 ---
