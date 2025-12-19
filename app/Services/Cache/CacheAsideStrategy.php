@@ -72,8 +72,8 @@ class CacheAsideStrategy implements CacheStrategyInterface
         // Cache miss - execute callback to fetch fresh data
         $value = $callback();
 
-        // Store in cache
-        $this->put($prefixedKey, $value);
+        // Store in cache (use original key, put() will handle prefixing)
+        $this->put($key, $value);
 
         return $value;
     }
