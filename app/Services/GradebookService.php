@@ -149,7 +149,7 @@ class GradebookService
     /**
      * Get top performers in a course (cached)
      */
-    public function getTopPerformers(int $courseId, int $limit = 10): array
+    public function getTopPerformers(int $courseId, int $limit = 10): mixed
     {
         return $this->cacheStrategy
             ->tags(['gradebook', "course:{$courseId}"])

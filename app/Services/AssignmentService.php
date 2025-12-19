@@ -35,7 +35,7 @@ class AssignmentService
     /**
      * Get assignment by ID (cached)
      */
-    public function getAssignmentById(int $assignmentId): array
+    public function getAssignmentById(int $assignmentId): mixed
     {
         return $this->cacheStrategy
             ->tags(['assignments', "assignment:{$assignmentId}"])
