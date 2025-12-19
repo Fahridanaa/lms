@@ -89,7 +89,7 @@ RESULT_FILE="${RESULTS_DIR}/${STRATEGY}-${SCENARIO}-${TIMESTAMP}.json"
 k6 run \
     --out json=${RESULT_FILE} \
     --summary-export=${RESULTS_DIR}/${STRATEGY}-${SCENARIO}-${TIMESTAMP}-summary.json \
-    ../tests/k6/${SCENARIO}-scenario.js
+    ../tests/Benchmark/k6/${SCENARIO}-scenario.js
 
 # Check if k6 is installed
 # if [ $? -ne 0 ]; then
