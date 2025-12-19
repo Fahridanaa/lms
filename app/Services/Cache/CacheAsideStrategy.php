@@ -6,39 +6,120 @@ use App\Contracts\CacheStrategyInterface;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Cache-Aside (Lazy Loading) Strategy
+ * ═══════════════════════════════════════════════════════════════════════════
+ * STRATEGI CACHE-ASIDE (LAZY LOADING)
+ * ═══════════════════════════════════════════════════════════════════════════
  *
- * Application explicitly manages cache:
- * - READ: Check cache → if miss, query DB → store in cache → return
- * - WRITE: Update DB → invalidate cache
+ * KONSEP DASAR:
+ * Aplikasi yang bertanggung jawab penuh untuk mengelola cache secara eksplisit.
+ * Cache hanya menyimpan data, tidak tahu apa-apa tentang database.
  *
- * Best for: Read-heavy workloads where cache misses are acceptable
+ * ┌─────────────────────────────────────────────────────────────────────┐
+ * │ FLOW OPERASI READ (Membaca Data)                                    │
+ * └─────────────────────────────────────────────────────────────────────┘
+ *
+ *   1. Aplikasi cek cache dulu
+ *      ↓
+ *   2. Cache HIT (ada)?
+ *      ├─ YES → Return data dari cache (SELESAI) ✓
+ *      └─ NO  → Lanjut ke step 3
+ *             ↓
+ *   3. Cache MISS → Aplikasi query database
+ *      ↓
+ *   4. Aplikasi simpan hasil query ke cache
+ *      ↓
+ *   5. Return data ke user
+ *
+ *   Kode:
+ *   $data = Cache::get('user:1');        // Step 1-2
+ *   if (!$data) {                         // Step 2 (NO)
+ *       $data = DB::find(1);              // Step 3
+ *       Cache::put('user:1', $data);      // Step 4
+ *   }
+ *   return $data;                         // Step 5
+ *
+ * ┌─────────────────────────────────────────────────────────────────────┐
+ * │ FLOW OPERASI WRITE (Update Data)                                    │
+ * └─────────────────────────────────────────────────────────────────────┘
+ *
+ *   1. Aplikasi update database dulu
+ *      ↓
+ *   2. Aplikasi invalidate (hapus) cache
+ *      atau
+ *   2. Aplikasi update cache dengan data baru
+ *
+ *   Kode (Opsi 1 - Invalidate):
+ *   DB::update(['name' => 'New']);       // Step 1
+ *   Cache::forget('user:1');              // Step 2 - Hapus cache
+ *
+ *   Kode (Opsi 2 - Update):
+ *   $user = DB::update(['name' => 'New']);  // Step 1
+ *   Cache::put('user:1', $user);             // Step 2 - Update cache
+ *
+ * ┌─────────────────────────────────────────────────────────────────────┐
+ * │ KARAKTERISTIK UTAMA                                                  │
+ * └─────────────────────────────────────────────────────────────────────┘
+ *
+ * ✓ Aplikasi yang KONTROL penuh atas cache
+ * ✓ Cache hanya sebagai penyimpanan pasif (dumb storage)
+ * ✓ Lazy loading - data di-cache hanya ketika di-request pertama kali
+ * ✓ Cache miss = query database (bisa lambat di request pertama)
+ *
+ * ┌─────────────────────────────────────────────────────────────────────┐
+ * │ KAPAN MENGGUNAKAN CACHE-ASIDE?                                       │
+ * └─────────────────────────────────────────────────────────────────────┘
+ *
+ * ✓ Read-heavy workload (banyak baca, jarang write)
+ * ✓ Data yang jarang berubah
+ * ✓ Acceptable jika request pertama agak lambat (cache miss)
+ * ✓ Butuh kontrol penuh kapan data di-cache
+ *
+ * CONTOH USE CASE:
+ * - Daftar kursus (jarang berubah, sering dibaca)
+ * - Profile user (jarang update, sering dilihat)
+ * - Static content (kategori, tags, dll)
+ *
+ * ┌─────────────────────────────────────────────────────────────────────┐
+ * │ KELEBIHAN                                                            │
+ * └─────────────────────────────────────────────────────────────────────┘
+ *
+ * ✓ Sederhana dan mudah dipahami
+ * ✓ Cache failure tidak break aplikasi (fallback ke DB)
+ * ✓ Hanya data yang benar-benar dibutuhkan yang di-cache
+ * ✓ Cocok untuk read-heavy workload
+ *
+ * ┌─────────────────────────────────────────────────────────────────────┐
+ * │ KEKURANGAN                                                           │
+ * └─────────────────────────────────────────────────────────────────────┘
+ *
+ * ✗ Cache miss penalty - request pertama lambat
+ * ✗ Aplikasi harus manage cache secara manual
+ * ✗ Bisa terjadi cache inconsistency jika lupa invalidate
+ * ✗ Write operation perlu extra logic untuk update cache
  */
 class CacheAsideStrategy implements CacheStrategyInterface
 {
     /**
-     * Cache tags for grouped operations
-     *
-     * @var array
+     * Tag cache untuk operasi berkelompok
+     * Contoh: ['users', 'user:1'] untuk invalidate semua cache terkait user
      */
     protected array $cacheTags = [];
 
     /**
-     * Cache TTL in seconds
-     *
-     * @var int
+     * Time To Live - berapa lama data disimpan di cache (dalam detik)
+     * Default: 3600 detik (1 jam)
      */
     protected int $ttl;
 
     /**
-     * Cache key prefix
-     *
-     * @var string
+     * Prefix untuk semua cache key
+     * Contoh: 'lms' → cache key jadi 'lms:user:1'
+     * Berguna untuk menghindari collision dengan aplikasi lain
      */
     protected string $prefix;
 
     /**
-     * Constructor
+     * Constructor - Load konfigurasi dari config/caching-strategy.php
      */
     public function __construct()
     {
@@ -47,47 +128,93 @@ class CacheAsideStrategy implements CacheStrategyInterface
     }
 
     /**
-     * Get item from cache or execute callback
+     * ═══════════════════════════════════════════════════════════════════
+     * GET - Mengambil data dari cache atau database
+     * ═══════════════════════════════════════════════════════════════════
      *
-     * @param string $key Cache key
-     * @param callable $callback Function to execute on cache miss
-     * @return mixed
+     * FLOW:
+     * 1. Cek cache dengan key yang diberikan
+     * 2. CACHE HIT? → Return data dari cache ✓
+     * 3. CACHE MISS? → Eksekusi callback (query DB)
+     * 4. Simpan hasil ke cache untuk request berikutnya
+     * 5. Return data
+     *
+     * CONTOH PENGGUNAAN:
+     * ```php
+     * $quiz = $cacheStrategy->get('quiz:123', function() {
+     *     return DB::table('quizzes')->find(123);
+     * });
+     * ```
+     *
+     * Request pertama: Cache MISS → Query DB → Simpan ke cache → Return
+     * Request kedua: Cache HIT → Return langsung dari cache (CEPAT!)
+     *
+     * @param string $key Cache key (contoh: 'quiz:123')
+     * @param callable $callback Function untuk fetch data dari DB jika cache miss
+     * @return mixed Data dari cache atau database
      */
     public function get(string $key, callable $callback): mixed
     {
         $prefixedKey = $this->getPrefixedKey($key);
 
-        // Check if cache tags are set
+        // STEP 1-2: Cek cache (dengan atau tanpa tags)
         if (!empty($this->cacheTags)) {
             $value = Cache::tags($this->cacheTags)->get($prefixedKey);
         } else {
             $value = Cache::get($prefixedKey);
         }
 
-        // Cache hit - return cached value
+        // STEP 2: CACHE HIT - langsung return
         if ($value !== null) {
             return $value;
         }
 
-        // Cache miss - execute callback to fetch fresh data
+        // STEP 3: CACHE MISS - eksekusi callback untuk fetch dari database
         $value = $callback();
 
-        // Store in cache (use original key, put() will handle prefixing)
+        // STEP 4: Simpan ke cache untuk request berikutnya
         $this->put($key, $value);
 
+        // STEP 5: Return data
         return $value;
     }
 
     /**
-     * Store item in cache
+     * ═══════════════════════════════════════════════════════════════════
+     * PUT - Menyimpan data ke cache
+     * ═══════════════════════════════════════════════════════════════════
      *
-     * In Cache-Aside, application handles DB writes separately.
-     * This method just updates the cache.
+     * PENTING: Di Cache-Aside, method ini HANYA update cache.
+     * Aplikasi yang bertanggung jawab untuk update database secara terpisah!
+     *
+     * FLOW:
+     * 1. Aplikasi sudah update DB (di luar method ini)
+     * 2. Method ini hanya simpan/update value di cache
+     *
+     * CONTOH PENGGUNAAN (Yang BENAR):
+     * ```php
+     * // Step 1: Update database dulu
+     * $quiz = Quiz::find(123);
+     * $quiz->update(['title' => 'New Title']);
+     *
+     * // Step 2: Update cache
+     * $cacheStrategy->put('quiz:123', $quiz);
+     * ```
+     *
+     * ATAU bisa juga invalidate (hapus cache):
+     * ```php
+     * $quiz->update(['title' => 'New Title']);
+     * $cacheStrategy->forget('quiz:123');  // Hapus cache
+     * // Request berikutnya akan cache miss → query DB → dapat data terbaru
+     * ```
+     *
+     * CATATAN: Parameter $persist diabaikan di Cache-Aside karena
+     * aplikasi yang manage DB write secara eksplisit.
      *
      * @param string $key Cache key
-     * @param mixed $value Value to cache
-     * @param callable|null $persist Not used in Cache-Aside (app handles DB writes)
-     * @return bool
+     * @param mixed $value Nilai yang akan disimpan di cache
+     * @param callable|null $persist DIABAIKAN di Cache-Aside
+     * @return bool true jika berhasil
      */
     public function put(string $key, mixed $value, ?callable $persist = null): bool
     {
@@ -101,10 +228,25 @@ class CacheAsideStrategy implements CacheStrategyInterface
     }
 
     /**
-     * Remove item from cache
+     * ═══════════════════════════════════════════════════════════════════
+     * FORGET - Menghapus data dari cache (Invalidation)
+     * ═══════════════════════════════════════════════════════════════════
      *
-     * @param string $key Cache key
-     * @return bool
+     * Digunakan untuk invalidate cache setelah data di database berubah.
+     *
+     * CONTOH:
+     * ```php
+     * // Update database
+     * Quiz::find(123)->update(['title' => 'New']);
+     *
+     * // Invalidate cache
+     * $cacheStrategy->forget('quiz:123');
+     *
+     * // Request berikutnya akan ambil data fresh dari database
+     * ```
+     *
+     * @param string $key Cache key yang akan dihapus
+     * @return bool true jika berhasil
      */
     public function forget(string $key): bool
     {
@@ -118,11 +260,8 @@ class CacheAsideStrategy implements CacheStrategyInterface
     }
 
     /**
-     * Get from cache or execute callback and store result
-     *
-     * @param string $key Cache key
-     * @param callable $callback Function to execute on cache miss
-     * @return mixed
+     * REMEMBER - Alias untuk get()
+     * Perilaku sama persis dengan get()
      */
     public function remember(string $key, callable $callback): mixed
     {
@@ -130,10 +269,25 @@ class CacheAsideStrategy implements CacheStrategyInterface
     }
 
     /**
-     * Set cache tags for grouped operations
+     * ═══════════════════════════════════════════════════════════════════
+     * TAGS - Set tag untuk operasi cache berkelompok
+     * ═══════════════════════════════════════════════════════════════════
      *
-     * @param array $tags Array of tag names
-     * @return self
+     * Tags berguna untuk invalidate banyak cache sekaligus.
+     *
+     * CONTOH:
+     * ```php
+     * // Simpan dengan tag
+     * $strategy->tags(['users', 'user:1'])->put('profile:1', $user);
+     * $strategy->tags(['users', 'user:2'])->put('profile:2', $user2);
+     *
+     * // Invalidate semua cache dengan tag 'users'
+     * $strategy->flushTags(['users']);
+     * // Kedua profile:1 dan profile:2 terhapus!
+     * ```
+     *
+     * @param array $tags Array nama tag
+     * @return self Untuk method chaining
      */
     public function tags(array $tags): self
     {
@@ -142,10 +296,10 @@ class CacheAsideStrategy implements CacheStrategyInterface
     }
 
     /**
-     * Flush all cache entries with specific tags
+     * FLUSH TAGS - Hapus semua cache dengan tag tertentu
      *
-     * @param array $tags Array of tag names
-     * @return bool
+     * @param array $tags Array nama tag yang akan di-flush
+     * @return bool true jika berhasil
      */
     public function flushTags(array $tags): bool
     {
@@ -153,10 +307,8 @@ class CacheAsideStrategy implements CacheStrategyInterface
     }
 
     /**
-     * Get prefixed cache key
-     *
-     * @param string $key Original key
-     * @return string Prefixed key
+     * Menambahkan prefix ke cache key
+     * Contoh: 'quiz:123' → 'lms:quiz:123'
      */
     protected function getPrefixedKey(string $key): string
     {

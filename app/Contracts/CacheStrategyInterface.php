@@ -3,62 +3,87 @@
 namespace App\Contracts;
 
 /**
- * Cache Strategy Interface
+ * Interface Strategi Caching
  *
- * Defines the contract for all caching strategies (Cache-Aside, Read-Through, Write-Through).
- * This interface ensures consistent API across different caching implementations.
+ * Mendefinisikan kontrak untuk semua strategi caching:
+ * - Cache-Aside (Lazy Loading)
+ * - Read-Through
+ * - Write-Through
+ * - No-Cache (Baseline)
+ *
+ * Interface ini memastikan API yang konsisten di semua implementasi caching.
  */
 interface CacheStrategyInterface
 {
     /**
-     * Get item from cache or execute callback to fetch data
+     * Mengambil data dari cache atau eksekusi callback untuk fetch data
      *
-     * @param string $key Cache key
-     * @param callable $callback Function to execute if cache miss occurs
-     * @return mixed Cached or freshly fetched data
+     * Perilaku berbeda per strategi:
+     * - Cache-Aside: Cek cache → miss? → eksekusi callback → simpan ke cache → return
+     * - Read-Through: Cache::remember() (cache handle semuanya secara transparan)
+     * - Write-Through: Sama seperti Cache-Aside untuk READ operations
+     * - No-Cache: Langsung eksekusi callback (bypass cache)
+     *
+     * @param string $key Kunci cache
+     * @param callable $callback Fungsi yang akan dieksekusi jika cache miss
+     * @return mixed Data dari cache atau hasil callback
      */
     public function get(string $key, callable $callback): mixed;
 
     /**
-     * Store item in cache
+     * Menyimpan data ke cache (dan database jika ada persist callback)
      *
-     * @param string $key Cache key
-     * @param mixed $value Value to cache
-     * @param callable|null $persist Optional callback to persist data to database
-     * @return bool Success status
+     * Perilaku berbeda per strategi:
+     * - Cache-Aside: Update cache saja (aplikasi handle DB write terpisah)
+     * - Read-Through: INVALIDATE cache (hapus, bukan update)
+     * - Write-Through: Write ke DB + Cache secara bersamaan (synchronous)
+     * - No-Cache: Hanya eksekusi persist callback (tidak ada cache operation)
+     *
+     * @param string $key Kunci cache
+     * @param mixed $value Nilai yang akan di-cache
+     * @param callable|null $persist Callback opsional untuk persist ke database
+     * @return bool Status keberhasilan
      */
     public function put(string $key, mixed $value, ?callable $persist = null): bool;
 
     /**
-     * Remove item from cache
+     * Menghapus item dari cache
      *
-     * @param string $key Cache key to remove
-     * @return bool Success status
+     * @param string $key Kunci cache yang akan dihapus
+     * @return bool Status keberhasilan
      */
     public function forget(string $key): bool;
 
     /**
-     * Get from cache or execute callback and store result
+     * Ambil dari cache atau eksekusi callback dan simpan hasilnya
      *
-     * @param string $key Cache key
-     * @param callable $callback Function to execute if cache miss
-     * @return mixed Cached or freshly fetched data
+     * Shorthand untuk get() - biasanya implementasinya sama dengan get()
+     *
+     * @param string $key Kunci cache
+     * @param callable $callback Fungsi yang akan dieksekusi jika cache miss
+     * @return mixed Data dari cache atau hasil callback
      */
     public function remember(string $key, callable $callback): mixed;
 
     /**
-     * Tag cache entries for grouped operations
+     * Tag cache entries untuk operasi berkelompok
      *
-     * @param array $tags Array of tag names
-     * @return self Returns instance for method chaining
+     * Contoh: $strategy->tags(['users', 'posts'])->get('key', $callback)
+     * Berguna untuk invalidasi cache secara berkelompok
+     *
+     * @param array $tags Array nama tag
+     * @return self Returns instance untuk method chaining
      */
     public function tags(array $tags): self;
 
     /**
-     * Flush all entries with specific tags
+     * Flush semua entries dengan tag tertentu
      *
-     * @param array $tags Array of tag names to flush
-     * @return bool Success status
+     * Contoh: $strategy->flushTags(['users'])
+     * Akan menghapus semua cache yang di-tag dengan 'users'
+     *
+     * @param array $tags Array nama tag yang akan di-flush
+     * @return bool Status keberhasilan
      */
     public function flushTags(array $tags): bool;
 }
