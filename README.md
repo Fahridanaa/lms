@@ -1,4 +1,4 @@
-# aku dan laravel
+# LMS Mini - Cache Strategy Benchmarking
 
 ## Project Overview
 
@@ -24,43 +24,14 @@
 
 ## Architecture Overview
 
-### Caching Strategy Pattern
+### Strategy Comparison
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      API Request                            │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Controller                               │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                 Cache Service Layer                         │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │           CacheStrategyInterface                    │    │
-│  │  - get(key): mixed                                  │    │
-│  │  - put(key, value, ttl): bool                       │    │
-│  │  - forget(key): bool                                │    │
-│  │  - remember(key, ttl, callback): mixed              │    │
-│  └─────────────────────────────────────────────────────┘    │
-│           ▲              ▲             ▲             ▲      │
-│           │              │             │             │      │
-│  ┌────────┴────┐ ┌───────┴─────┐ ┌─────┴───────┐ ┌───┴────┐ │
-│  │Cache-Aside  │ │Read-Through │ │Write-Through│ │No-Cache│ │
-│  │  Strategy   │ │  Strategy   │ │  Strategy   │ │Strategy│ │
-│  └─────────────┘ └─────────────┘ └─────────────┘ └────────┘ │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-          ┌───────────────┼──────────────┐
-          ▼               ▼              ▼
-    ┌──────────┐   ┌──────────┐   ┌──────────┐
-    │  Redis   │   │  MySQL   │   │  Redis   │
-    │  Cache   │   │ Database │   │  Cache   │
-    └──────────┘   └──────────┘   └──────────┘
-```
+| Strategy      | Data Source | get()                    | put()                      | Coupling |
+| ------------- | ----------- | ------------------------ | -------------------------- | -------- |
+| Cache-Aside   | Callback    | Check cache → callback   | Update cache only          | HIGH     |
+| Read-Through  | Loaders     | Check cache → loader     | Invalidate cache           | LOW      |
+| Write-Through | Stores      | Check cache → store.load | store.store + update cache | LOW      |
+| No-Cache      | Callback    | Always callback          | Callback only              | HIGH     |
 
 ### Strategy Switching (Config-Based)
 
@@ -70,101 +41,6 @@ CACHE_STRATEGY=cache-aside  # Options: cache-aside, read-through, write-through,
 CACHE_DRIVER=redis
 CACHE_TTL=3600
 ```
-
----
-
-## Project Structure
-
-```
-lms/
-├── app/
-│   ├── Constants/
-│   │   ├── ResponseMessage.php
-│   │   └── Messages/
-│   │       ├── AssignmentMessage.php
-│   │       ├── GradeMessage.php
-│   │       ├── MaterialMessage.php
-│   │       └── QuizMessage.php
-│   ├── Contracts/
-│   │   ├── CacheStrategyInterface.php
-│   │   └── RepositoryInterface.php
-│   ├── Exceptions/
-│   │   └── BusinessException.php
-│   ├── Services/
-│   │   ├── Cache/
-│   │   │   ├── CacheAsideStrategy.php
-│   │   │   ├── ReadThroughStrategy.php
-│   │   │   ├── WriteThroughStrategy.php
-│   │   │   └── NoCacheStrategy.php
-│   │   ├── QuizService.php
-│   │   ├── MaterialService.php
-│   │   ├── AssignmentService.php
-│   │   ├── GradebookService.php
-│   │   └── QuizScoringService.php
-│   ├── Repositories/
-│   │   ├── BaseRepository.php
-│   │   ├── QuizRepository.php
-│   │   ├── MaterialRepository.php
-│   │   ├── AssignmentRepository.php
-│   │   ├── SubmissionRepository.php
-│   │   ├── QuizAttemptRepository.php
-│   │   └── GradeRepository.php
-│   ├── Http/
-│   │   ├── Controllers/
-│   │   │   ├── Controller.php
-│   │   │   └── Api/
-│   │   │       ├── QuizController.php
-│   │   │       ├── MaterialController.php
-│   │   │       ├── AssignmentController.php
-│   │   │       └── GradebookController.php
-│   │   ├── Controllers/Traits/
-│   │   │   └── ApiResponseTrait.php
-│   │   └── Requests/
-│   │       ├── StoreMaterialRequest.php
-│   │       ├── UpdateMaterialRequest.php
-│   │       ├── SubmitAssignmentRequest.php
-│   │       ├── GradeSubmissionAssignmentRequest.php
-│   │       ├── StartAttemptQuizRequest.php
-│   │       ├── SubmitAttemptQuizRequest.php
-│   │       └── UpdateGradebookRequest.php
-│   ├── Models/
-│   │   ├── User.php
-│   │   ├── Course.php
-│   │   ├── Quiz.php
-│   │   ├── Question.php
-│   │   ├── QuizAttempt.php
-│   │   ├── Material.php
-│   │   ├── Assignment.php
-│   │   ├── Submission.php
-│   │   ├── Grade.php
-│   │   └── CourseEnrollment.php
-│   └── Providers/
-│       ├── AppServiceProvider.php
-│       ├── CacheStrategyServiceProvider.php
-│       └── TelescopeServiceProvider.php
-├── config/
-│   └── caching-strategy.php
-├── database/
-│   ├── migrations/
-│   ├── seeders/
-│   │   ├── DatabaseSeeder.php
-│   │   ├── UserSeeder.php
-│   │   ├── CourseSeeder.php
-│   │   ├── QuizSeeder.php
-│   │   ├── MaterialSeeder.php
-│   │   └── AssignmentSeeder.php
-│   └── factories/
-├── routes/
-│   └── api.php
-├── tests/
-│   ├── Feature/
-│   │   └── Api/
-│   └── Benchmark/
-│       └── k6/
-├── compose.yml
-└── .env.example
-```
-
 ---
 
 ## Database Schema
@@ -194,7 +70,13 @@ lms/
 
 ### 1. Cache-Aside (Lazy Loading)
 
+**Karakteristik:** Aplikasi yang mengontrol cache secara eksplisit menggunakan callback.
+
 ```php
+// Usage - callback required
+$quiz = $cache->get('quiz:123', fn() => Quiz::find(123));
+
+// Implementation
 public function get(string $key, callable $callback): mixed
 {
     if ($cached = Cache::get($key)) {
@@ -206,30 +88,111 @@ public function get(string $key, callable $callback): mixed
 
     return $value;
 }
-
-public function put(string $key, mixed $value): bool
-{
-    return Cache::forget($key);
-}
 ```
 
-### 2. Read-Through
+### 2. Read-Through (with Loaders)
+
+**Karakteristik:** Cache layer yang transparan dengan pre-configured loaders. Tidak perlu callback
 
 ```php
-public function get(string $key, callable $dataSource): mixed
+// CacheLoaderInterface
+interface CacheLoaderInterface
 {
-    return Cache::remember($key, $this->ttl, $dataSource);
+    public function supports(string $key): bool;  // Can handle this key?
+    public function load(string $key): mixed;     // Fetch from database
 }
+
+// QuizCacheLoader implementation
+class QuizCacheLoader extends BaseCacheLoader
+{
+    protected string $prefix = 'quiz';
+
+    public function supports(string $key): bool
+    {
+        return str_starts_with($key, 'quiz:') || $key === 'quizzes:all';
+    }
+
+    public function load(string $key): mixed
+    {
+        if ($key === 'quizzes:all') {
+            return $this->quizRepository->getAllWithCourse();
+        }
+
+        $id = $this->extractId($key);
+        $subkey = $this->extractSubkey($key);
+
+        return match ($subkey) {
+            'with-questions' => $this->quizRepository->findWithQuestionsAndCourse($id),
+            'questions' => $this->quizRepository->getQuestions($id),
+            default => $this->quizRepository->find($id),
+        };
+    }
+}
+
+// Usage - NO callback needed!
+$quiz = $cache->get('quiz:123');
+$questions = $cache->get('quiz:123:questions');
+$allQuizzes = $cache->get('quizzes:all');
+
+// Write invalidates cache (next read will fetch fresh data)
+$cache->put('quiz:123', $quiz);  // Invalidates, doesn't update
 ```
 
-### 3. Write-Through
+### 3. Write-Through (with Stores)
+
+**Karakteristik:** Synchronous write ke database DAN cache menggunakan pre-configured stores.
 
 ```php
-public function put(string $key, mixed $value, callable $persist): bool
+// CacheStoreInterface (extends CacheLoaderInterface)
+interface CacheStoreInterface extends CacheLoaderInterface
 {
-    $persist($value);
-    Cache::put($key, $value, $this->ttl);
-    return true;
+    public function store(string $key, mixed $value): void;  // Save to database
+    public function erase(string $key): void;                // Delete from database
+}
+
+// QuizCacheStore implementation
+class QuizCacheStore extends BaseCacheStore
+{
+    public function store(string $key, mixed $value): void
+    {
+        if ($value instanceof Quiz) {
+            $value->save();  // Eloquent model save
+            return;
+        }
+
+        $id = $this->extractId($key);
+        if ($id > 0 && is_array($value)) {
+            $this->quizRepository->update($id, $value);
+        }
+    }
+
+    public function erase(string $key): void
+    {
+        $id = $this->extractId($key);
+        if ($id > 0) {
+            $this->quizRepository->delete($id);
+        }
+    }
+}
+
+// Usage - NO callback needed!
+$quiz = $cache->get('quiz:123');           // Store.load() on miss
+$cache->put('quiz:123', $quiz);            // Store.store() + cache update
+$cache->forget('quiz:123');                // Store.erase() + cache delete
+```
+
+### 4. No-Cache (Baseline)
+
+**Karakteristik:** Tidak ada caching - semua request langsung ke database. Digunakan sebagai baseline benchmark.
+
+```php
+// Usage - callback required (always executed)
+$quiz = $cache->get('quiz:123', fn() => Quiz::find(123));
+
+// Implementation
+public function get(string $key, callable $callback): mixed
+{
+    return $callback();  // Always hit database
 }
 ```
 
@@ -375,7 +338,7 @@ cp .env.example .env
 
 ```bash
 # Edit .env file
-CACHE_STRATEGY=cache-aside  # / read-through, write-through, no-cache
+CACHE_STRATEGY=cache-aside  # Options: cache-aside, read-through, write-through, no-cache
 
 ./vendor/bin/sail artisan cache:clear
 ./vendor/bin/sail artisan config:clear
@@ -386,9 +349,20 @@ CACHE_STRATEGY=cache-aside  # / read-through, write-through, no-cache
 
 ```bash
 ./vendor/bin/sail artisan tinker --execute="
-$strategy = app(\App\Contracts\CacheStrategyInterface::class);
-echo 'Strategy Class: ' . get_class($strategy);
+\$strategy = app(\App\Contracts\CacheStrategyInterface::class);
+echo 'Strategy Class: ' . get_class(\$strategy);
 "
+```
+
+### Running Tests
+
+```bash
+# Run all cache strategy tests
+./vendor/bin/sail artisan test tests/Unit/Services/Cache/
+
+# Run specific strategy test
+./vendor/bin/sail artisan test tests/Unit/Services/Cache/ReadThroughStrategyTest.php
+./vendor/bin/sail artisan test tests/Unit/Services/Cache/WriteThroughStrategyTest.php
 ```
 
 ### Telescope Access
@@ -396,113 +370,3 @@ echo 'Strategy Class: ' . get_class($strategy);
 ```
 URL: http://localhost/telescope
 ```
-
----
-
-## Coding Standards
-
-### General Rules
-
-1. **PSR-12** coding standard
-2. **Type hints** untuk semua parameter dan return types
-3. **DocBlocks** untuk semua public methods
-4. **Interface-based** design untuk strategy pattern
-5. **Repository pattern** untuk data access
-6. **Form Request Validation** untuk semua input validation
-7. **SoftDeletes** untuk logical deletion pada semua model utama
-8. **BusinessException** untuk custom exception handling
-9. **Message Constants** untuk consistent response messages
-
-### Naming Conventions
-
-```php
-// Interfaces
-interface CacheStrategyInterface {}
-interface RepositoryInterface {}
-
-// Strategy Classes
-class CacheAsideStrategy implements CacheStrategyInterface {}
-class ReadThroughStrategy implements CacheStrategyInterface {}
-class WriteThroughStrategy implements CacheStrategyInterface {}
-class NoCacheStrategy implements CacheStrategyInterface {}
-
-// Repository Classes
-abstract class BaseRepository implements RepositoryInterface {}
-class QuizRepository extends BaseRepository {}
-class MaterialRepository extends BaseRepository {}
-
-// Service Classes
-class QuizService {}
-class MaterialService {}
-
-// Form Request Classes
-class StoreMaterialRequest extends FormRequest {}
-class UpdateMaterialRequest extends FormRequest {}
-
-// Exception Classes
-class BusinessException extends Exception {}
-
-// Message Constants
-class QuizMessage {}
-class MaterialMessage {}
-
-// Cache Keys (konsisten dan descriptive)
-"quiz:{id}"
-"quiz:{id}:questions"
-"course:{id}:materials"
-"course:{id}:gradebook"
-"user:{id}:grades"
-```
-
-### Cache Key Patterns
-
-```php
-// Format: {entity}:{id}:{relation?}
-// Contoh:
-"quiz:123"
-"quiz:123:questions"
-"course:45:materials"
-"course:45:gradebook"
-"user:789:grades"
-"assignment:56:submissions"
-```
-
-### Repository Pattern
-
-```php
-abstract class BaseRepository implements RepositoryInterface
-{
-    public function all(array $relations = []): Collection;
-    public function find(int $id, array $relations = []): ?Model;
-    public function create(array $data): Model;
-    public function update(int $id, array $data): Model;
-    public function delete(int $id): bool;
-}
-
-class QuizRepository extends BaseRepository
-{
-    public function getAllWithCourse(): Collection;
-    public function findWithQuestionsAndCourse(int $id): ?Quiz;
-    public function getByCourse(int $courseId): Collection;
-}
-```
-
-### Form Request Validation
-
-```php
-class StoreMaterialRequest extends FormRequest
-{
-    public function rules(): array
-    {
-        return [
-            'course_id' => 'required|exists:courses,id',
-            'title' => 'required|string|max:255',
-            'file_path' => 'required|string',
-            'file_size' => 'required|integer|max:104857600',
-            'type' => 'required|in:pdf,video,document,other',
-        ];
-    }
-}
-```
-
----
