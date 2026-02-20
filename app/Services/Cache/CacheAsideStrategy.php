@@ -150,11 +150,16 @@ class CacheAsideStrategy implements CacheStrategyInterface
      * Request kedua: Cache HIT → Return langsung dari cache (CEPAT!)
      *
      * @param string $key Cache key (contoh: 'quiz:123')
-     * @param callable $callback Function untuk fetch data dari DB jika cache miss
+     * @param callable|null $callback Function untuk fetch data dari DB jika cache miss
      * @return mixed Data dari cache atau database
+     * @throws \RuntimeException If callback is null
      */
-    public function get(string $key, callable $callback): mixed
+    public function get(string $key, ?callable $callback = null): mixed
     {
+        if ($callback === null) {
+            throw new \RuntimeException("Cache-Aside strategy requires a callback for key: {$key}");
+        }
+
         $prefixedKey = $this->getPrefixedKey($key);
 
         // STEP 1-2: Cek cache (dengan atau tanpa tags)
@@ -263,7 +268,7 @@ class CacheAsideStrategy implements CacheStrategyInterface
      * REMEMBER - Alias untuk get()
      * Perilaku sama persis dengan get()
      */
-    public function remember(string $key, callable $callback): mixed
+    public function remember(string $key, ?callable $callback = null): mixed
     {
         return $this->get($key, $callback);
     }

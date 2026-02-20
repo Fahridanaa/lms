@@ -255,11 +255,15 @@ class NoCacheStrategy implements CacheStrategyInterface
      * - Cache strategies: Parameter $key DIGUNAKAN untuk lookup dan store
      *
      * @param string $key Cache key (DIABAIKAN - tidak digunakan)
-     * @param callable $callback Fungsi yang akan SELALU dieksekusi
+     * @param callable|null $callback Fungsi yang akan SELALU dieksekusi
      * @return mixed Data hasil eksekusi callback (langsung dari database)
+     * @throws \RuntimeException If callback is null
      */
-    public function get(string $key, callable $callback): mixed
+    public function get(string $key, ?callable $callback = null): mixed
     {
+        if ($callback === null) {
+            throw new \RuntimeException("No-Cache strategy requires a callback for key: {$key}");
+        }
         // SELALU eksekusi callback - TIDAK ADA cache lookup
         // Setiap pemanggilan get() = database query baru
         return $callback();
@@ -391,13 +395,13 @@ class NoCacheStrategy implements CacheStrategyInterface
      * - No-Cache: remember() = get() = callback() (tidak ada bedanya)
      *
      * @param string $key Cache key (DIABAIKAN)
-     * @param callable $callback Fungsi yang akan SELALU dieksekusi
+     * @param callable|null $callback Fungsi yang akan SELALU dieksekusi
      * @return mixed Data hasil eksekusi callback
      */
-    public function remember(string $key, callable $callback): mixed
+    public function remember(string $key, ?callable $callback = null): mixed
     {
         // Selalu eksekusi callback - tidak ada caching
-        return $callback();
+        return $this->get($key, $callback);
     }
 
     /**

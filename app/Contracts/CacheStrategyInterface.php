@@ -16,19 +16,19 @@ namespace App\Contracts;
 interface CacheStrategyInterface
 {
     /**
-     * Mengambil data dari cache atau eksekusi callback untuk fetch data
+     * Mengambil data dari cache atau fetch dari database
      *
      * Perilaku berbeda per strategi:
      * - Cache-Aside: Cek cache → miss? → eksekusi callback → simpan ke cache → return
-     * - Read-Through: Cache::remember() (cache handle semuanya secara transparan)
-     * - Write-Through: Sama seperti Cache-Aside untuk READ operations
+     * - Read-Through: Cek cache → miss? → loader.load() → simpan ke cache → return
+     * - Write-Through: Cek cache → miss? → store.load() → simpan ke cache → return
      * - No-Cache: Langsung eksekusi callback (bypass cache)
      *
      * @param string $key Kunci cache
-     * @param callable $callback Fungsi yang akan dieksekusi jika cache miss
-     * @return mixed Data dari cache atau hasil callback
+     * @param callable|null $callback Fungsi untuk fetch data (Cache-Aside/No-Cache)
+     * @return mixed Data dari cache atau hasil fetch
      */
-    public function get(string $key, callable $callback): mixed;
+    public function get(string $key, ?callable $callback = null): mixed;
 
     /**
      * Menyimpan data ke cache (dan database jika ada persist callback)
@@ -55,15 +55,15 @@ interface CacheStrategyInterface
     public function forget(string $key): bool;
 
     /**
-     * Ambil dari cache atau eksekusi callback dan simpan hasilnya
+     * Ambil dari cache atau fetch dan simpan hasilnya
      *
      * Shorthand untuk get() - biasanya implementasinya sama dengan get()
      *
      * @param string $key Kunci cache
-     * @param callable $callback Fungsi yang akan dieksekusi jika cache miss
-     * @return mixed Data dari cache atau hasil callback
+     * @param callable|null $callback Fungsi untuk fetch data (Cache-Aside/No-Cache)
+     * @return mixed Data dari cache atau hasil fetch
      */
-    public function remember(string $key, callable $callback): mixed;
+    public function remember(string $key, ?callable $callback = null): mixed;
 
     /**
      * Tag cache entries untuk operasi berkelompok

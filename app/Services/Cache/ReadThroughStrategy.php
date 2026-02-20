@@ -2,6 +2,7 @@
 
 namespace App\Services\Cache;
 
+use App\Contracts\CacheLoaderInterface;
 use App\Contracts\CacheStrategyInterface;
 use Illuminate\Support\Facades\Cache;
 
@@ -14,107 +15,42 @@ use Illuminate\Support\Facades\Cache;
  * Cache layer yang bertanggung jawab untuk fetch data dari database secara OTOMATIS.
  * Aplikasi hanya berinteraksi dengan cache, tidak perlu tahu tentang database!
  *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ PERBEDAAN UTAMA DENGAN CACHE-ASIDE                                   │
- * └─────────────────────────────────────────────────────────────────────┘
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │ DENGAN LOADERS (Oracle Pattern)                                         │
+ * └─────────────────────────────────────────────────────────────────────────┘
  *
- * CACHE-ASIDE:
- *   Aplikasi → Cek Cache → Miss? → Aplikasi Query DB → Aplikasi Update Cache
- *   (Aplikasi yang HANDLE semuanya)
+ *   // Setup (sekali, di ServiceProvider)
+ *   $cache = new ReadThroughStrategy([
+ *       new QuizCacheLoader(),
+ *       new UserCacheLoader(),
+ *       new CourseCacheLoader(),
+ *   ]);
  *
- * READ-THROUGH:
- *   Aplikasi → Minta ke Cache → Cache otomatis cek → Miss? → Cache Query DB → Return
- *   (Cache yang HANDLE semuanya, aplikasi cuma minta)
+ *   // Usage (simple, no callback!)
+ *   $quiz = $cache->get('quiz:123');   // QuizCacheLoader handles this
+ *   $user = $cache->get('user:456');   // UserCacheLoader handles this
  *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ FLOW OPERASI READ (Membaca Data)                                    │
- * └─────────────────────────────────────────────────────────────────────┘
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │ DENGAN CALLBACK (Fallback/Backward Compatible)                          │
+ * └─────────────────────────────────────────────────────────────────────────┘
  *
- *   1. Aplikasi minta data ke cache layer
- *      ↓
- *   2. Cache layer cek apakah data ada
- *      ├─ YES (Cache HIT)  → Return data dari cache ✓
- *      └─ NO  (Cache MISS) → Lanjut ke step 3
- *             ↓
- *   3. Cache layer OTOMATIS query database (aplikasi tidak tahu!)
- *      ↓
- *   4. Cache layer simpan hasil query untuk next request
- *      ↓
- *   5. Cache layer return data ke aplikasi
+ *   // Jika tidak ada loader yang match, callback digunakan
+ *   $data = $cache->get('custom:key', fn() => fetchData());
  *
- *   Kode (menggunakan Laravel Cache::remember):
- *   $data = Cache::remember('user:1', 3600, function() {
- *       return DB::find(1);  // Dieksekusi otomatis oleh cache jika miss
- *   });
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │ FLOW OPERASI                                                            │
+ * └─────────────────────────────────────────────────────────────────────────┘
  *
- *   PERHATIKAN: Aplikasi hanya memanggil Cache::remember SEKALI.
- *   Cache yang menangani semua logic: cek → miss? → query → simpan → return
+ *   READ:
+ *   1. Cache layer cek apakah data ada di cache
+ *   2. Cache MISS → Find loader yang supports($key)
+ *   3. Loader.load($key) → Fetch dari database
+ *   4. Simpan ke cache → Return data
  *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ FLOW OPERASI WRITE (Update Data)                                    │
- * └─────────────────────────────────────────────────────────────────────┘
- *
- *   PENTING: Di Read-Through, write operation TIDAK update cache!
- *   Yang dilakukan adalah INVALIDATION (hapus cache).
- *
- *   1. Aplikasi/Service update database
- *      ↓
- *   2. Aplikasi/Service INVALIDATE (hapus) cache
- *      ↓
- *   3. Request READ berikutnya akan cache miss
- *      ↓
- *   4. Cache akan otomatis fetch data TERBARU dari database
- *
- *   Kode:
- *   DB::update(['name' => 'New']);    // Step 1 - Update DB
- *   Cache::forget('user:1');           // Step 2 - Hapus cache
- *   // Step 3-4 terjadi otomatis di request berikutnya
- *
- *   KENAPA INVALIDATE, BUKAN UPDATE?
- *   ✓ Lebih sederhana - tidak perlu tahu struktur data yang di-cache
- *   ✓ Lebih aman - cache pasti sinkron dengan DB (karena langsung diambil dari DB)
- *   ✓ Konsisten dengan prinsip "cache as single source" untuk READ
- *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ KARAKTERISTIK UTAMA                                                  │
- * └─────────────────────────────────────────────────────────────────────┘
- *
- * ✓ Cache layer sebagai ABSTRAKSI transparan antara app dan database
- * ✓ Aplikasi tidak perlu tahu tentang cache miss/hit
- * ✓ Cache yang handle semua read logic (fetch, store, return)
- * ✓ Write = UPDATE DB + INVALIDATE cache (bukan update cache)
- *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ KAPAN MENGGUNAKAN READ-THROUGH?                                      │
- * └─────────────────────────────────────────────────────────────────────┘
- *
- * ✓ Ingin simplifikasi application code (cache handle semuanya)
- * ✓ Read-heavy workload dengan data yang konsisten
- * ✓ Acceptable jika write operation sedikit lebih lambat
- * ✓ Ingin cache sebagai "transparent layer" di depan database
- *
- * CONTOH USE CASE:
- * - Course catalog (banyak read, jarang write)
- * - User profiles (sering dibaca, jarang update)
- * - Configuration settings (hampir selalu read)
- *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ KELEBIHAN                                                            │
- * └─────────────────────────────────────────────────────────────────────┘
- *
- * ✓ Application code lebih simple (cache handle complexity)
- * ✓ Cache consistency terjamin (selalu sync dengan DB)
- * ✓ Cache as "single source of truth" untuk read operations
- * ✓ Tidak perlu khawatir lupa update cache saat write
- *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │ KEKURANGAN                                                           │
- * └─────────────────────────────────────────────────────────────────────┘
- *
- * ✗ Cache miss penalty (request pertama lambat)
- * ✗ Write operation butuh 2 step: update DB + invalidate cache
- * ✗ Tidak cocok untuk write-heavy workload (banyak invalidation)
- * ✗ Cache churn jika data sering berubah
+ *   WRITE:
+ *   1. Update database (via callback atau manual)
+ *   2. INVALIDATE cache (hapus, bukan update!)
+ *   3. Request berikutnya → cache miss → loader fetch data fresh
  */
 class ReadThroughStrategy implements CacheStrategyInterface
 {
@@ -122,10 +58,39 @@ class ReadThroughStrategy implements CacheStrategyInterface
     protected int $ttl;
     protected string $prefix;
 
-    public function __construct()
+    /** @var CacheLoaderInterface[] */
+    protected array $loaders = [];
+
+    /**
+     * @param CacheLoaderInterface[] $loaders Array of loaders
+     */
+    public function __construct(array $loaders = [])
     {
         $this->ttl = config('caching-strategy.ttl', 3600);
         $this->prefix = config('caching-strategy.prefix', 'lms');
+        $this->loaders = $loaders;
+    }
+
+    /**
+     * Register additional loader
+     */
+    public function addLoader(CacheLoaderInterface $loader): static
+    {
+        $this->loaders[] = $loader;
+        return $this;
+    }
+
+    /**
+     * Find loader that supports the given key
+     */
+    protected function findLoader(string $key): ?CacheLoaderInterface
+    {
+        foreach ($this->loaders as $loader) {
+            if ($loader->supports($key)) {
+                return $loader;
+            }
+        }
+        return null;
     }
 
     /**
@@ -133,49 +98,32 @@ class ReadThroughStrategy implements CacheStrategyInterface
      * GET - Cache layer yang transparently handle fetch dari database
      * ═══════════════════════════════════════════════════════════════════
      *
-     * INI ADALAH INTI dari Read-Through pattern!
-     * Menggunakan Cache::remember() yang secara OTOMATIS:
-     * 1. Cek cache
-     * 2. Jika miss → Eksekusi callback
-     * 3. Simpan hasil ke cache
-     * 4. Return data
-     *
-     * FLOW INTERNAL (handled by Laravel Cache::remember):
-     * → Cache::get('key')
-     * → null? → callback() → Cache::put('key', result) → return result
-     * → ada? → return result
-     *
-     * CONTOH PENGGUNAAN:
-     * ```php
-     * $quiz = $readThrough->get('quiz:123', function() {
-     *     return Quiz::find(123);  // Hanya dieksekusi jika cache miss
-     * });
-     * ```
-     *
-     * APLIKASI TIDAK PERLU TAHU:
-     * - Apakah data dari cache atau database
-     * - Kapan cache di-populate
-     * - Bagaimana cache di-manage
-     *
-     * Cache layer handle semuanya secara transparan!
+     * Flow:
+     * 1. Check cache → HIT? return
+     * 2. Find loader yang supports($key) → load()
+     * 3. No loader? CRASH! (RuntimeException)
      *
      * @param string $key Cache key
-     * @param callable $callback Data source (akan dieksekusi otomatis jika cache miss)
+     * @param callable|null $callback IGNORED - only for interface compatibility
      * @return mixed Data dari cache atau database
+     * @throws \RuntimeException If no loader supports the key
      */
-    public function get(string $key, callable $callback): mixed
+    public function get(string $key, ?callable $callback = null): mixed
     {
         $prefixedKey = $this->getPrefixedKey($key);
 
-        // READ-THROUGH: Cache::remember() melakukan semua magic!
-        // 1. Cek cache
-        // 2. Miss? → Eksekusi callback → Simpan hasil → Return
-        // 3. Hit? → Return langsung
-        if (!empty($this->cacheTags)) {
-            return Cache::tags($this->cacheTags)->remember($prefixedKey, $this->ttl, $callback);
+        $loader = $this->findLoader($key);
+        if ($loader === null) {
+            throw new \RuntimeException("No loader registered for cache key: {$key}");
         }
 
-        return Cache::remember($prefixedKey, $this->ttl, $callback);
+        $dataSource = fn() => $loader->load($key);
+
+        if (!empty($this->cacheTags)) {
+            return Cache::tags($this->cacheTags)->remember($prefixedKey, $this->ttl, $dataSource);
+        }
+
+        return Cache::remember($prefixedKey, $this->ttl, $dataSource);
     }
 
     /**
@@ -183,38 +131,8 @@ class ReadThroughStrategy implements CacheStrategyInterface
      * PUT - Invalidate cache (BUKAN update cache!)
      * ═══════════════════════════════════════════════════════════════════
      *
-     * INI PERBEDAAN PENTING dari Cache-Aside!
-     *
-     * CACHE-ASIDE put():    Update cache dengan value baru
-     * READ-THROUGH put():   HAPUS cache (invalidation)
-     *
-     * KENAPA INVALIDATE?
-     * Karena prinsip Read-Through: "Cache akan fetch data fresh dari DB
-     * secara otomatis di request berikutnya."
-     *
-     * FLOW:
-     * 1. Eksekusi persist callback (update database)
-     * 2. HAPUS cache (bukan update!)
-     * 3. Request berikutnya akan cache miss
-     * 4. Cache akan otomatis fetch data TERBARU dari database
-     *
-     * CONTOH PENGGUNAAN:
-     * ```php
-     * // Update database dan invalidate cache
-     * $readThrough->put('quiz:123', $newData, function($data) {
-     *     Quiz::find(123)->update($data);  // Update DB
-     * });
-     * // Cache dihapus, request berikutnya akan ambil data fresh dari DB
-     * ```
-     *
-     * ATAU bisa juga:
-     * ```php
-     * // Update DB manual
-     * Quiz::find(123)->update(['title' => 'New']);
-     *
-     * // Lalu invalidate cache
-     * $readThrough->forget('quiz:123');
-     * ```
+     * Di Read-Through, put() INVALIDATE cache (hapus), bukan update.
+     * Request berikutnya akan cache miss dan loader akan fetch data fresh.
      *
      * @param string $key Cache key
      * @param mixed $value Nilai (untuk persist callback)
@@ -225,13 +143,12 @@ class ReadThroughStrategy implements CacheStrategyInterface
     {
         $prefixedKey = $this->getPrefixedKey($key);
 
-        // Step 1: Update database (jika persist callback ada)
+        // Update database (jika persist callback ada)
         if ($persist !== null) {
             $persist($value);
         }
 
-        // Step 2: INVALIDATE cache (hapus, bukan update!)
-        // Request berikutnya akan cache miss dan fetch data fresh
+        // INVALIDATE cache (hapus, bukan update!)
         if (!empty($this->cacheTags)) {
             return Cache::tags($this->cacheTags)->forget($prefixedKey);
         }
@@ -255,9 +172,8 @@ class ReadThroughStrategy implements CacheStrategyInterface
 
     /**
      * REMEMBER - Sama dengan get()
-     * Untuk Read-Through, remember() dan get() identik
      */
-    public function remember(string $key, callable $callback): mixed
+    public function remember(string $key, ?callable $callback = null): mixed
     {
         return $this->get($key, $callback);
     }
@@ -273,16 +189,6 @@ class ReadThroughStrategy implements CacheStrategyInterface
 
     /**
      * FLUSH TAGS - Hapus semua cache dengan tag tertentu
-     *
-     * CONTOH:
-     * ```php
-     * // Semua quiz di-cache dengan tag 'quizzes'
-     * $strategy->tags(['quizzes'])->get('quiz:1', ...);
-     * $strategy->tags(['quizzes'])->get('quiz:2', ...);
-     *
-     * // Invalidate semua quiz sekaligus
-     * $strategy->flushTags(['quizzes']);
-     * ```
      */
     public function flushTags(array $tags): bool
     {

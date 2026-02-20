@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services\Cache;
 
+use App\Contracts\CacheStoreInterface;
 use App\Services\Cache\WriteThroughStrategy;
 use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
@@ -10,21 +11,64 @@ use Tests\TestCase;
  * Unit tests for Write-Through Caching Strategy
  *
  * Validates implementation follows the pattern:
- * - READ: Check cache → if miss, query DB → store in cache
- * - WRITE: Write to database AND cache simultaneously (synchronous)
- *
- * Key difference from Cache-Aside and Read-Through:
- * - put() writes to BOTH cache AND database at the same time
- * - Cache is always in sync with database after writes
+ * - READ: Check cache → if miss, store.load() fetches from DB → store in cache
+ * - WRITE: store.store() to database AND cache simultaneously
+ * - NO CALLBACK FALLBACK: Throws exception if no store registered
  */
 class WriteThroughStrategyTest extends TestCase
 {
     protected WriteThroughStrategy $strategy;
+    protected $mockStore;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->strategy = new WriteThroughStrategy();
+
+        $this->mockStore = \Mockery::mock(CacheStoreInterface::class);
+        $this->mockStore->shouldReceive('supports')->andReturn(true)->byDefault();
+
+        $this->strategy = new WriteThroughStrategy([$this->mockStore]);
+    }
+
+    /**
+     * Test: get() throws exception when no store is registered
+     */
+    public function test_get_throws_exception_when_no_store_registered(): void
+    {
+        $strategy = new WriteThroughStrategy([]); // No stores
+
+        Cache::shouldReceive('get')->andReturn(null);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('No store registered for cache key: test:key');
+
+        $strategy->get('test:key');
+    }
+
+    /**
+     * Test: put() throws exception when no store is registered
+     */
+    public function test_put_throws_exception_when_no_store_registered(): void
+    {
+        $strategy = new WriteThroughStrategy([]); // No stores
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('No store registered for cache key: test:key');
+
+        $strategy->put('test:key', ['data']);
+    }
+
+    /**
+     * Test: forget() throws exception when no store is registered
+     */
+    public function test_forget_throws_exception_when_no_store_registered(): void
+    {
+        $strategy = new WriteThroughStrategy([]); // No stores
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('No store registered for cache key: test:key');
+
+        $strategy->forget('test:key');
     }
 
     /**
@@ -40,92 +84,55 @@ class WriteThroughStrategyTest extends TestCase
             ->with('lms:test:key')
             ->andReturn($cachedValue);
 
-        $callbackExecuted = false;
-        $callback = function () use (&$callbackExecuted) {
-            $callbackExecuted = true;
-            return ['should' => 'not execute'];
-        };
+        $this->mockStore->shouldNotReceive('load');
 
-        $result = $this->strategy->get($key, $callback);
+        $result = $this->strategy->get($key);
 
         $this->assertEquals($cachedValue, $result);
-        $this->assertFalse($callbackExecuted, 'Callback should NOT execute on cache hit');
     }
 
     /**
-     * Test: get() with cache MISS fetches from DB and stores in cache
+     * Test: get() with cache MISS uses store.load()
      */
-    public function test_get_executes_callback_and_stores_on_cache_miss(): void
+    public function test_get_uses_store_load_on_cache_miss(): void
     {
         $key = 'test:key';
         $dbValue = ['id' => 2, 'from' => 'database'];
 
-        // Cache miss
         Cache::shouldReceive('get')
             ->once()
             ->with('lms:test:key')
             ->andReturn(null);
 
-        // Should store fetched value in cache
+        $this->mockStore->shouldReceive('load')
+            ->once()
+            ->with($key)
+            ->andReturn($dbValue);
+
         Cache::shouldReceive('put')
             ->once()
-            ->with('lms:test:key', $dbValue, 3600)
-            ->andReturn(true);
+            ->with('lms:test:key', $dbValue, 3600);
 
-        $callbackExecuted = false;
-        $callback = function () use (&$callbackExecuted, $dbValue) {
-            $callbackExecuted = true;
-            return $dbValue;
-        };
-
-        $result = $this->strategy->get($key, $callback);
+        $result = $this->strategy->get($key);
 
         $this->assertEquals($dbValue, $result);
-        $this->assertTrue($callbackExecuted, 'Callback SHOULD execute on cache miss');
     }
 
     /**
-     * Test: put() writes to BOTH database AND cache (Write-Through pattern)
-     * This is the key characteristic!
+     * Test: put() writes to BOTH database (via store) AND cache
      */
     public function test_put_writes_to_database_and_cache_synchronously(): void
     {
         $key = 'test:key';
         $value = ['data' => 'new value'];
 
-        $persistCalled = false;
-        $persistedValue = null;
-
-        $persist = function ($val) use (&$persistCalled, &$persistedValue) {
-            $persistCalled = true;
-            $persistedValue = $val;
-        };
-
-        // Should write to cache after DB write
-        Cache::shouldReceive('put')
+        $this->mockStore->shouldReceive('store')
             ->once()
-            ->with('lms:test:key', $value, 3600)
-            ->andReturn(true);
-
-        $result = $this->strategy->put($key, $value, $persist);
-
-        $this->assertTrue($result);
-        $this->assertTrue($persistCalled, 'Persist callback MUST be executed');
-        $this->assertEquals($value, $persistedValue);
-    }
-
-    /**
-     * Test: put() writes to cache even without persist callback
-     */
-    public function test_put_writes_to_cache_without_persist_callback(): void
-    {
-        $key = 'test:key';
-        $value = ['data' => 'value'];
+            ->with($key, $value);
 
         Cache::shouldReceive('put')
             ->once()
-            ->with('lms:test:key', $value, 3600)
-            ->andReturn(true);
+            ->with('lms:test:key', $value, 3600);
 
         $result = $this->strategy->put($key, $value);
 
@@ -140,22 +147,25 @@ class WriteThroughStrategyTest extends TestCase
         $key = 'test:key';
         $value = ['data'];
 
-        $persist = function () {
-            throw new \Exception('Database error');
-        };
+        $this->mockStore->shouldReceive('store')
+            ->once()
+            ->andThrow(new \Exception('Database error'));
 
-        $result = $this->strategy->put($key, $value, $persist);
+        $result = $this->strategy->put($key, $value);
 
-        // Should return false when persist callback throws exception
         $this->assertFalse($result);
     }
 
     /**
-     * Test: forget() removes value from cache
+     * Test: forget() calls store.erase() and removes from cache
      */
-    public function test_forget_removes_value_from_cache(): void
+    public function test_forget_calls_store_erase_and_removes_from_cache(): void
     {
         $key = 'test:key';
+
+        $this->mockStore->shouldReceive('erase')
+            ->once()
+            ->with($key);
 
         Cache::shouldReceive('forget')
             ->once()
@@ -168,7 +178,7 @@ class WriteThroughStrategyTest extends TestCase
     }
 
     /**
-     * Test: remember() works like get()
+     * Test: remember() delegates to get()
      */
     public function test_remember_delegates_to_get(): void
     {
@@ -180,7 +190,7 @@ class WriteThroughStrategyTest extends TestCase
             ->with('lms:test:key')
             ->andReturn($value);
 
-        $result = $this->strategy->remember($key, fn() => ['fallback']);
+        $result = $this->strategy->remember($key);
 
         $this->assertEquals($value, $result);
     }
@@ -205,7 +215,7 @@ class WriteThroughStrategyTest extends TestCase
             ->with($tags)
             ->andReturn($taggedCache);
 
-        $result = $this->strategy->tags($tags)->get($key, fn() => ['fallback']);
+        $result = $this->strategy->tags($tags)->get($key);
 
         $this->assertEquals($value, $result);
     }
@@ -219,11 +229,12 @@ class WriteThroughStrategyTest extends TestCase
         $tags = ['users'];
         $value = ['data'];
 
+        $this->mockStore->shouldReceive('store')->once();
+
         $taggedCache = \Mockery::mock();
         $taggedCache->shouldReceive('put')
             ->once()
-            ->with('lms:test:key', $value, 3600)
-            ->andReturn(true);
+            ->with('lms:test:key', $value, 3600);
 
         Cache::shouldReceive('tags')
             ->once()
@@ -243,14 +254,9 @@ class WriteThroughStrategyTest extends TestCase
         $tags = ['users', 'posts'];
 
         $taggedCache = \Mockery::mock();
-        $taggedCache->shouldReceive('flush')
-            ->once()
-            ->andReturn();
+        $taggedCache->shouldReceive('flush')->once()->andReturn();
 
-        Cache::shouldReceive('tags')
-            ->once()
-            ->with($tags)
-            ->andReturn($taggedCache);
+        Cache::shouldReceive('tags')->once()->with($tags)->andReturn($taggedCache);
 
         $result = $this->strategy->flushTags($tags);
 
@@ -265,14 +271,9 @@ class WriteThroughStrategyTest extends TestCase
         $tags = ['users'];
 
         $taggedCache = \Mockery::mock();
-        $taggedCache->shouldReceive('flush')
-            ->once()
-            ->andThrow(new \Exception('Flush error'));
+        $taggedCache->shouldReceive('flush')->once()->andThrow(new \Exception('Flush error'));
 
-        Cache::shouldReceive('tags')
-            ->once()
-            ->with($tags)
-            ->andReturn($taggedCache);
+        Cache::shouldReceive('tags')->once()->with($tags)->andReturn($taggedCache);
 
         $result = $this->strategy->flushTags($tags);
 
@@ -285,14 +286,18 @@ class WriteThroughStrategyTest extends TestCase
     public function test_uses_configured_prefix(): void
     {
         config(['caching-strategy.prefix' => 'custom']);
-        $strategy = new WriteThroughStrategy();
+
+        $store = \Mockery::mock(CacheStoreInterface::class);
+        $store->shouldReceive('supports')->andReturn(true);
+
+        $strategy = new WriteThroughStrategy([$store]);
 
         Cache::shouldReceive('get')
             ->once()
             ->with('custom:test')
             ->andReturn(['data']);
 
-        $result = $strategy->get('test', fn() => ['fallback']);
+        $result = $strategy->get('test');
 
         $this->assertEquals(['data'], $result);
     }
@@ -303,63 +308,35 @@ class WriteThroughStrategyTest extends TestCase
     public function test_uses_configured_ttl(): void
     {
         config(['caching-strategy.ttl' => 7200]);
-        $strategy = new WriteThroughStrategy();
 
-        Cache::shouldReceive('get')
-            ->once()
-            ->andReturn(null);
+        $store = \Mockery::mock(CacheStoreInterface::class);
+        $store->shouldReceive('supports')->andReturn(true);
+        $store->shouldReceive('load')->andReturn(['data']);
 
+        $strategy = new WriteThroughStrategy([$store]);
+
+        Cache::shouldReceive('get')->once()->andReturn(null);
         Cache::shouldReceive('put')
             ->once()
-            ->with('lms:test', ['data'], 7200)
-            ->andReturn(true);
+            ->with('lms:test', ['data'], 7200);
 
-        $strategy->get('test', fn() => ['data']);
+        $strategy->get('test');
     }
 
     /**
      * Test: Write-Through guarantees cache-database consistency
-     * Both operations happen together
      */
     public function test_write_through_ensures_cache_db_consistency(): void
     {
         $key = 'user:1';
         $newData = ['id' => 1, 'name' => 'Updated'];
-
-        $dbWritten = false;
-        $cacheWritten = false;
-
-        $persist = function ($data) use (&$dbWritten, $newData) {
-            $dbWritten = true;
-            $this->assertEquals($newData, $data);
-        };
-
-        Cache::shouldReceive('put')
-            ->once()
-            ->andReturnUsing(function () use (&$cacheWritten) {
-                $cacheWritten = true;
-                return true;
-            });
-
-        $result = $this->strategy->put($key, $newData, $persist);
-
-        $this->assertTrue($result);
-        $this->assertTrue($dbWritten, 'Database write must occur');
-        $this->assertTrue($cacheWritten, 'Cache write must occur');
-    }
-
-    /**
-     * Test: Write order - DB first, then cache
-     */
-    public function test_write_through_writes_database_before_cache(): void
-    {
-        $key = 'test:key';
-        $value = ['data'];
         $operations = [];
 
-        $persist = function () use (&$operations) {
-            $operations[] = 'db_write';
-        };
+        $this->mockStore->shouldReceive('store')
+            ->once()
+            ->andReturnUsing(function () use (&$operations) {
+                $operations[] = 'db_write';
+            });
 
         Cache::shouldReceive('put')
             ->once()
@@ -368,9 +345,80 @@ class WriteThroughStrategyTest extends TestCase
                 return true;
             });
 
-        $this->strategy->put($key, $value, $persist);
+        $result = $this->strategy->put($key, $newData);
 
-        // Verify DB write happened before cache write
+        $this->assertTrue($result);
         $this->assertEquals(['db_write', 'cache_write'], $operations);
+    }
+
+    /**
+     * Test: Multiple stores - correct one is selected based on supports()
+     */
+    public function test_multiple_stores_correct_one_selected(): void
+    {
+        $quizKey = 'quiz:1';
+        $userKey = 'user:2';
+
+        $quizStore = \Mockery::mock(CacheStoreInterface::class);
+        $quizStore->shouldReceive('supports')->with($quizKey)->andReturn(true);
+        $quizStore->shouldReceive('supports')->with($userKey)->andReturn(false);
+        $quizStore->shouldReceive('store')->with($quizKey, ['type' => 'quiz']);
+
+        $userStore = \Mockery::mock(CacheStoreInterface::class);
+        $userStore->shouldReceive('supports')->with($userKey)->andReturn(true);
+        $userStore->shouldReceive('store')->with($userKey, ['type' => 'user']);
+
+        Cache::shouldReceive('put')->twice();
+
+        $strategy = new WriteThroughStrategy([$quizStore, $userStore]);
+
+        $strategy->put($quizKey, ['type' => 'quiz']);
+        $strategy->put($userKey, ['type' => 'user']);
+    }
+
+    /**
+     * Test: addStore() registers additional store
+     */
+    public function test_add_store_registers_additional_store(): void
+    {
+        $key = 'new:123';
+        $value = ['new' => 'data'];
+
+        $newStore = \Mockery::mock(CacheStoreInterface::class);
+        $newStore->shouldReceive('supports')->with($key)->andReturn(true);
+        $newStore->shouldReceive('store')->with($key, $value);
+
+        $this->mockStore->shouldReceive('supports')->with($key)->andReturn(false);
+
+        Cache::shouldReceive('put')->once();
+
+        $this->strategy->addStore($newStore);
+        $result = $this->strategy->put($key, $value);
+
+        $this->assertTrue($result);
+    }
+
+    /**
+     * Test: Callback is IGNORED (not used)
+     */
+    public function test_callback_is_ignored_when_store_exists(): void
+    {
+        $key = 'test:key';
+        $storeValue = ['from' => 'store'];
+
+        $this->mockStore->shouldReceive('store')->with($key, $storeValue);
+
+        Cache::shouldReceive('put')->once();
+
+        $callbackExecuted = false;
+        $callback = function () use (&$callbackExecuted) {
+            $callbackExecuted = true;
+        };
+
+        // Callback is passed but should be ignored
+        $result = $this->strategy->put($key, $storeValue, $callback);
+
+        $this->assertTrue($result);
+        $this->assertFalse($callbackExecuted);
     }
 }
