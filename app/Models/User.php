@@ -4,6 +4,8 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -49,16 +51,20 @@ class User extends Authenticatable
 
     /**
      * Courses taught by this instructor
+     *
+     * @return HasMany<Course, $this>
      */
-    public function taughtCourses()
+    public function taughtCourses(): HasMany
     {
         return $this->hasMany(Course::class, 'instructor_id');
     }
 
     /**
      * Courses enrolled by this student
+     *
+     * @return BelongsToMany<Course, $this>
      */
-    public function enrolledCourses()
+    public function enrolledCourses(): BelongsToMany
     {
         return $this->belongsToMany(Course::class, 'course_enrollments')
             ->withTimestamps()
@@ -67,24 +73,30 @@ class User extends Authenticatable
 
     /**
      * Quiz attempts by this user
+     *
+     * @return HasMany<QuizAttempt, $this>
      */
-    public function quizAttempts()
+    public function quizAttempts(): HasMany
     {
         return $this->hasMany(QuizAttempt::class);
     }
 
     /**
      * Assignment submissions by this user
+     *
+     * @return HasMany<Submission, $this>
      */
-    public function submissions()
+    public function submissions(): HasMany
     {
         return $this->hasMany(Submission::class);
     }
 
     /**
      * Grades received by this user
+     *
+     * @return HasMany<Grade, $this>
      */
-    public function grades()
+    public function grades(): HasMany
     {
         return $this->hasMany(Grade::class);
     }
