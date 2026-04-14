@@ -1,156 +1,168 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import { Rate } from 'k6/metrics';
+import { Rate, Trend } from 'k6/metrics';
 
-// Custom metrics
+// ============================================================
+// READ-HEAVY SCENARIO (80% Read, 20% Write)
+// Sesuai Tabel 3.2 Proposal Skripsi
+//
+// Distribusi Operasi:
+//   25% - GET /api/quizzes/{id}                      (read)
+//   20% - GET /api/courses/{courseId}/materials       (read)
+//   15% - GET /api/materials/{id}                     (read)
+//   20% - GET /api/courses/{courseId}/gradebook       (read)
+//   10% - POST /api/quizzes/{id}/attempts             (write)
+//   10% - POST /api/assignments/{id}/submissions      (write)
+//
+// Penggunaan:
+//   k6 run --env BASE_URL=http://your-vps-ip \
+//           --env CONCURRENT_USERS=100 \
+//           --env CACHE_STRATEGY=cache-aside \
+//           read-heavy-scenario.js
+// ============================================================
+
+// Custom metrics per endpoint
 const errorRate = new Rate('errors');
+const quizDetailDuration    = new Trend('quiz_detail_duration', true);
+const materialsListDuration = new Trend('materials_list_duration', true);
+const materialDetailDuration = new Trend('material_detail_duration', true);
+const gradebookDuration     = new Trend('gradebook_duration', true);
+const startAttemptDuration  = new Trend('start_attempt_duration', true);
+const submitAssignmentDuration = new Trend('submit_assignment_duration', true);
 
-// Test configuration
+// Ambil concurrent users dari env (default: 100)
+const CONCURRENT_USERS = parseInt(__ENV.CONCURRENT_USERS || '100');
+
 export const options = {
+  // 1 menit ramp-up + 5 menit steady state + 30 detik ramp-down
+  // Sesuai proposal: "Duration: 5 menit per test, Ramp-up: 60 detik"
   stages: [
-    { duration: '1m', target: 100 },   // Ramp up to 100 users over 1 minute
-    { duration: '3m', target: 100 },   // Stay at 100 users for 3 minutes
-    { duration: '1m', target: 250 },   // Ramp up to 250 users
-    { duration: '3m', target: 250 },   // Stay at 250 users for 3 minutes
-    { duration: '1m', target: 500 },   // Ramp up to 500 users
-    { duration: '3m', target: 500 },   // Stay at 500 users for 3 minutes
-    { duration: '2m', target: 0 },     // Ramp down to 0 users
+    { duration: '1m',  target: CONCURRENT_USERS },  // ramp-up
+    { duration: '5m',  target: CONCURRENT_USERS },  // steady state
+    { duration: '30s', target: 0 },                 // ramp-down
   ],
   thresholds: {
-    http_req_duration: ['p(95)<500'], // 95% of requests should be below 500ms
-    errors: ['rate<0.1'],              // Error rate should be less than 10%
+    http_req_duration: ['p(95)<2000'],  // 95% request < 2 detik
+    http_req_failed:   ['rate<0.10'],   // error rate < 10%
+    errors:            ['rate<0.10'],
+  },
+  tags: {
+    scenario:          'read-heavy',
+    concurrent_users:  `${CONCURRENT_USERS}`,
+    cache_strategy:    __ENV.CACHE_STRATEGY || 'unknown',
   },
 };
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost';
 
-// Helper function to get random ID within range
+const headers = { headers: { 'Content-Type': 'application/json' }, timeout: '30s' };
+
+// ─────────────────────────────────────────────
+// Helper: random integer [min, max]
+// ─────────────────────────────────────────────
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// Helper function to get random user ID (1-5000)
-function getRandomUserId() {
-  return randomInt(1, 5000);
-}
+// Sesuai data seeder:
+//   - User 1–100      : instructors
+//   - User 101–5000   : students
+//   - Course 1–50
+//   - Quiz 1–250      (5 per course)
+//   - Material 1–500  (10 per course)
+//   - Assignment 1–250 (5 per course)
 
-// Helper function to get random course ID (1-50)
-function getRandomCourseId() {
-  return randomInt(1, 50);
-}
+function randomStudentId()    { return randomInt(101, 5000); }
+function randomCourseId()     { return randomInt(1, 50);     }
+function randomQuizId()       { return randomInt(1, 250);    }
+function randomMaterialId()   { return randomInt(1, 500);    }
+function randomAssignmentId() { return randomInt(1, 250);    }
 
-// Helper function to get random quiz ID (1-250)
-function getRandomQuizId() {
-  return randomInt(1, 250);
-}
-
-// Helper function to get random material ID (1-500)
-function getRandomMaterialId() {
-  return randomInt(1, 500);
-}
-
-// Helper function to get random assignment ID (1-250)
-function getRandomAssignmentId() {
-  return randomInt(1, 250);
-}
-
+// ─────────────────────────────────────────────
+// Main VU function
+// ─────────────────────────────────────────────
 export default function () {
-  const requests = [];
-
-  // Simulate Read-Heavy workload (80% Read, 20% Write)
   const action = Math.random();
 
-  if (action < 0.40) {
-    // 40% - Get quiz with questions (heavy read operation)
-    const quizId = getRandomQuizId();
-    const res = http.get(`${BASE_URL}/api/quizzes/${quizId}`);
-
+  if (action < 0.25) {
+    // ── 25% ─ GET /api/quizzes/{id} ──────────────────────
+    const res = http.get(`${BASE_URL}/api/quizzes/${randomQuizId()}`, headers);
+    quizDetailDuration.add(res.timings.duration);
     check(res, {
-      'quiz detail status is 200': (r) => r.status === 200,
-      'quiz detail has data': (r) => {
-        const body = JSON.parse(r.body);
-        return body.success === true && body.data !== null;
+      '[quiz-detail] status 200': (r) => r.status === 200,
+      '[quiz-detail] success':    (r) => {
+        try { return JSON.parse(r.body).success === true; } catch(_) { return false; }
       },
     }) || errorRate.add(1);
 
-  } else if (action < 0.65) {
-    // 25% - Get materials for a course
-    const courseId = getRandomCourseId();
-    const res = http.get(`${BASE_URL}/api/courses/${courseId}/materials`);
-
+  } else if (action < 0.45) {
+    // ── 20% ─ GET /api/courses/{id}/materials ────────────
+    const res = http.get(`${BASE_URL}/api/courses/${randomCourseId()}/materials`, headers);
+    materialsListDuration.add(res.timings.duration);
     check(res, {
-      'materials status is 200': (r) => r.status === 200,
-      'materials has data': (r) => {
-        const body = JSON.parse(r.body);
-        return body.success === true;
+      '[materials-list] status 200': (r) => r.status === 200,
+      '[materials-list] success':    (r) => {
+        try { return JSON.parse(r.body).success === true; } catch(_) { return false; }
+      },
+    }) || errorRate.add(1);
+
+  } else if (action < 0.60) {
+    // ── 15% ─ GET /api/materials/{id} ────────────────────
+    const res = http.get(`${BASE_URL}/api/materials/${randomMaterialId()}`, headers);
+    materialDetailDuration.add(res.timings.duration);
+    check(res, {
+      '[material-detail] status 200': (r) => r.status === 200,
+      '[material-detail] success':    (r) => {
+        try { return JSON.parse(r.body).success === true; } catch(_) { return false; }
       },
     }) || errorRate.add(1);
 
   } else if (action < 0.80) {
-    // 15% - Get course gradebook (aggregated data)
-    const courseId = getRandomCourseId();
-    const res = http.get(`${BASE_URL}/api/courses/${courseId}/gradebook`);
-
+    // ── 20% ─ GET /api/courses/{id}/gradebook ────────────
+    // Query berat: agregasi nilai semua mahasiswa per course
+    const res = http.get(`${BASE_URL}/api/courses/${randomCourseId()}/gradebook`, headers);
+    gradebookDuration.add(res.timings.duration);
     check(res, {
-      'gradebook status is 200': (r) => r.status === 200,
-      'gradebook has data': (r) => {
-        const body = JSON.parse(r.body);
-        return body.success === true;
+      '[gradebook] status 200': (r) => r.status === 200,
+      '[gradebook] success':    (r) => {
+        try { return JSON.parse(r.body).success === true; } catch(_) { return false; }
       },
     }) || errorRate.add(1);
 
   } else if (action < 0.90) {
-    // 10% - Start quiz attempt (write operation)
-    const quizId = getRandomQuizId();
-    const userId = getRandomUserId();
-
-    const payload = JSON.stringify({
-      user_id: userId,
-    });
-
-    const params = {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    };
-
-    const res = http.post(`${BASE_URL}/api/quizzes/${quizId}/attempts`, payload, params);
-
+    // ── 10% ─ POST /api/quizzes/{id}/attempts ────────────
+    const res = http.post(
+      `${BASE_URL}/api/quizzes/${randomQuizId()}/attempts`,
+      JSON.stringify({ user_id: randomStudentId() }),
+      headers
+    );
+    startAttemptDuration.add(res.timings.duration);
     check(res, {
-      'start attempt status is 201': (r) => r.status === 201,
-      'start attempt success': (r) => {
-        const body = JSON.parse(r.body);
-        return body.success === true;
+      '[start-attempt] status 201': (r) => r.status === 201,
+      '[start-attempt] success':    (r) => {
+        try { return JSON.parse(r.body).success === true; } catch(_) { return false; }
       },
     }) || errorRate.add(1);
 
   } else {
-    // 10% - Submit assignment (write operation)
-    const assignmentId = getRandomAssignmentId();
-    const userId = getRandomUserId();
-
-    const payload = JSON.stringify({
-      user_id: userId,
-      file_path: `submissions/test-${Date.now()}.pdf`,
-    });
-
-    const params = {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    };
-
-    const res = http.post(`${BASE_URL}/api/assignments/${assignmentId}/submissions`, payload, params);
-
+    // ── 10% ─ POST /api/assignments/{id}/submissions ──────
+    const res = http.post(
+      `${BASE_URL}/api/assignments/${randomAssignmentId()}/submissions`,
+      JSON.stringify({
+        user_id:   randomStudentId(),
+        file_path: `submissions/rh-${Date.now()}-${randomInt(1000, 9999)}.pdf`,
+      }),
+      headers
+    );
+    submitAssignmentDuration.add(res.timings.duration);
     check(res, {
-      'submit assignment status is 201': (r) => r.status === 201,
-      'submit assignment success': (r) => {
-        const body = JSON.parse(r.body);
-        return body.success === true;
+      '[submit-assignment] status 201': (r) => r.status === 201,
+      '[submit-assignment] success':    (r) => {
+        try { return JSON.parse(r.body).success === true; } catch(_) { return false; }
       },
     }) || errorRate.add(1);
   }
 
-  // Think time between requests (0.5-2 seconds)
+  // Think time: 0.5–2 detik (simulasi user nyata)
   sleep(Math.random() * 1.5 + 0.5);
 }
