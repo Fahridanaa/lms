@@ -80,9 +80,9 @@ switch_strategy() {
 clear_all_caches() {
   echo -e "${YELLOW}[setup] Membersihkan cache...${NC}"
   cd "${PROJECT_DIR}"
-  ./vendor/bin/sail artisan cache:clear   --quiet 2>/dev/null || true
-  ./vendor/bin/sail artisan config:clear  --quiet 2>/dev/null || true
-  ./vendor/bin/sail exec redis redis-cli FLUSHALL >/dev/null 2>&1 || true
+  docker compose exec -T app php artisan cache:clear  --quiet 2>/dev/null || true
+  docker compose exec -T app php artisan config:clear --quiet 2>/dev/null || true
+  docker compose exec -T redis redis-cli FLUSHALL >/dev/null 2>&1 || true
   echo -e "${GREEN}[setup] Cache bersih.${NC}"
 }
 
@@ -94,8 +94,9 @@ save_redis_stats() {
   local output_file=$2
   cd "${PROJECT_DIR}"
   echo "=== Redis INFO stats (${label}) - $(date) ===" > "${output_file}"
-  ./vendor/bin/sail exec redis redis-cli INFO stats >> "${output_file}" 2>/dev/null || echo "Redis tidak tersedia" >> "${output_file}"
-  ./vendor/bin/sail exec redis redis-cli INFO memory >> "${output_file}" 2>/dev/null || true
+  cd "${PROJECT_DIR}"
+  docker compose exec -T redis redis-cli INFO stats  >> "${output_file}" 2>/dev/null || echo "Redis tidak tersedia" >> "${output_file}"
+  docker compose exec -T redis redis-cli INFO memory >> "${output_file}" 2>/dev/null || true
 }
 
 # ─────────────────────────────────────────────
