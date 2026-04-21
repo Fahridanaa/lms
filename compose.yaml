@@ -30,8 +30,9 @@ services:
 
     mysql:
         image: 'mysql/mysql-server:8.0'
-        ports:
-            - '${FORWARD_DB_PORT:-3306}:3306'
+        # Port MySQL TIDAK di-expose ke public — hanya accessible via Docker network internal
+        # ports:
+        #     - '${FORWARD_DB_PORT:-3306}:3306'
         environment:
             MYSQL_ROOT_PASSWORD: '${DB_PASSWORD}'
             MYSQL_ROOT_HOST: '%'
@@ -52,8 +53,9 @@ services:
 
     redis:
         image: 'redis:7-alpine'
-        ports:
-            - '${FORWARD_REDIS_PORT:-6379}:6379'
+        # Port Redis TIDAK di-expose ke public — hanya accessible via Docker network internal
+        # ports:
+        #     - '${FORWARD_REDIS_PORT:-6379}:6379'
         volumes:
             - 'sail-redis:/data'
         networks:
