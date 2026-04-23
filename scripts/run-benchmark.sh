@@ -94,6 +94,49 @@ clear_all_caches() {
 }
 
 # ─────────────────────────────────────────────
+# Warm-up cache (60 detik, sesuai proposal §3.3.1.2)
+# Kirim request ringan ke semua endpoint utama secara
+# bergantian selama 60 detik untuk inisialisasi
+# connection pool DB dan mengisi cache dengan hot keys.
+# Hasilnya tidak masuk metrik k6.
+# ─────────────────────────────────────────────
+warmup_cache() {
+  local warmup_duration=60
+  local end_time=$(( $(date +%s) + warmup_duration ))
+  local req_count=0
+
+  # Endpoint read-heavy yang paling sering diakses
+  # (cycle melalui sample ID supaya lebih banyak key ter-cache)
+  local quiz_ids=(1 5 10 25 50 100 150 200 250)
+  local course_ids=(1 5 10 20 30 40 50)
+  local material_ids=(1 10 50 100 200 300 400 500)
+  local idx=0
+
+  while [ $(date +%s) -lt ${end_time} ]; do
+    local qi=${quiz_ids[$((idx % ${#quiz_ids[@]}))]}
+    local ci=${course_ids[$((idx % ${#course_ids[@]}))]}
+    local mi=${material_ids[$((idx % ${#material_ids[@]}))]}
+
+    # Fire 4 parallel requests dan lanjut (tidak tunggu semua selesai)
+    curl -sf --max-time 5 "${BASE_URL}/api/quizzes/${qi}"          -o /dev/null &
+    curl -sf --max-time 5 "${BASE_URL}/api/courses/${ci}/materials" -o /dev/null &
+    curl -sf --max-time 5 "${BASE_URL}/api/materials/${mi}"         -o /dev/null &
+    curl -sf --max-time 5 "${BASE_URL}/api/courses/${ci}/gradebook" -o /dev/null &
+
+    idx=$(( idx + 1 ))
+    req_count=$(( req_count + 4 ))
+    sleep 1
+    # Wait for background curl processes periodically to avoid fork bomb
+    if [ $(( idx % 5 )) -eq 0 ]; then
+      wait
+    fi
+  done
+
+  wait  # pastikan semua curl selesai
+  echo -e "${GREEN}[warm-up] Selesai. ~${req_count} requests dikirim ke cache.${NC}"
+}
+
+# ─────────────────────────────────────────────
 # Ambil Redis stats (hits/misses) sebagai angka
 # ─────────────────────────────────────────────
 get_redis_hits() {
@@ -259,7 +302,20 @@ run_k6_for_level() {
   echo -e "${YELLOW}[${vu_count}vu] Menunggu 15 detik agar sistem stabil...${NC}"
   sleep 15
 
-  # Redis snapshot SEBELUM
+  # ─────────────────────────────────────────────
+  # WARM-UP PERIOD (60 detik, sesuai proposal §3.3.1.2)
+  # Request ringan ke semua endpoint utama untuk:
+  #   1. Inisialisasi connection pool database
+  #   2. Mengisi cache dengan data yang umum diakses
+  #   3. Menghindari cold-start bias pada k6
+  # Request warm-up TIDAK masuk ke metrik k6 karena
+  # dijalankan sebelum k6 start.
+  # ─────────────────────────────────────────────
+  echo -e "${YELLOW}[${vu_count}vu] Warm-up 60 detik (tidak masuk metrik)...${NC}"
+  warmup_cache
+
+  # Redis snapshot SEBELUM (diambil setelah warm-up selesai,
+  # supaya metrik delta cache hit ratio mencerminkan benchmark saja)
   save_redis_stats "before" "${redis_file}"
   local hits_before misses_before
   hits_before=$(get_redis_hits)
