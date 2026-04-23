@@ -12,7 +12,8 @@
 #
 # Metrik yang dikumpulkan per run:
 #   - k6 summary JSON  : response time (avg/min/max/p90/p95/p99), throughput, error rate
-#   - resources CSV    : CPU%, Memory (MB), Disk I/O (MB) per container setiap 10 detik
+#   - resources CSV    : CPU%, Memory (MB), Disk I/O (MB/s) setiap 10 detik
+#                        menggunakan top, free, iostat (sesuai proposal: htop & iostat)
 #   - redis stats      : keyspace hits/misses sebelum & sesudah → cache hit ratio
 # ============================================================
 
@@ -25,10 +26,8 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 RESULTS_DIR="${PROJECT_DIR}/benchmark-results"
 K6_SCRIPT="${PROJECT_DIR}/tests/Benchmark/k6/${SCENARIO}-scenario.js"
 
-# Level concurrent users sesuai Tabel 3.1 proposal
 CONCURRENT_USERS_LEVELS=(100 250 500 750 1000 1500 2000)
 
-# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -63,8 +62,13 @@ validate_inputs() {
 
   if ! command -v k6 &>/dev/null; then
     echo -e "${RED}Error: k6 tidak terinstall.${NC}"
-    echo "Install: https://k6.io/docs/get-started/installation/"
     exit 1
+  fi
+
+  # Cek iostat tersedia (dari package sysstat)
+  if ! command -v iostat &>/dev/null; then
+    echo -e "${YELLOW}Warning: iostat tidak ditemukan. Install dengan: apt-get install sysstat${NC}"
+    echo -e "${YELLOW}Disk I/O tidak akan dimonitor.${NC}"
   fi
 }
 
@@ -92,10 +96,10 @@ clear_all_caches() {
 # ─────────────────────────────────────────────
 # Ambil Redis stats (hits/misses) sebagai angka
 # ─────────────────────────────────────────────
-get_redis_hits()   {
+get_redis_hits() {
   cd "${PROJECT_DIR}"
   docker compose exec -T redis redis-cli INFO stats 2>/dev/null \
-    | grep "keyspace_hits:"   | cut -d':' -f2 | tr -d '\r ' || echo "0"
+    | grep "keyspace_hits:" | cut -d':' -f2 | tr -d '\r ' || echo "0"
 }
 get_redis_misses() {
   cd "${PROJECT_DIR}"
@@ -110,9 +114,10 @@ save_redis_stats() {
   local label=$1
   local output_file=$2
   cd "${PROJECT_DIR}"
-  echo "=== Redis INFO stats (${label}) - $(date) ===" > "${output_file}"
+  echo "=== Redis INFO stats (${label}) - $(date) ===" >> "${output_file}"
   docker compose exec -T redis redis-cli INFO stats  >> "${output_file}" 2>/dev/null || echo "Redis tidak tersedia" >> "${output_file}"
   docker compose exec -T redis redis-cli INFO memory >> "${output_file}" 2>/dev/null || true
+  echo "" >> "${output_file}"
 }
 
 # ─────────────────────────────────────────────
@@ -138,7 +143,7 @@ compute_cache_hit_ratio() {
     local ratio
     ratio=$(echo "scale=4; ${hits_during} / ${total} * 100" | bc)
     echo "Cache Hit Ratio        : ${ratio}%" >> "${output_file}"
-    echo "${ratio}" # return value
+    echo "${ratio}"
   else
     echo "Cache Hit Ratio        : N/A (no cache ops)" >> "${output_file}"
     echo "0"
@@ -147,66 +152,76 @@ compute_cache_hit_ratio() {
 
 # ─────────────────────────────────────────────
 # Monitor resource usage (background process)
-# Capture CPU%, Memory MB, Disk I/O tiap 10 detik
+# Menggunakan top (CPU), free (memory), iostat (disk I/O)
+# sesuai proposal: htop & iostat
+# Output: CSV dengan sample setiap 10 detik
 # ─────────────────────────────────────────────
 start_resource_monitor() {
   local output_csv=$1
 
-  # Header CSV
-  echo "timestamp,container,cpu_pct,mem_usage_mb,mem_limit_mb,block_read_mb,block_write_mb" > "${output_csv}"
+  echo "timestamp,cpu_pct,mem_used_mb,mem_total_mb,mem_used_pct,disk_read_mb_s,disk_write_mb_s" > "${output_csv}"
 
-  # Jalankan loop di background
   (
-    cd "${PROJECT_DIR}"
     while true; do
       local ts
       ts=$(date +%s)
-      # docker stats --no-stream: satu snapshot semua container dalam project
-      docker compose stats --no-stream --format \
-        "${ts},{{.Name}},{{.CPUPerc}},{{.MemUsage}},{{.BlockIO}}" \
-        2>/dev/null | while IFS=',' read -r timestamp name cpu mem_raw block_raw; do
-          # Parse mem: "123.4MiB / 1.953GiB" → angka MB
-          local mem_used mem_limit
-          mem_used=$(echo "${mem_raw}" | awk '{print $1}' | sed 's/[^0-9.]//g')
-          mem_unit=$(echo "${mem_raw}" | awk '{print $1}' | sed 's/[0-9.]//g')
-          mem_limit_raw=$(echo "${mem_raw}" | awk '{print $3}')
-          mem_limit=$(echo "${mem_limit_raw}" | sed 's/[^0-9.]//g')
-          mem_limit_unit=$(echo "${mem_limit_raw}" | sed 's/[0-9.]//g')
 
-          # Konversi ke MB
-          case "${mem_unit}" in
-            GiB|GB) mem_used=$(echo "${mem_used} * 1024" | bc) ;;
-            KiB|KB) mem_used=$(echo "${mem_used} / 1024" | bc) ;;
-          esac
-          case "${mem_limit_unit}" in
-            GiB|GB) mem_limit=$(echo "${mem_limit} * 1024" | bc) ;;
-            KiB|KB) mem_limit=$(echo "${mem_limit} / 1024" | bc) ;;
-          esac
+      # CPU% — ambil dari top (1 iterasi, batch mode)
+      # Format: "Cpu(s): 12.5 us, 3.2 sy, ..."  → ambil user+sys
+      local cpu_pct
+      cpu_pct=$(top -bn2 -d0.5 | grep "Cpu(s)" | tail -1 \
+        | awk '{
+            for(i=1;i<=NF;i++) {
+              if($i ~ /[0-9]+\.[0-9]+/) {
+                if($(i+1) ~ /us/ || $(i-1) ~ /us/) { us=$i }
+                if($(i+1) ~ /sy/ || $(i-1) ~ /sy/) { sy=$i }
+              }
+            }
+            gsub(/,/,"",us); gsub(/,/,"",sy);
+            printf "%.1f", us+sy
+          }' 2>/dev/null || echo "0")
 
-          # Parse block I/O: "1.23MB / 456kB"
-          local br bw
-          br=$(echo "${block_raw}" | awk '{print $1}' | sed 's/[^0-9.]//g')
-          br_unit=$(echo "${block_raw}" | awk '{print $1}' | sed 's/[0-9.]//g')
-          bw=$(echo "${block_raw}" | awk '{print $3}' | sed 's/[^0-9.]//g')
-          bw_unit=$(echo "${block_raw}" | awk '{print $3}' | sed 's/[0-9.]//g')
+      # Fallback CPU dari /proc/stat jika top gagal
+      if [ "${cpu_pct}" = "0" ] || [ -z "${cpu_pct}" ]; then
+        local idle1 total1 idle2 total2
+        read -r _ user1 nice1 system1 idle1 iowait1 irq1 softirq1 _ < /proc/stat
+        total1=$(( user1 + nice1 + system1 + idle1 + iowait1 + irq1 + softirq1 ))
+        sleep 1
+        read -r _ user2 nice2 system2 idle2 iowait2 irq2 softirq2 _ < /proc/stat
+        total2=$(( user2 + nice2 + system2 + idle2 + iowait2 + irq2 + softirq2 ))
+        local diff_total=$(( total2 - total1 ))
+        local diff_idle=$(( idle2 - idle1 ))
+        cpu_pct=$(echo "scale=1; (${diff_total} - ${diff_idle}) * 100 / ${diff_total}" | bc 2>/dev/null || echo "0")
+      fi
 
-          case "${br_unit}" in
-            GB|GiB) br=$(echo "${br} * 1024" | bc) ;;
-            kB|KiB|KB) br=$(echo "scale=3; ${br} / 1024" | bc) ;;
-          esac
-          case "${bw_unit}" in
-            GB|GiB) bw=$(echo "${bw} * 1024" | bc) ;;
-            kB|KiB|KB) bw=$(echo "scale=3; ${bw} / 1024" | bc) ;;
-          esac
+      # Memory — dari free -m (sesuai htop)
+      local mem_used mem_total mem_pct
+      read -r _ mem_total mem_used _ < <(free -m | grep "^Mem:")
+      mem_pct=$(echo "scale=1; ${mem_used} * 100 / ${mem_total}" | bc 2>/dev/null || echo "0")
 
-          cpu_clean=$(echo "${cpu}" | tr -d '%')
-          echo "${timestamp},${name},${cpu_clean},${mem_used},${mem_limit},${br},${bw}"
-      done >> "${output_csv}"
+      # Disk I/O — dari iostat (sesuai proposal)
+      local disk_read disk_write
+      if command -v iostat &>/dev/null; then
+        # iostat -d -m: MB/s, ambil baris disk utama (sda/vda/nvme)
+        local iostat_line
+        iostat_line=$(iostat -d -m 1 1 2>/dev/null \
+          | grep -E "^(sda|vda|nvme|xvda|sdb|vdb)" | head -1)
+        disk_read=$(echo  "${iostat_line}" | awk '{print $3}' | tr -d ',' || echo "0")
+        disk_write=$(echo "${iostat_line}" | awk '{print $4}' | tr -d ',' || echo "0")
+        # Pastikan tidak kosong
+        disk_read=${disk_read:-0}
+        disk_write=${disk_write:-0}
+      else
+        disk_read="N/A"
+        disk_write="N/A"
+      fi
+
+      echo "${ts},${cpu_pct},${mem_used},${mem_total},${mem_pct},${disk_read},${disk_write}"
       sleep 10
     done
-  ) &
+  ) >> "${output_csv}" &
 
-  echo $! # return PID monitor
+  echo $!
 }
 
 stop_resource_monitor() {
@@ -244,14 +259,16 @@ run_k6_for_level() {
   echo -e "${YELLOW}[${vu_count}vu] Menunggu 15 detik agar sistem stabil...${NC}"
   sleep 15
 
-  # Snapshot Redis SEBELUM benchmark
+  # Redis snapshot SEBELUM
   save_redis_stats "before" "${redis_file}"
   local hits_before misses_before
   hits_before=$(get_redis_hits)
   misses_before=$(get_redis_misses)
+  hits_before=${hits_before:-0}
+  misses_before=${misses_before:-0}
 
-  # Mulai resource monitoring di background
-  echo -e "${YELLOW}[${vu_count}vu] Memulai resource monitoring...${NC}"
+  # Mulai resource monitoring
+  echo -e "${YELLOW}[${vu_count}vu] Memulai resource monitoring (CPU/Memory/Disk I/O)...${NC}"
   local monitor_pid
   monitor_pid=$(start_resource_monitor "${resources_csv}")
 
@@ -269,16 +286,15 @@ run_k6_for_level() {
   # Stop resource monitoring
   stop_resource_monitor "${monitor_pid}"
 
-  # Snapshot Redis SESUDAH benchmark
+  # Redis snapshot SESUDAH + hitung cache hit ratio
   local hits_after misses_after
   hits_after=$(get_redis_hits)
   misses_after=$(get_redis_misses)
+  hits_after=${hits_after:-0}
+  misses_after=${misses_after:-0}
 
-  echo "" >> "${redis_file}"
   save_redis_stats "after" "${redis_file}"
-  echo "" >> "${redis_file}"
 
-  # Hitung cache hit ratio dari delta
   local hit_ratio
   hit_ratio=$(compute_cache_hit_ratio \
     "${hits_before}" "${misses_before}" \
@@ -287,11 +303,11 @@ run_k6_for_level() {
 
   if [ $k6_exit -eq 0 ]; then
     echo -e "${GREEN}[${vu_count}vu] ✓ Selesai.${NC}"
-    echo -e "${GREEN}  Summary : ${summary_output}${NC}"
-    echo -e "${GREEN}  Cache HR: ${hit_ratio}%${NC}"
-    echo -e "${GREEN}  Resources: ${resources_csv}${NC}"
+    echo -e "${GREEN}  Summary   : ${summary_output}${NC}"
+    echo -e "${GREEN}  Resources : ${resources_csv}${NC}"
+    echo -e "${GREEN}  Cache HR  : ${hit_ratio}%${NC}"
   else
-    echo -e "${RED}[${vu_count}vu] ✗ k6 selesai dengan exit code ${k6_exit}${NC}"
+    echo -e "${RED}[${vu_count}vu] ✗ k6 exit code ${k6_exit}${NC}"
   fi
 
   return $k6_exit
@@ -332,7 +348,6 @@ main() {
       failed=$((failed + 1))
     fi
 
-    # Jeda antar level (kecuali level terakhir)
     if [ $completed -lt $total ]; then
       echo -e "${YELLOW}Jeda 30 detik sebelum level berikutnya...${NC}"
       sleep 30
@@ -354,11 +369,6 @@ main() {
   echo -e "  Durasi   : ${hours}j ${minutes}m"
   echo -e "  Hasil    : ${RESULTS_DIR}/${STRATEGY}/${SCENARIO}/"
   echo "=============================================="
-  echo ""
-  echo "Langkah berikutnya:"
-  echo "  Jalankan strategi lain dengan perintah yang sama, contoh:"
-  echo "  ./scripts/run-benchmark.sh read-through ${SCENARIO} ${BASE_URL}"
-  echo ""
 }
 
 main
