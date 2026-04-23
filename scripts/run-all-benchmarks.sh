@@ -15,6 +15,7 @@
 # ============================================================
 
 BASE_URL=${1:-http://localhost}
+SKIP_PREPARE=${2:-no}   # set "yes" untuk skip prepare (debug/resume)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RESULTS_DIR="${SCRIPT_DIR}/../benchmark-results"
@@ -49,18 +50,47 @@ echo -e "  Base URL    : ${BLUE}${BASE_URL}${NC}"
 echo -e "  Strategi    : ${BLUE}${STRATEGIES[*]}${NC}"
 echo -e "  Skenario    : ${BLUE}${SCENARIOS[*]}${NC}"
 echo -e "  Total Runs  : ${BLUE}${TOTAL_RUNS} kombinasi (masing-masing 7 VU levels)${NC}"
-echo -e "  Est. Waktu  : ${BLUE}~10–12 jam${NC}"
+echo -e "  Est. Waktu  : ${BLUE}~10–12 jam (+ ~20 menit prepare)${NC}"
 echo -e "  Log         : ${BLUE}${LOG_FILE}${NC}"
 echo "=================================================="
 echo ""
 echo -e "${YELLOW}⚠  Pastikan:${NC}"
 echo "   1. App sudah berjalan (docker compose ps)"
-echo "   2. Database sudah di-seed"
-echo "   3. Redis aktif"
-echo "   4. k6 sudah terinstall"
+echo "   2. k6 sudah terinstall"
+echo "   3. Cukup disk space di /var/www/lms/benchmark-results"
 echo ""
+if [ "${SKIP_PREPARE}" = "yes" ]; then
+  echo -e "${YELLOW}⚠  SKIP_PREPARE=yes — prepare-benchmark.sh TIDAK akan dijalankan.${NC}"
+  echo -e "${YELLOW}   Pastikan database sudah dalam kondisi clean secara manual.${NC}"
+  echo ""
+fi
 read -rp "Tekan Enter untuk mulai, atau Ctrl+C untuk batal..."
 echo ""
+
+# ─────────────────────────────────────────────
+# Reset kondisi awal (sesuai proposal: migrate:fresh + seed
+# + cache flush dilakukan sebelum setiap iterasi)
+# ─────────────────────────────────────────────
+if [ "${SKIP_PREPARE}" != "yes" ]; then
+  echo -e "${CYAN}══════════════════════════════════════════════${NC}"
+  echo -e "${CYAN}  PREPARE — Reset Kondisi Awal${NC}"
+  echo -e "${CYAN}  (migrate:fresh, seed, cache flush)${NC}"
+  echo -e "${CYAN}  Mulai: $(date)${NC}"
+  echo -e "${CYAN}══════════════════════════════════════════════${NC}"
+
+  "${SCRIPT_DIR}/prepare-benchmark.sh" "${BASE_URL}"
+
+  if [ $? -ne 0 ]; then
+    echo -e "${RED}✗ prepare-benchmark.sh gagal! Benchmark dibatalkan.${NC}"
+    exit 1
+  fi
+
+  echo -e "${GREEN}✓ Prepare selesai. Sistem siap untuk benchmark.${NC}"
+  echo ""
+  echo -e "${YELLOW}Menunggu 30 detik agar sistem stabil setelah seeding...${NC}"
+  sleep 30
+fi
+
 echo "Mulai: $(date)"
 echo ""
 

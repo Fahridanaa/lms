@@ -1,126 +1,201 @@
 #!/bin/bash
 
-# Prepare system for benchmarking
-# This script ensures the system is in a clean state before running benchmarks
+# ============================================================
+# Prepare System for Benchmark — Reset ke Kondisi Awal
+#
+# Usage  : ./scripts/prepare-benchmark.sh [base_url]
+# Contoh : ./scripts/prepare-benchmark.sh http://localhost
+#
+# Sesuai proposal: reset kondisi awal sebelum setiap iterasi,
+# meliputi:
+#   1. Verifikasi container Docker aktif
+#   2. Verifikasi koneksi database
+#   3. migrate:fresh --seed (data bersih, konsisten)
+#   4. Kosongkan semua cache (artisan + Redis FLUSHALL)
+#   5. Verifikasi jumlah data seeder
+#   6. Verifikasi semua strategi caching dapat di-load
+#
+# Catatan: Script ini menggunakan docker compose (bukan Sail).
+# ============================================================
+
+BASE_URL=${1:-http://localhost}
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
 echo ""
-echo "=========================================="
-echo "Preparing System for Benchmark"
-echo "=========================================="
+echo "=============================================="
+echo "  LMS Benchmark — Prepare (Reset Awal)"
+echo "=============================================="
+echo -e "  Project Dir : ${BLUE}${PROJECT_DIR}${NC}"
+echo -e "  Base URL    : ${BLUE}${BASE_URL}${NC}"
+echo -e "  Waktu       : $(date)"
+echo "=============================================="
 echo ""
 
-# Check if Sail is running
-echo -e "${YELLOW}Checking Docker containers...${NC}"
-if ! ../vendor/bin/sail ps | grep -q "Up"; then
-    echo -e "${RED}Error: Sail is not running${NC}"
-    echo "Starting Sail..."
-    ../vendor/bin/sail up -d
-    echo "Waiting for containers to be ready (30 seconds)..."
-    sleep 30
-else
-    echo -e "${GREEN}✓ Docker containers are running${NC}"
+cd "${PROJECT_DIR}"
+
+# ─────────────────────────────────────────────
+# 1. Verifikasi container Docker
+# ─────────────────────────────────────────────
+echo -e "${YELLOW}[1/6] Memeriksa container Docker...${NC}"
+
+if ! docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "app"; then
+  echo -e "${RED}Error: Container 'app' tidak berjalan.${NC}"
+  echo "Jalankan: docker compose up -d"
+  exit 1
 fi
 
-# Check database connection
-echo ""
-echo -e "${YELLOW}Checking database connection...${NC}"
-if ../vendor/bin/sail artisan migrate:status > /dev/null 2>&1; then
-    echo -e "${GREEN}✓ Database is accessible${NC}"
-else
-    echo -e "${RED}Error: Cannot connect to database${NC}"
-    exit 1
+if ! docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "redis"; then
+  echo -e "${RED}Error: Container 'redis' tidak berjalan.${NC}"
+  exit 1
 fi
 
-# Check Redis connection
-echo ""
-echo -e "${YELLOW}Checking Redis connection...${NC}"
-if ../vendor/bin/sail exec redis redis-cli PING | grep -q "PONG"; then
-    echo -e "${GREEN}✓ Redis is accessible${NC}"
-else
-    echo -e "${RED}Error: Cannot connect to Redis${NC}"
-    exit 1
+if ! docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "db\|mysql"; then
+  echo -e "${YELLOW}Warning: Container database tidak terdeteksi via filter, melanjutkan...${NC}"
 fi
 
-# Fresh migration and seed
-echo ""
-echo -e "${YELLOW}Running fresh migration and seed...${NC}"
-../vendor/bin/sail artisan migrate:fresh --seed --force
+echo -e "${GREEN}✓ Container aktif.${NC}"
 
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ Database migrated and seeded${NC}"
-else
-    echo -e "${RED}Error: Migration/seeding failed${NC}"
-    exit 1
+# ─────────────────────────────────────────────
+# 2. Verifikasi koneksi database
+# ─────────────────────────────────────────────
+echo ""
+echo -e "${YELLOW}[2/6] Verifikasi koneksi database...${NC}"
+
+if ! docker compose exec -T app php artisan migrate:status --quiet > /dev/null 2>&1; then
+  echo -e "${RED}Error: Database tidak bisa diakses. Periksa .env dan container DB.${NC}"
+  exit 1
 fi
 
-# Clear all caches
-echo ""
-echo -e "${YELLOW}Clearing all caches...${NC}"
-../vendor/bin/sail artisan cache:clear
-../vendor/bin/sail artisan config:clear
-../vendor/bin/sail artisan route:clear
-../vendor/bin/sail exec redis redis-cli FLUSHALL
-echo -e "${GREEN}✓ All caches cleared${NC}"
+echo -e "${GREEN}✓ Database accessible.${NC}"
 
-# Verify current cache strategy
+# ─────────────────────────────────────────────
+# 3. Fresh migration + seed
+# ─────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}Current configuration:${NC}"
-STRATEGY=$(grep "^CACHE_STRATEGY=" ../.env | cut -d'=' -f2)
-echo "  Cache Strategy: ${STRATEGY}"
-echo "  Cache Store:    $(grep "^CACHE_STORE=" ../.env | cut -d'=' -f2)"
-echo "  Cache TTL:      $(grep "^CACHE_TTL=" ../.env | cut -d'=' -f2) seconds"
+echo -e "${YELLOW}[3/6] Menjalankan migrate:fresh --seed ...${NC}"
+echo -e "${YELLOW}      (Ini akan menghapus semua data lama dan menanam data baru)${NC}"
+echo -e "${YELLOW}      Estimasi: 15–20 menit tergantung resource VPS.${NC}"
 
-# Check data counts
-echo ""
-echo -e "${YELLOW}Verifying data...${NC}"
-USER_COUNT=$(../vendor/bin/sail artisan tinker --execute="echo App\Models\User::count();" 2>/dev/null | tail -1)
-COURSE_COUNT=$(../vendor/bin/sail artisan tinker --execute="echo App\Models\Course::count();" 2>/dev/null | tail -1)
-QUIZ_COUNT=$(../vendor/bin/sail artisan tinker --execute="echo App\Models\Quiz::count();" 2>/dev/null | tail -1)
+docker compose exec -T app php artisan migrate:fresh --seed --force
 
-echo "  Users:   ${USER_COUNT}"
-echo "  Courses: ${COURSE_COUNT}"
-echo "  Quizzes: ${QUIZ_COUNT}"
-
-# Create results directory
-echo ""
-echo -e "${YELLOW}Creating results directory...${NC}"
-mkdir -p ../benchmark-results
-echo -e "${GREEN}✓ Results directory ready${NC}"
-
-# Check k6 installation
-echo ""
-echo -e "${YELLOW}Checking k6 installation...${NC}"
-if command -v k6 &> /dev/null; then
-    K6_VERSION=$(k6 version | head -1)
-    echo -e "${GREEN}✓ k6 is installed (${K6_VERSION})${NC}"
-else
-    echo -e "${RED}Warning: k6 is not installed${NC}"
-    echo "Install k6 from: https://k6.io/docs/getting-started/installation/"
-    echo ""
-    echo "Ubuntu/Debian:"
-    echo "  sudo gpg -k"
-    echo "  sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69"
-    echo "  echo \"deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main\" | sudo tee /etc/apt/sources.list.d/k6.list"
-    echo "  sudo apt-get update"
-    echo "  sudo apt-get install k6"
+if [ $? -ne 0 ]; then
+  echo -e "${RED}Error: migrate:fresh --seed gagal!${NC}"
+  exit 1
 fi
 
-# Display system info
+echo -e "${GREEN}✓ Database di-reset dan di-seed ulang.${NC}"
+
+# ─────────────────────────────────────────────
+# 4. Kosongkan semua cache
+# ─────────────────────────────────────────────
 echo ""
-echo "=========================================="
-echo "System Ready for Benchmarking!"
-echo "=========================================="
+echo -e "${YELLOW}[4/6] Mengosongkan cache...${NC}"
+
+docker compose exec -T app php artisan cache:clear  --quiet 2>/dev/null || true
+docker compose exec -T app php artisan config:clear --quiet 2>/dev/null || true
+docker compose exec -T app php artisan route:clear  --quiet 2>/dev/null || true
+docker compose exec -T app php artisan view:clear   --quiet 2>/dev/null || true
+
+if docker compose exec -T redis redis-cli FLUSHALL > /dev/null 2>&1; then
+  echo -e "${GREEN}  Redis FLUSHALL: OK${NC}"
+else
+  echo -e "${YELLOW}  Warning: Redis FLUSHALL gagal (lanjut)${NC}"
+fi
+
+echo -e "${GREEN}✓ Semua cache bersih.${NC}"
+
+# ─────────────────────────────────────────────
+# 5. Verifikasi jumlah data seeder
+# ─────────────────────────────────────────────
 echo ""
-echo "Run a benchmark with:"
-echo "  ./scripts/run-benchmark.sh [strategy] [scenario]"
+echo -e "${YELLOW}[5/6] Memverifikasi data seeder...${NC}"
+
+USER_COUNT=$(docker compose exec -T app php artisan tinker --execute="echo \App\Models\User::count();" 2>/dev/null | grep -E "^[0-9]+$" | head -1)
+COURSE_COUNT=$(docker compose exec -T app php artisan tinker --execute="echo \App\Models\Course::count();" 2>/dev/null | grep -E "^[0-9]+$" | head -1)
+QUIZ_COUNT=$(docker compose exec -T app php artisan tinker --execute="echo \App\Models\Quiz::count();" 2>/dev/null | grep -E "^[0-9]+$" | head -1)
+MATERIAL_COUNT=$(docker compose exec -T app php artisan tinker --execute="echo \App\Models\Material::count();" 2>/dev/null | grep -E "^[0-9]+$" | head -1)
+SUBMISSION_COUNT=$(docker compose exec -T app php artisan tinker --execute="echo \App\Models\Submission::count();" 2>/dev/null | grep -E "^[0-9]+$" | head -1)
+
+echo "  Users       : ${USER_COUNT:-?} (expected: 5000)"
+echo "  Courses     : ${COURSE_COUNT:-?} (expected: 50)"
+echo "  Quizzes     : ${QUIZ_COUNT:-?} (expected: 250)"
+echo "  Materials   : ${MATERIAL_COUNT:-?} (expected: 500)"
+echo "  Submissions : ${SUBMISSION_COUNT:-?} (expected: ~12500)"
+
+if [ -n "${USER_COUNT}" ] && [ "${USER_COUNT}" -ge 5000 ] 2>/dev/null; then
+  echo -e "${GREEN}✓ Data seeder valid.${NC}"
+else
+  echo -e "${RED}Error: Jumlah user tidak sesuai (${USER_COUNT:-unknown} vs 5000). Seeder mungkin gagal.${NC}"
+  exit 1
+fi
+
+# ─────────────────────────────────────────────
+# 6. Verifikasi semua strategi caching dapat di-load
+# ─────────────────────────────────────────────
 echo ""
-echo "Examples:"
-echo "  ./scripts/run-benchmark.sh cache-aside read-heavy"
-echo "  ./scripts/run-benchmark.sh read-through write-heavy"
-echo "  ./scripts/run-benchmark.sh write-through stress"
+echo -e "${YELLOW}[6/6] Memverifikasi semua strategi caching...${NC}"
+
+STRATEGIES=("no-cache" "cache-aside" "read-through" "write-through")
+VERIFY_FAILED=0
+
+# Simpan strategi aktif saat ini untuk di-restore setelah verifikasi
+ORIGINAL_STRATEGY=$(grep "^CACHE_STRATEGY=" "${PROJECT_DIR}/.env" | cut -d'=' -f2 | tr -d '\r ')
+
+for strategy in "${STRATEGIES[@]}"; do
+  # Switch ke strategi ini
+  sed -i "s/^CACHE_STRATEGY=.*/CACHE_STRATEGY=${strategy}/" "${PROJECT_DIR}/.env"
+  docker compose exec -T app php artisan config:clear --quiet 2>/dev/null || true
+
+  # Resolve CacheStrategyInterface — kalau class tidak terdaftar, tinker akan throw
+  OUTPUT=$(docker compose exec -T app php artisan tinker \
+    --execute="app(\App\Contracts\CacheStrategyInterface::class); echo 'OK';" 2>&1)
+
+  if echo "${OUTPUT}" | grep -q "^OK"; then
+    echo -e "  ${GREEN}✓ ${strategy}${NC}"
+  else
+    echo -e "  ${RED}✗ ${strategy} — GAGAL${NC}"
+    # Tampilkan baris error yang relevan (bukan stack trace penuh)
+    echo "${OUTPUT}" | grep -v "^>" | grep -v "^=" | head -5 | sed 's/^/    /'
+    VERIFY_FAILED=$((VERIFY_FAILED + 1))
+  fi
+done
+
+# Restore ke strategi semula (atau no-cache sebagai default bersih)
+RESTORE_TO="${ORIGINAL_STRATEGY:-no-cache}"
+sed -i "s/^CACHE_STRATEGY=.*/CACHE_STRATEGY=${RESTORE_TO}/" "${PROJECT_DIR}/.env"
+docker compose exec -T app php artisan config:clear --quiet 2>/dev/null || true
+
+if [ "${VERIFY_FAILED}" -gt 0 ]; then
+  echo ""
+  echo -e "${RED}Error: ${VERIFY_FAILED} strategi gagal di-load!${NC}"
+  echo -e "${RED}Periksa CacheStrategyInterface binding di AppServiceProvider.${NC}"
+  exit 1
+fi
+
+echo -e "${GREEN}✓ Semua strategi valid. Strategi di-restore ke: ${RESTORE_TO}${NC}"
+
+# ─────────────────────────────────────────────
+# Selesai
+# ─────────────────────────────────────────────
+echo ""
+echo "=============================================="
+echo "  System Siap untuk Benchmark!"
+echo "=============================================="
+echo -e "  Selesai : $(date)"
+echo ""
+echo "Langkah berikutnya:"
+echo "  Jalankan satu iterasi:"
+echo "    ./scripts/run-all-benchmarks.sh ${BASE_URL}"
+echo ""
+echo "  Atau langsung satu strategi:"
+echo "    ./scripts/run-benchmark.sh cache-aside read-heavy ${BASE_URL}"
+echo "=============================================="
 echo ""

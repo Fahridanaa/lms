@@ -217,7 +217,7 @@ start_resource_monitor() {
       fi
 
       echo "${ts},${cpu_pct},${mem_used},${mem_total},${mem_pct},${disk_read},${disk_write}"
-      sleep 10
+      sleep 5
     done
   ) >> "${output_csv}" &
 
