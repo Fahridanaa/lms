@@ -47,6 +47,8 @@ export const options = {
     http_req_failed:   ['rate<0.10'],
     errors:            ['rate<0.10'],
   },
+  // Pastikan p(99) ikut tersimpan di summary export
+  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   tags: {
     scenario:         'write-heavy',
     concurrent_users: `${CONCURRENT_USERS}`,

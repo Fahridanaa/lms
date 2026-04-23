@@ -10,7 +10,10 @@
 # berulang untuk 7 level concurrent users sesuai proposal:
 #   100, 250, 500, 750, 1000, 1500, 2000
 #
-# Setiap level menghasilkan file hasil tersendiri di benchmark-results/.
+# Metrik yang dikumpulkan per run:
+#   - k6 summary JSON  : response time (avg/min/max/p90/p95/p99), throughput, error rate
+#   - resources CSV    : CPU%, Memory (MB), Disk I/O (MB) per container setiap 10 detik
+#   - redis stats      : keyspace hits/misses sebelum & sesudah → cache hit ratio
 # ============================================================
 
 STRATEGY=${1:-cache-aside}
@@ -87,16 +90,131 @@ clear_all_caches() {
 }
 
 # ─────────────────────────────────────────────
-# Simpan Redis stats (sebelum/sesudah)
+# Ambil Redis stats (hits/misses) sebagai angka
+# ─────────────────────────────────────────────
+get_redis_hits()   {
+  cd "${PROJECT_DIR}"
+  docker compose exec -T redis redis-cli INFO stats 2>/dev/null \
+    | grep "keyspace_hits:"   | cut -d':' -f2 | tr -d '\r ' || echo "0"
+}
+get_redis_misses() {
+  cd "${PROJECT_DIR}"
+  docker compose exec -T redis redis-cli INFO stats 2>/dev/null \
+    | grep "keyspace_misses:" | cut -d':' -f2 | tr -d '\r ' || echo "0"
+}
+
+# ─────────────────────────────────────────────
+# Simpan Redis stats lengkap ke file
 # ─────────────────────────────────────────────
 save_redis_stats() {
   local label=$1
   local output_file=$2
   cd "${PROJECT_DIR}"
   echo "=== Redis INFO stats (${label}) - $(date) ===" > "${output_file}"
-  cd "${PROJECT_DIR}"
   docker compose exec -T redis redis-cli INFO stats  >> "${output_file}" 2>/dev/null || echo "Redis tidak tersedia" >> "${output_file}"
   docker compose exec -T redis redis-cli INFO memory >> "${output_file}" 2>/dev/null || true
+}
+
+# ─────────────────────────────────────────────
+# Hitung cache hit ratio dari delta hits/misses
+# ─────────────────────────────────────────────
+compute_cache_hit_ratio() {
+  local hits_before=$1
+  local misses_before=$2
+  local hits_after=$3
+  local misses_after=$4
+  local output_file=$5
+
+  local hits_during=$(( hits_after - hits_before ))
+  local misses_during=$(( misses_after - misses_before ))
+  local total=$(( hits_during + misses_during ))
+
+  echo "=== Cache Hit Ratio ===" >> "${output_file}"
+  echo "Hits during benchmark  : ${hits_during}" >> "${output_file}"
+  echo "Misses during benchmark: ${misses_during}" >> "${output_file}"
+  echo "Total cache ops        : ${total}" >> "${output_file}"
+
+  if [ "${total}" -gt 0 ]; then
+    local ratio
+    ratio=$(echo "scale=4; ${hits_during} / ${total} * 100" | bc)
+    echo "Cache Hit Ratio        : ${ratio}%" >> "${output_file}"
+    echo "${ratio}" # return value
+  else
+    echo "Cache Hit Ratio        : N/A (no cache ops)" >> "${output_file}"
+    echo "0"
+  fi
+}
+
+# ─────────────────────────────────────────────
+# Monitor resource usage (background process)
+# Capture CPU%, Memory MB, Disk I/O tiap 10 detik
+# ─────────────────────────────────────────────
+start_resource_monitor() {
+  local output_csv=$1
+
+  # Header CSV
+  echo "timestamp,container,cpu_pct,mem_usage_mb,mem_limit_mb,block_read_mb,block_write_mb" > "${output_csv}"
+
+  # Jalankan loop di background
+  (
+    cd "${PROJECT_DIR}"
+    while true; do
+      local ts
+      ts=$(date +%s)
+      # docker stats --no-stream: satu snapshot semua container dalam project
+      docker compose stats --no-stream --format \
+        "${ts},{{.Name}},{{.CPUPerc}},{{.MemUsage}},{{.BlockIO}}" \
+        2>/dev/null | while IFS=',' read -r timestamp name cpu mem_raw block_raw; do
+          # Parse mem: "123.4MiB / 1.953GiB" → angka MB
+          local mem_used mem_limit
+          mem_used=$(echo "${mem_raw}" | awk '{print $1}' | sed 's/[^0-9.]//g')
+          mem_unit=$(echo "${mem_raw}" | awk '{print $1}' | sed 's/[0-9.]//g')
+          mem_limit_raw=$(echo "${mem_raw}" | awk '{print $3}')
+          mem_limit=$(echo "${mem_limit_raw}" | sed 's/[^0-9.]//g')
+          mem_limit_unit=$(echo "${mem_limit_raw}" | sed 's/[0-9.]//g')
+
+          # Konversi ke MB
+          case "${mem_unit}" in
+            GiB|GB) mem_used=$(echo "${mem_used} * 1024" | bc) ;;
+            KiB|KB) mem_used=$(echo "${mem_used} / 1024" | bc) ;;
+          esac
+          case "${mem_limit_unit}" in
+            GiB|GB) mem_limit=$(echo "${mem_limit} * 1024" | bc) ;;
+            KiB|KB) mem_limit=$(echo "${mem_limit} / 1024" | bc) ;;
+          esac
+
+          # Parse block I/O: "1.23MB / 456kB"
+          local br bw
+          br=$(echo "${block_raw}" | awk '{print $1}' | sed 's/[^0-9.]//g')
+          br_unit=$(echo "${block_raw}" | awk '{print $1}' | sed 's/[0-9.]//g')
+          bw=$(echo "${block_raw}" | awk '{print $3}' | sed 's/[^0-9.]//g')
+          bw_unit=$(echo "${block_raw}" | awk '{print $3}' | sed 's/[0-9.]//g')
+
+          case "${br_unit}" in
+            GB|GiB) br=$(echo "${br} * 1024" | bc) ;;
+            kB|KiB|KB) br=$(echo "scale=3; ${br} / 1024" | bc) ;;
+          esac
+          case "${bw_unit}" in
+            GB|GiB) bw=$(echo "${bw} * 1024" | bc) ;;
+            kB|KiB|KB) bw=$(echo "scale=3; ${bw} / 1024" | bc) ;;
+          esac
+
+          cpu_clean=$(echo "${cpu}" | tr -d '%')
+          echo "${timestamp},${name},${cpu_clean},${mem_used},${mem_limit},${br},${bw}"
+      done >> "${output_csv}"
+      sleep 10
+    done
+  ) &
+
+  echo $! # return PID monitor
+}
+
+stop_resource_monitor() {
+  local pid=$1
+  if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+    kill "${pid}" 2>/dev/null
+    wait "${pid}" 2>/dev/null || true
+  fi
 }
 
 # ─────────────────────────────────────────────
@@ -107,10 +225,9 @@ run_k6_for_level() {
   local timestamp
   timestamp=$(date +%Y%m%d_%H%M%S)
   local result_prefix="${RESULTS_DIR}/${STRATEGY}/${SCENARIO}/${vu_count}vu"
-  local json_output="${result_prefix}-${timestamp}.json"
   local summary_output="${result_prefix}-${timestamp}-summary.json"
-  local redis_before="${result_prefix}-${timestamp}-redis-before.txt"
-  local redis_after="${result_prefix}-${timestamp}-redis-after.txt"
+  local redis_file="${result_prefix}-${timestamp}-redis.txt"
+  local resources_csv="${result_prefix}-${timestamp}-resources.csv"
 
   mkdir -p "${RESULTS_DIR}/${STRATEGY}/${SCENARIO}"
 
@@ -127,8 +244,16 @@ run_k6_for_level() {
   echo -e "${YELLOW}[${vu_count}vu] Menunggu 15 detik agar sistem stabil...${NC}"
   sleep 15
 
-  # Catat state Redis sebelum benchmark
-  save_redis_stats "before" "${redis_before}"
+  # Snapshot Redis SEBELUM benchmark
+  save_redis_stats "before" "${redis_file}"
+  local hits_before misses_before
+  hits_before=$(get_redis_hits)
+  misses_before=$(get_redis_misses)
+
+  # Mulai resource monitoring di background
+  echo -e "${YELLOW}[${vu_count}vu] Memulai resource monitoring...${NC}"
+  local monitor_pid
+  monitor_pid=$(start_resource_monitor "${resources_csv}")
 
   # Jalankan k6
   echo -e "${YELLOW}[${vu_count}vu] Menjalankan k6...${NC}"
@@ -136,20 +261,35 @@ run_k6_for_level() {
     --env BASE_URL="${BASE_URL}" \
     --env CONCURRENT_USERS="${vu_count}" \
     --env CACHE_STRATEGY="${STRATEGY}" \
-    --out "json=${json_output}" \
     --summary-export="${summary_output}" \
     "${K6_SCRIPT}"
 
   local k6_exit=$?
 
-  # Catat state Redis sesudah benchmark
-  save_redis_stats "after" "${redis_after}"
+  # Stop resource monitoring
+  stop_resource_monitor "${monitor_pid}"
 
-  # Hitung cache hit ratio dari Redis
-  "${SCRIPT_DIR}/check-redis-stats.sh" >> "${redis_after}" 2>/dev/null || true
+  # Snapshot Redis SESUDAH benchmark
+  local hits_after misses_after
+  hits_after=$(get_redis_hits)
+  misses_after=$(get_redis_misses)
+
+  echo "" >> "${redis_file}"
+  save_redis_stats "after" "${redis_file}"
+  echo "" >> "${redis_file}"
+
+  # Hitung cache hit ratio dari delta
+  local hit_ratio
+  hit_ratio=$(compute_cache_hit_ratio \
+    "${hits_before}" "${misses_before}" \
+    "${hits_after}"  "${misses_after}" \
+    "${redis_file}")
 
   if [ $k6_exit -eq 0 ]; then
-    echo -e "${GREEN}[${vu_count}vu] ✓ Selesai. Hasil: ${summary_output}${NC}"
+    echo -e "${GREEN}[${vu_count}vu] ✓ Selesai.${NC}"
+    echo -e "${GREEN}  Summary : ${summary_output}${NC}"
+    echo -e "${GREEN}  Cache HR: ${hit_ratio}%${NC}"
+    echo -e "${GREEN}  Resources: ${resources_csv}${NC}"
   else
     echo -e "${RED}[${vu_count}vu] ✗ k6 selesai dengan exit code ${k6_exit}${NC}"
   fi
