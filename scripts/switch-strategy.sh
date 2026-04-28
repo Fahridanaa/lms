@@ -56,6 +56,20 @@ clear_caches() {
     echo -e "${GREEN}✓ Cache bersih.${NC}"
 }
 
+restart_app() {
+    # CacheStrategyInterface adalah singleton — config:clear saja tidak cukup
+    # karena instance lama masih hidup di memory PHP-FPM workers.
+    # Restart container diperlukan agar singleton di-resolve ulang dengan strategi baru.
+    echo -e "${YELLOW}Restart container 'app' agar singleton strategi di-resolve ulang...${NC}"
+    cd "${PROJECT_DIR}"
+    docker compose restart app 2>/dev/null || {
+        echo -e "${RED}Warning: Restart container gagal. Strategi mungkin tidak aktif.${NC}"
+        return
+    }
+    sleep 20
+    echo -e "${GREEN}✓ Container 'app' di-restart. Strategi ${STRATEGY} aktif.${NC}"
+}
+
 show_config() {
     echo ""
     echo "====================================="
@@ -85,6 +99,7 @@ main() {
 
     update_env "$STRATEGY"
     clear_caches
+    restart_app
     show_config
 
     echo -e "${GREEN}✓ Strategi berhasil diganti ke: ${STRATEGY}${NC}"
