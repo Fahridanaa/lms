@@ -207,3 +207,9 @@ export default function () {
   // Think time: 0.3–1.5 detik (write scenario lebih agresif)
   sleep(Math.random() * 1.2 + 0.3);
 }
+
+export function handleSummary(data) {
+  return {
+    [__ENV.SUMMARY_EXPORT || '/tmp/k6-summary.json']: JSON.stringify(data),
+  };
+}

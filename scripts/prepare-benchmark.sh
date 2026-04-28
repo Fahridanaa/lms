@@ -6,14 +6,15 @@
 # Usage  : ./scripts/prepare-benchmark.sh [base_url]
 # Contoh : ./scripts/prepare-benchmark.sh http://localhost
 #
-# Sesuai proposal: reset kondisi awal sebelum setiap iterasi,
+# Sesuai proposal §3.4.4.1: reset kondisi awal sebelum setiap iterasi,
 # meliputi:
 #   1. Verifikasi container Docker aktif
 #   2. Verifikasi koneksi database
 #   3. migrate:fresh --seed (data bersih, konsisten)
 #   4. Kosongkan semua cache (artisan + Redis FLUSHALL)
-#   5. Verifikasi jumlah data seeder
-#   6. Verifikasi semua strategi caching dapat di-load
+#   5. Restart container 'app' untuk menghilangkan state di memory
+#   6. Verifikasi jumlah data seeder
+#   7. Verifikasi semua strategi caching dapat di-load
 #
 # Catatan: Script ini menggunakan docker compose (bukan Sail).
 # ============================================================
@@ -113,10 +114,27 @@ fi
 echo -e "${GREEN}✓ Semua cache bersih.${NC}"
 
 # ─────────────────────────────────────────────
-# 5. Verifikasi jumlah data seeder
+# 5. Restart container app (§3.4.4.1 — hilangkan state memory)
 # ─────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}[5/6] Memverifikasi data seeder...${NC}"
+echo -e "${YELLOW}[5/7] Restart container 'app' untuk menghilangkan state di memory...${NC}"
+
+docker compose restart app
+
+if [ $? -ne 0 ]; then
+  echo -e "${RED}Error: Restart container 'app' gagal!${NC}"
+  exit 1
+fi
+
+echo -e "${YELLOW}  Menunggu 30 detik agar app siap kembali...${NC}"
+sleep 30
+echo -e "${GREEN}✓ Container 'app' di-restart. State memory bersih.${NC}"
+
+# ─────────────────────────────────────────────
+# 6. Verifikasi jumlah data seeder
+# ─────────────────────────────────────────────
+echo ""
+echo -e "${YELLOW}[6/7] Memverifikasi data seeder...${NC}"
 
 USER_COUNT=$(docker compose exec -T app php artisan tinker --execute="echo \App\Models\User::count();" 2>/dev/null | grep -E "^[0-9]+$" | head -1)
 COURSE_COUNT=$(docker compose exec -T app php artisan tinker --execute="echo \App\Models\Course::count();" 2>/dev/null | grep -E "^[0-9]+$" | head -1)
@@ -138,10 +156,10 @@ else
 fi
 
 # ─────────────────────────────────────────────
-# 6. Verifikasi semua strategi caching dapat di-load
+# 7. Verifikasi semua strategi caching dapat di-load
 # ─────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}[6/6] Memverifikasi semua strategi caching...${NC}"
+echo -e "${YELLOW}[7/7] Memverifikasi semua strategi caching...${NC}"
 
 STRATEGIES=("no-cache" "cache-aside" "read-through" "write-through")
 VERIFY_FAILED=0

@@ -58,6 +58,7 @@ export default function () {
     headers: {
       'Content-Type': 'application/json',
     },
+    timeout: '30s',
   };
 
   if (action < 0.25) {
@@ -130,4 +131,10 @@ export default function () {
 
   // Shorter think time for stress test (0.1-0.5 seconds)
   sleep(Math.random() * 0.4 + 0.1);
+}
+
+export function handleSummary(data) {
+  return {
+    [__ENV.SUMMARY_EXPORT || '/tmp/k6-summary.json']: JSON.stringify(data),
+  };
 }

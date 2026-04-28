@@ -20,6 +20,7 @@
 STRATEGY=${1:-cache-aside}
 SCENARIO=${2:-read-heavy}
 BASE_URL=${3:-http://localhost}
+ITERATION=${4:-1}
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -197,7 +198,7 @@ compute_cache_hit_ratio() {
 # Monitor resource usage (background process)
 # Menggunakan top (CPU), free (memory), iostat (disk I/O)
 # sesuai proposal: htop & iostat
-# Output: CSV dengan sample setiap 10 detik
+# Output: CSV dengan sample setiap 5 detik
 # ─────────────────────────────────────────────
 start_resource_monitor() {
   local output_csv=$1
@@ -282,12 +283,14 @@ run_k6_for_level() {
   local vu_count=$1
   local timestamp
   timestamp=$(date +%Y%m%d_%H%M%S)
-  local result_prefix="${RESULTS_DIR}/${STRATEGY}/${SCENARIO}/${vu_count}vu"
+  local result_dir="${RESULTS_DIR}/${STRATEGY}/${SCENARIO}/iter${ITERATION}"
+  local result_prefix="${result_dir}/${vu_count}vu"
   local summary_output="${result_prefix}-${timestamp}-summary.json"
   local redis_file="${result_prefix}-${timestamp}-redis.txt"
+  local hit_ratio_file="${result_prefix}-${timestamp}-cache-hit-ratio.txt"
   local resources_csv="${result_prefix}-${timestamp}-resources.csv"
 
-  mkdir -p "${RESULTS_DIR}/${STRATEGY}/${SCENARIO}"
+  mkdir -p "${result_dir}"
 
   echo ""
   echo -e "${CYAN}────────────────────────────────────────────${NC}"
@@ -334,7 +337,7 @@ run_k6_for_level() {
     --env BASE_URL="${BASE_URL}" \
     --env CONCURRENT_USERS="${vu_count}" \
     --env CACHE_STRATEGY="${STRATEGY}" \
-    --summary-export="${summary_output}" \
+    --env SUMMARY_EXPORT="${summary_output}" \
     "${K6_SCRIPT}"
 
   local k6_exit=$?
@@ -356,6 +359,8 @@ run_k6_for_level() {
     "${hits_before}" "${misses_before}" \
     "${hits_after}"  "${misses_after}" \
     "${redis_file}")
+
+  echo "${hit_ratio}" > "${hit_ratio_file}"
 
   if [ $k6_exit -eq 0 ]; then
     echo -e "${GREEN}[${vu_count}vu] ✓ Selesai.${NC}"
@@ -379,9 +384,10 @@ main() {
   echo "=============================================="
   echo -e "  Strategi  : ${BLUE}${STRATEGY}${NC}"
   echo -e "  Skenario  : ${BLUE}${SCENARIO}${NC}"
+  echo -e "  Iterasi   : ${BLUE}${ITERATION}${NC}"
   echo -e "  Base URL  : ${BLUE}${BASE_URL}${NC}"
   echo -e "  VU Levels : ${BLUE}${CONCURRENT_USERS_LEVELS[*]}${NC}"
-  echo -e "  Hasil     : ${BLUE}${RESULTS_DIR}/${STRATEGY}/${SCENARIO}/${NC}"
+  echo -e "  Hasil     : ${BLUE}${RESULTS_DIR}/${STRATEGY}/${SCENARIO}/iter${ITERATION}/${NC}"
   echo "=============================================="
   echo ""
 
@@ -423,7 +429,7 @@ main() {
   echo -e "  Berhasil : ${GREEN}$((total - failed)) / ${total}${NC}"
   echo -e "  Gagal    : ${RED}${failed} / ${total}${NC}"
   echo -e "  Durasi   : ${hours}j ${minutes}m"
-  echo -e "  Hasil    : ${RESULTS_DIR}/${STRATEGY}/${SCENARIO}/"
+  echo -e "  Hasil    : ${RESULTS_DIR}/${STRATEGY}/${SCENARIO}/iter${ITERATION}/"
   echo "=============================================="
 }
 

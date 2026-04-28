@@ -41,7 +41,7 @@ echo ""
 # ─────────────────────────────────────────────
 # Buat header CSV
 # ─────────────────────────────────────────────
-echo "strategy,scenario,concurrent_users,avg_ms,p90_ms,p95_ms,p99_ms,max_ms,throughput_rps,error_rate_pct,http_reqs_total,cache_hit_ratio_pct" > "${OUTPUT_CSV}"
+echo "strategy,scenario,concurrent_users,avg_ms,p90_ms,p95_ms,p99_ms,max_ms,throughput_rps,error_rate_pct,http_reqs_total,cache_hit_ratio_pct,iterations_averaged" > "${OUTPUT_CSV}"
 
 # ─────────────────────────────────────────────
 # Parse setiap summary JSON
@@ -54,70 +54,78 @@ VU_LEVELS=(100 250 500 750 1000 1500 2000)
 for strategy in "${STRATEGIES[@]}"; do
   for scenario in "${SCENARIOS[@]}"; do
     for vu in "${VU_LEVELS[@]}"; do
-      # Cari file summary untuk kombinasi ini
-      SUMMARY_FILE=$(ls "${RESULTS_DIR}/${strategy}/${scenario}/${vu}vu-"*"-summary.json" 2>/dev/null | sort | tail -1)
-      REDIS_AFTER=$(ls  "${RESULTS_DIR}/${strategy}/${scenario}/${vu}vu-"*"-redis-after.txt" 2>/dev/null | sort | tail -1)
+      # Kumpulkan semua file dari iter1..iterN untuk kombinasi ini
+      # (sesuai proposal §3.4.4.4: 5 iterasi, hasil dirata-rata)
+      SUMMARY_FILES=$(ls "${RESULTS_DIR}/${strategy}/${scenario}/iter*/${vu}vu-"*"-summary.json" 2>/dev/null \
+        | sort | tr '\n' ';' | sed 's/;$//')
+      HIT_RATIO_FILES=$(ls "${RESULTS_DIR}/${strategy}/${scenario}/iter*/${vu}vu-"*"-cache-hit-ratio.txt" 2>/dev/null \
+        | sort | tr '\n' ';' | sed 's/;$//')
 
-      if [ -z "$SUMMARY_FILE" ] || [ ! -f "$SUMMARY_FILE" ]; then
+      if [ -z "${SUMMARY_FILES}" ]; then
         echo -e "${YELLOW}[skip] Tidak ada hasil untuk: ${strategy} / ${scenario} / ${vu}vu${NC}"
         continue
       fi
 
       FOUND=$((FOUND + 1))
 
-      # Parse metrik dari summary JSON menggunakan Python
-      METRICS=$(python3 - "$SUMMARY_FILE" "$REDIS_AFTER" <<'PYEOF'
-import sys, json
+      # Parse & rata-rata metrik dari semua iterasi menggunakan Python
+      METRICS=$(python3 - "${SUMMARY_FILES}" "${HIT_RATIO_FILES}" <<'PYEOF'
+import sys, json, os
 
-summary_file = sys.argv[1]
-redis_file   = sys.argv[2] if len(sys.argv) > 2 else ""
+summary_files    = [f for f in sys.argv[1].split(';') if f and os.path.exists(f)]
+hit_ratio_files  = [f for f in sys.argv[2].split(';') if f and os.path.exists(f)] if len(sys.argv) > 2 else []
 
-with open(summary_file) as f:
-    data = json.load(f)
+if not summary_files:
+    print("N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0")
+    sys.exit(0)
 
-def get_val(data, *keys, default="N/A"):
+def get_metric(data, *keys):
     try:
         d = data
         for k in keys:
             d = d[k]
-        return round(float(d), 2) if d is not None else default
+        return float(d) if d is not None else None
     except:
-        return default
+        return None
 
-metrics = data.get("metrics", {})
-dur     = metrics.get("http_req_duration", {}).get("values", {})
-reqs    = metrics.get("http_reqs",        {}).get("values", {})
-failed  = metrics.get("http_req_failed",  {}).get("values", {})
-
-avg_ms       = get_val(dur, "avg")
-p90_ms       = get_val(dur, "p(90)")
-p95_ms       = get_val(dur, "p(95)")
-p99_ms       = get_val(dur, "p(99)")
-max_ms       = get_val(dur, "max")
-throughput   = get_val(reqs,   "rate")
-total_reqs   = get_val(reqs,   "count")
-error_pct    = round(get_val(failed, "rate") * 100, 2) if get_val(failed, "rate") != "N/A" else "N/A"
-
-# Cache hit ratio dari Redis stats file
-cache_hit_ratio = "N/A"
-if redis_file:
+collected = []
+for sf in summary_files:
     try:
-        with open(redis_file) as rf:
-            content = rf.read()
-        hits   = 0
-        misses = 0
-        for line in content.splitlines():
-            if "keyspace_hits:" in line:
-                hits   = int(line.split(":")[1].strip())
-            if "keyspace_misses:" in line:
-                misses = int(line.split(":")[1].strip())
-        total = hits + misses
-        if total > 0:
-            cache_hit_ratio = round((hits / total) * 100, 2)
+        with open(sf) as f:
+            data = json.load(f)
+        m = data.get("metrics", {})
+        dur    = m.get("http_req_duration", {}).get("values", {})
+        reqs   = m.get("http_reqs",         {}).get("values", {})
+        failed = m.get("http_req_failed",   {}).get("values", {})
+        collected.append({
+            'avg_ms':     get_metric(dur, "avg"),
+            'p90_ms':     get_metric(dur, "p(90)"),
+            'p95_ms':     get_metric(dur, "p(95)"),
+            'p99_ms':     get_metric(dur, "p(99)"),
+            'max_ms':     get_metric(dur, "max"),
+            'throughput': get_metric(reqs, "rate"),
+            'total_reqs': get_metric(reqs, "count"),
+            'error_pct':  (get_metric(failed, "rate") or 0) * 100,
+        })
     except:
         pass
 
-print(f"{avg_ms},{p90_ms},{p95_ms},{p99_ms},{max_ms},{throughput},{error_pct},{total_reqs},{cache_hit_ratio}")
+def avg_key(key):
+    vals = [row[key] for row in collected if row.get(key) is not None]
+    return round(sum(vals) / len(vals), 2) if vals else "N/A"
+
+# Cache hit ratio: rata-rata pre-computed delta dari tiap iterasi
+hit_ratios = []
+for hf in hit_ratio_files:
+    try:
+        with open(hf) as f:
+            hit_ratios.append(float(f.read().strip()))
+    except:
+        pass
+avg_hr = round(sum(hit_ratios) / len(hit_ratios), 2) if hit_ratios else "N/A"
+
+n = len(collected)
+print(f"{avg_key('avg_ms')},{avg_key('p90_ms')},{avg_key('p95_ms')},{avg_key('p99_ms')},{avg_key('max_ms')},{avg_key('throughput')},{avg_key('error_pct')},{avg_key('total_reqs')},{avg_hr},{n}")
 PYEOF
 )
 
