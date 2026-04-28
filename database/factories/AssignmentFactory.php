@@ -21,7 +21,7 @@ class AssignmentFactory extends Factory
             'title' => 'Assignment: ' . fake()->words(3, true),
             'description' => fake()->paragraphs(2, true),
             'due_date' => fake()->dateTimeBetween('now', '+3 months'),
-            'max_score' => fake()->randomElement([50, 100]),
+            'max_score' => 100,
         ];
     }
 }
