@@ -87,15 +87,21 @@ class SubmissionRepository extends BaseRepository
      */
     public function getStatistics(int $assignmentId): array
     {
-        $submissions = $this->model->newQuery()
+        $stats = $this->model->newQuery()
             ->where('assignment_id', $assignmentId)
-            ->get();
+            ->selectRaw('
+                COUNT(*) as total_submissions,
+                SUM(CASE WHEN graded_at IS NOT NULL THEN 1 ELSE 0 END) as graded_submissions,
+                SUM(CASE WHEN graded_at IS NULL THEN 1 ELSE 0 END) as pending_submissions,
+                AVG(CASE WHEN score IS NOT NULL THEN score END) as average_score
+            ')
+            ->first();
 
         return [
-            'total_submissions' => $submissions->count(),
-            'graded_submissions' => $submissions->whereNotNull('graded_at')->count(),
-            'pending_submissions' => $submissions->whereNull('graded_at')->count(),
-            'average_score' => $submissions->whereNotNull('score')->avg('score') ?? 0,
+            'total_submissions' => (int) ($stats->total_submissions ?? 0),
+            'graded_submissions' => (int) ($stats->graded_submissions ?? 0),
+            'pending_submissions' => (int) ($stats->pending_submissions ?? 0),
+            'average_score' => $stats->average_score ?? 0,
         ];
     }
 

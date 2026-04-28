@@ -34,8 +34,7 @@ class QuizRepository extends BaseRepository
      */
     public function getQuestions(int $quizId): Collection
     {
-        $quiz = $this->findOrFail($quizId);
-        return $quiz->questions;
+        return $this->findOrFail($quizId, ['questions'])->questions;
     }
 
     /**

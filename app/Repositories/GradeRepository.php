@@ -75,16 +75,25 @@ class GradeRepository extends BaseRepository
      */
     public function getCourseStatistics(int $courseId): array
     {
-        $grades = $this->getCourseGrades($courseId);
+        $stats = $this->model->newQuery()
+            ->where('course_id', $courseId)
+            ->selectRaw('
+                COUNT(*) as total_grades,
+                AVG(percentage) as average_percentage,
+                MAX(percentage) as highest_percentage,
+                MIN(percentage) as lowest_percentage,
+                SUM(CASE WHEN percentage >= 60 THEN 1 ELSE 0 END) as passing_count
+            ')
+            ->first();
+
+        $total = (int) ($stats->total_grades ?? 0);
 
         return [
-            'total_grades' => $grades->count(),
-            'average_percentage' => $grades->avg('percentage'),
-            'highest_percentage' => $grades->max('percentage'),
-            'lowest_percentage' => $grades->min('percentage'),
-            'passing_rate' => $grades->count() > 0
-                ? ($grades->where('percentage', '>=', 60)->count() / $grades->count()) * 100
-                : 0,
+            'total_grades' => $total,
+            'average_percentage' => $stats->average_percentage ?? 0,
+            'highest_percentage' => $stats->highest_percentage ?? 0,
+            'lowest_percentage' => $stats->lowest_percentage ?? 0,
+            'passing_rate' => $total > 0 ? ($stats->passing_count / $total) * 100 : 0,
         ];
     }
 

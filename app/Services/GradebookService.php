@@ -6,6 +6,7 @@ use App\Constants\Messages\GradeMessage;
 use App\Contracts\CacheStrategyInterface;
 use App\Exceptions\BusinessException;
 use App\Models\Course;
+use App\Models\Grade;
 use App\Models\User;
 use App\Repositories\GradeRepository;
 
@@ -28,12 +29,16 @@ class GradebookService
             ->get("course:{$courseId}:gradebook", function () use ($courseId) {
                 $course = Course::with(['students'])->findOrFail($courseId);
 
-                $gradebook = [];
+                $allGrades = Grade::with(['gradeable'])
+                    ->where('course_id', $courseId)
+                    ->whereIn('user_id', $course->students->pluck('id'))
+                    ->get()
+                    ->groupBy('user_id');
 
-                foreach ($course->students as $student) {
-                    $grades = $this->gradeRepository->getUserCourseGrades($student->id, $courseId);
+                return $course->students->map(function (User $student) use ($allGrades) {
+                    $grades = $allGrades->get($student->id, collect());
 
-                    $gradebook[] = [
+                    return [
                         'student' => [
                             'id' => $student->id,
                             'name' => $student->name,
@@ -43,9 +48,7 @@ class GradebookService
                         'average_percentage' => $grades->avg('percentage'),
                         'total_grades' => $grades->count(),
                     ];
-                }
-
-                return $gradebook;
+                })->values()->all();
             });
     }
 
@@ -156,13 +159,14 @@ class GradebookService
             ->get("course:{$courseId}:top-performers:{$limit}", function () use ($courseId, $limit) {
                 $studentAverages = $this->gradeRepository->getTopPerformers($courseId, $limit);
 
-                return $studentAverages->map(function ($item) {
-                    $user = User::find($item->user_id);
-                    return [
-                        'user' => $user,
-                        'average_percentage' => $item->average_percentage,
-                    ];
-                });
+                $users = User::whereIn('id', $studentAverages->pluck('user_id'))
+                    ->get()
+                    ->keyBy('id');
+
+                return $studentAverages->map(fn ($item) => [
+                    'user' => $users->get($item->user_id),
+                    'average_percentage' => $item->average_percentage,
+                ]);
             });
     }
 }
