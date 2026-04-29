@@ -233,6 +233,35 @@ class QuizControllerTest extends TestCase
             ]);
     }
 
+    public function test_cannot_start_duplicate_quiz_attempt(): void
+    {
+        $this->postJson("/api/quizzes/{$this->quiz->id}/attempts", [
+            'user_id' => $this->user->id,
+        ])->assertStatus(201);
+
+        $this->postJson("/api/quizzes/{$this->quiz->id}/attempts", [
+            'user_id' => $this->user->id,
+        ])->assertStatus(400)
+            ->assertJson(['success' => false]);
+
+        $this->assertDatabaseCount('quiz_attempts', 1);
+    }
+
+    public function test_can_start_new_attempt_after_completing_previous(): void
+    {
+        QuizAttempt::factory()->create([
+            'quiz_id'      => $this->quiz->id,
+            'user_id'      => $this->user->id,
+            'completed_at' => now(),
+        ]);
+
+        $this->postJson("/api/quizzes/{$this->quiz->id}/attempts", [
+            'user_id' => $this->user->id,
+        ])->assertStatus(201);
+
+        $this->assertDatabaseCount('quiz_attempts', 2);
+    }
+
     public function test_quiz_not_found_returns_404(): void
     {
         $response = $this->getJson('/api/quizzes/99999');

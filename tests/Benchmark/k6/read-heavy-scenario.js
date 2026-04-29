@@ -133,35 +133,31 @@ export default function () {
 
   } else if (action < 0.90) {
     // ── 10% ─ POST /api/quizzes/{id}/attempts ────────────
+    // 400 ONGOING_ATTEMPT adalah perilaku normal saat high-concurrency.
     const res = http.post(
       `${BASE_URL}/api/quizzes/${randomQuizId()}/attempts`,
       JSON.stringify({ user_id: randomStudentId() }),
-      headers
+      { ...headers, responseCallback: http.expectedStatuses(201, 400) }
     );
     startAttemptDuration.add(res.timings.duration);
     check(res, {
-      '[start-attempt] status 201': (r) => r.status === 201,
-      '[start-attempt] success':    (r) => {
-        try { return JSON.parse(r.body).success === true; } catch(_) { return false; }
-      },
+      '[start-attempt] status 201 or 400': (r) => r.status === 201 || r.status === 400,
     }) || errorRate.add(1);
 
   } else {
     // ── 10% ─ POST /api/assignments/{id}/submissions ──────
+    // 400 ALREADY_SUBMITTED adalah perilaku normal saat high-concurrency.
     const res = http.post(
       `${BASE_URL}/api/assignments/${randomAssignmentId()}/submissions`,
       JSON.stringify({
         user_id:   randomStudentId(),
         file_path: `submissions/rh-${Date.now()}-${randomInt(1000, 9999)}.pdf`,
       }),
-      headers
+      { ...headers, responseCallback: http.expectedStatuses(201, 400) }
     );
     submitAssignmentDuration.add(res.timings.duration);
     check(res, {
-      '[submit-assignment] status 201': (r) => r.status === 201,
-      '[submit-assignment] success':    (r) => {
-        try { return JSON.parse(r.body).success === true; } catch(_) { return false; }
-      },
+      '[submit-assignment] status 201 or 400': (r) => r.status === 201 || r.status === 400,
     }) || errorRate.add(1);
   }
 

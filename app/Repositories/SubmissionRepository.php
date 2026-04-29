@@ -37,6 +37,18 @@ class SubmissionRepository extends BaseRepository
     }
 
     /**
+     * Get user's submission with a write lock (must be called inside a transaction)
+     */
+    public function getUserSubmissionForUpdate(int $assignmentId, int $userId): ?Model
+    {
+        return $this->model->newQuery()
+            ->where('assignment_id', $assignmentId)
+            ->where('user_id', $userId)
+            ->lockForUpdate()
+            ->first();
+    }
+
+    /**
      * Get user's all submissions
      */
     public function getUserSubmissions(int $userId): Collection

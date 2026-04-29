@@ -9,6 +9,7 @@ use App\Exceptions\BusinessException;
 use App\Models\Submission;
 use App\Repositories\AssignmentRepository;
 use App\Repositories\SubmissionRepository;
+use Illuminate\Support\Facades\DB;
 
 class AssignmentService
 {
@@ -56,24 +57,26 @@ class AssignmentService
             throw new BusinessException(AssignmentMessage::DEADLINE_PASSED, 400);
         }
 
-        $existing = $this->submissionRepository->getUserSubmission($assignmentId, $userId);
-        if ($existing) {
-            throw new BusinessException(AssignmentMessage::ALREADY_SUBMITTED, 400);
-        }
+        return DB::transaction(function () use ($assignmentId, $userId, $data): Submission {
+            $existing = $this->submissionRepository->getUserSubmissionForUpdate($assignmentId, $userId);
+            if ($existing) {
+                throw new BusinessException(AssignmentMessage::ALREADY_SUBMITTED, 400);
+            }
 
-        $submission = $this->submissionRepository->create([
-            'assignment_id' => $assignmentId,
-            'user_id' => $userId,
-            'file_path' => $data,
-            'submitted_at' => now(),
-        ]);
+            $submission = $this->submissionRepository->create([
+                'assignment_id' => $assignmentId,
+                'user_id' => $userId,
+                'file_path' => $data,
+                'submitted_at' => now(),
+            ]);
 
-        $this->cacheStrategy->flushTags([
-            "assignment:{$assignmentId}:submissions",
-            "user:{$userId}:submissions",
-        ]);
+            $this->cacheStrategy->flushTags([
+                "assignment:{$assignmentId}:submissions",
+                "user:{$userId}:submissions",
+            ]);
 
-        return $submission;
+            return $submission;
+        });
     }
 
     /**

@@ -239,6 +239,23 @@ class AssignmentControllerTest extends TestCase
         $this->assertNotNull($submission->graded_at);
     }
 
+    public function test_cannot_submit_assignment_twice(): void
+    {
+        $submissionData = [
+            'user_id' => $this->user->id,
+            'file_path' => '/storage/submissions/first.pdf',
+        ];
+
+        $this->postJson("/api/assignments/{$this->assignment->id}/submissions", $submissionData)
+            ->assertStatus(201);
+
+        $this->postJson("/api/assignments/{$this->assignment->id}/submissions", $submissionData)
+            ->assertStatus(400)
+            ->assertJson(['success' => false]);
+
+        $this->assertDatabaseCount('submissions', 1);
+    }
+
     public function test_submit_assignment_validation_fails_without_required_fields(): void
     {
         $response = $this->postJson("/api/assignments/{$this->assignment->id}/submissions", []);
