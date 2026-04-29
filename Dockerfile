@@ -26,4 +26,15 @@ RUN { \
     echo 'opcache.validate_timestamps=0'; \
 } > /usr/local/etc/php/conf.d/opcache.ini
 
+# PHP-FPM tuning untuk benchmark (disesuaikan dengan VPS 2 vCPU / 2 GB RAM)
+# 20 workers x ~36.5 MB/worker = ~730 MB + 512 MB MySQL buffer = ~1.24 GB total
+RUN { \
+    echo '[www]'; \
+    echo 'pm = dynamic'; \
+    echo 'pm.max_children = 20'; \
+    echo 'pm.start_servers = 5'; \
+    echo 'pm.min_spare_servers = 3'; \
+    echo 'pm.max_spare_servers = 10'; \
+} > /usr/local/etc/php-fpm.d/zz-benchmark.conf
+
 WORKDIR /var/www/html

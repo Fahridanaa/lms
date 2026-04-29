@@ -33,6 +33,10 @@ services:
         # Port MySQL TIDAK di-expose ke public — hanya accessible via Docker network internal
         # ports:
         #     - '${FORWARD_DB_PORT:-3306}:3306'
+        command:
+            - --innodb-buffer-pool-size=536870912
+            - --innodb-flush-log-at-trx-commit=2
+            - --max-connections=300
         environment:
             MYSQL_ROOT_PASSWORD: "${DB_PASSWORD}"
             MYSQL_ROOT_HOST: "%"
