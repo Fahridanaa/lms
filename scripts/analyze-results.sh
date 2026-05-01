@@ -56,9 +56,9 @@ for strategy in "${STRATEGIES[@]}"; do
     for vu in "${VU_LEVELS[@]}"; do
       # Kumpulkan semua file dari iter1..iterN untuk kombinasi ini
       # (sesuai proposal §3.4.4.4: 5 iterasi, hasil dirata-rata)
-      SUMMARY_FILES=$(ls "${RESULTS_DIR}/${strategy}/${scenario}/iter*/${vu}vu-"*"-summary.json" 2>/dev/null \
+      SUMMARY_FILES=$(ls "${RESULTS_DIR}/${strategy}/${scenario}"/iter*/${vu}vu-*-summary.json 2>/dev/null \
         | sort | tr '\n' ';' | sed 's/;$//')
-      HIT_RATIO_FILES=$(ls "${RESULTS_DIR}/${strategy}/${scenario}/iter*/${vu}vu-"*"-cache-hit-ratio.txt" 2>/dev/null \
+      HIT_RATIO_FILES=$(ls "${RESULTS_DIR}/${strategy}/${scenario}"/iter*/${vu}vu-*-cache-hit-ratio.txt 2>/dev/null \
         | sort | tr '\n' ';' | sed 's/;$//')
 
       if [ -z "${SUMMARY_FILES}" ]; then
