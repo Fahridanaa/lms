@@ -34,7 +34,6 @@ services:
         # ports:
         #     - '${FORWARD_DB_PORT:-3306}:3306'
         command:
-            - --innodb-buffer-pool-size=536870912
             - --innodb-flush-log-at-trx-commit=2
             - --max-connections=300
         environment:
@@ -48,7 +47,7 @@ services:
             - "sail-mysql:/var/lib/mysql"
         networks:
             - sail
-        healthcheck:
+        healthcheck:    
             test: ["CMD", "mysqladmin", "ping", "-p${DB_PASSWORD}"]
             retries: 5
             timeout: 5s
