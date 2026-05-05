@@ -30,19 +30,6 @@ class QuizAttemptRepository extends BaseRepository
     }
 
     /**
-     * Get active (incomplete) attempt with a write lock (must be called inside a transaction)
-     */
-    public function getActiveAttemptForUpdate(int $userId, int $quizId): ?Model
-    {
-        return $this->model->newQuery()
-            ->where('user_id', $userId)
-            ->where('quiz_id', $quizId)
-            ->whereNull('completed_at')
-            ->lockForUpdate()
-            ->first();
-    }
-
-    /**
      * Get user's quiz attempts
      */
     public function getUserAttempts(int $userId, ?int $quizId = null): Collection

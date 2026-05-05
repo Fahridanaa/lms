@@ -8,7 +8,6 @@ use App\Exceptions\BusinessException;
 use App\Models\QuizAttempt;
 use App\Repositories\QuizAttemptRepository;
 use App\Repositories\QuizRepository;
-use Illuminate\Support\Facades\DB;
 
 class QuizService
 {
@@ -66,24 +65,20 @@ class QuizService
     {
         $this->quizRepository->findOrFail($quizId);
 
-        return DB::transaction(function () use ($quizId, $userId): QuizAttempt {
-            $ongoingAttempt = $this->quizAttemptRepository->getActiveAttemptForUpdate($userId, $quizId);
-
-            if ($ongoingAttempt) {
-                throw new BusinessException(QuizMessage::ONGOING_ATTEMPT, 400);
-            }
-
+        try {
             $attempt = $this->quizAttemptRepository->create([
                 'quiz_id' => $quizId,
                 'user_id' => $userId,
                 'answers' => [],
                 'started_at' => now(),
             ]);
+        } catch (\Illuminate\Database\UniqueConstraintViolationException) {
+            throw new BusinessException(QuizMessage::ONGOING_ATTEMPT, 400);
+        }
 
-            $this->cacheStrategy->flushTags(["user:{$userId}:attempts"]);
+        $this->cacheStrategy->flushTags(["user:{$userId}:attempts"]);
 
-            return $attempt;
-        });
+        return $attempt;
     }
 
     /**
