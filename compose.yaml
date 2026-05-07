@@ -13,6 +13,7 @@ services:
                 condition: service_healthy
             redis:
                 condition: service_healthy
+        mem_limit: 1536m
         restart: unless-stopped
 
     nginx:
@@ -56,6 +57,7 @@ services:
 
     redis:
         image: "redis:7-alpine"
+        command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
         # Port Redis TIDAK di-expose ke public — hanya accessible via Docker network internal
         # ports:
         #     - '${FORWARD_REDIS_PORT:-6379}:6379'

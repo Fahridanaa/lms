@@ -28,7 +28,7 @@ RUN { \
 RUN { \
     echo '[www]'; \
     echo 'pm = dynamic'; \
-    echo 'pm.max_children = 50'; \
+    echo 'pm.max_children = 25'; \
     echo 'pm.start_servers = 10'; \
     echo 'pm.min_spare_servers = 3'; \
     echo 'pm.max_spare_servers = 20'; \

@@ -59,7 +59,7 @@ echo -e "  Strategi      : ${BLUE}${STRATEGIES[*]}${NC}"
 echo -e "  Skenario      : ${BLUE}${SCENARIOS[*]}${NC}"
 echo -e "  Iterasi       : ${BLUE}${ITERATIONS}x per kombinasi (sesuai proposal §3.4.4.4)${NC}"
 echo -e "  Total Runs    : ${BLUE}${TOTAL_RUNS} kombinasi (masing-masing 7 VU levels)${NC}"
-echo -e "  Est. Waktu    : ${BLUE}~50–60 jam (+ ~20 menit prepare)${NC}"
+echo -e "  Est. Waktu    : ${BLUE}~60–75 jam (+ ~20 menit prepare per iterasi × 5 = ~100 menit)${NC}"
 echo -e "  Log           : ${BLUE}${LOG_FILE}${NC}"
 echo "=================================================="
 echo ""
@@ -102,22 +102,22 @@ echo "Mulai: $(date)"
 echo ""
 
 # ─────────────────────────────────────────────
-# Restart container 'app' sebelum tiap iterasi
-# Sesuai proposal §3.4.4.1: menghilangkan state di memory
+# Reset & verifikasi sebelum tiap iterasi
+# Panggil prepare-benchmark.sh yang mencakup:
+#   migrate:fresh --seed, cache flush, container restart,
+#   verifikasi data seeder, verifikasi semua strategi caching
+# Sesuai proposal §3.4.4.1
 # ─────────────────────────────────────────────
-restart_app_container() {
+reset_and_verify() {
   local iteration=$1
   echo ""
-  echo -e "${YELLOW}[iterasi ${iteration}] Restart container 'app' untuk membersihkan state memory...${NC}"
-  cd "${PROJECT_DIR}"
-  docker compose restart app
+  echo -e "${YELLOW}[iterasi ${iteration}] Menjalankan prepare-benchmark.sh untuk reset database + verifikasi...${NC}"
+  "${SCRIPT_DIR}/prepare-benchmark.sh" "${BASE_URL}"
   if [ $? -ne 0 ]; then
-    echo -e "${RED}Warning: Restart container gagal. Melanjutkan...${NC}"
-  else
-    echo -e "${GREEN}[iterasi ${iteration}] ✓ Container 'app' di-restart.${NC}"
+    echo -e "${RED}Error: prepare-benchmark.sh gagal di iterasi ${iteration}! Benchmark dibatalkan.${NC}"
+    exit 1
   fi
-  echo -e "${YELLOW}[iterasi ${iteration}] Menunggu 30 detik agar app siap kembali...${NC}"
-  sleep 30
+  echo -e "${GREEN}[iterasi ${iteration}] ✓ Reset & verifikasi selesai.${NC}"
 }
 
 # ─────────────────────────────────────────────
@@ -132,7 +132,7 @@ for iteration in $(seq 1 ${ITERATIONS}); do
   echo -e "${CYAN}╚══════════════════════════════════════════════╝${NC}"
 
   # Restart container sebelum setiap iterasi (sesuai proposal §3.4.4.1)
-  restart_app_container "${iteration}"
+  reset_and_verify "${iteration}"
 
   for strategy in "${STRATEGIES[@]}"; do
     for scenario in "${SCENARIOS[@]}"; do

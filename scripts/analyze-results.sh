@@ -49,7 +49,7 @@ echo "strategy,scenario,concurrent_users,avg_ms,p90_ms,p95_ms,p99_ms,max_ms,thro
 FOUND=0
 STRATEGIES=("no-cache" "cache-aside" "read-through" "write-through")
 SCENARIOS=("read-heavy" "write-heavy")
-VU_LEVELS=(100 250 500 750 1000 1500 2000)
+VU_LEVELS=(100 250 500 750 1000)
 
 for strategy in "${STRATEGIES[@]}"; do
   for scenario in "${SCENARIOS[@]}"; do
