@@ -297,13 +297,17 @@ run_k6_for_level() {
   echo -e "${CYAN}  Concurrent Users : ${vu_count}${NC}"
   echo -e "${CYAN}  Strategi         : ${STRATEGY}${NC}"
   echo -e "${CYAN}  Skenario         : ${SCENARIO}${NC}"
-  echo -e "${CYAN}  Durasi           : ~6.5 menit (1m ramp + 5m steady + 30s down)${NC}"
+  echo -e "${CYAN}  Durasi           : ~22 menit (prepare ~15m + warm-up ~1m + benchmark ~6m)${NC}"
   echo -e "${CYAN}────────────────────────────────────────────${NC}"
 
-  # Clear cache + tunggu sistem stabil
-  clear_all_caches
-  echo -e "${YELLOW}[${vu_count}vu] Menunggu 15 detik agar sistem stabil...${NC}"
-  sleep 15
+  # Reset database + sistem untuk setiap VU level
+  # (migrate:fresh --seed + cache clear + container restart + verifikasi)
+  echo -e "${YELLOW}[${vu_count}vu] Reset database & sistem (prepare-benchmark.sh)...${NC}"
+  "${SCRIPT_DIR}/prepare-benchmark.sh" "${BASE_URL}"
+  if [ $? -ne 0 ]; then
+    echo -e "${RED}[${vu_count}vu] ✗ prepare-benchmark.sh gagal!${NC}"
+    return 1
+  fi
 
   # ─────────────────────────────────────────────
   # WARM-UP PERIOD (60 detik, sesuai proposal §3.3.1.2)
