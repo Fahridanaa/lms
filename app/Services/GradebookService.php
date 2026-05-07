@@ -21,9 +21,6 @@ class GradebookService
     /**
      * Get full gradebook for a course (cached)
      * Returns all students with their grades
-     *
-     * Optimasi: menggunakan chunked loading per student untuk menghindari
-     * memory spike saat eager load semua grades ribuan students sekaligus.
      */
     public function getCourseGradebook(int $courseId): array
     {
@@ -32,12 +29,20 @@ class GradebookService
             ->get("course:{$courseId}:gradebook", function () use ($courseId) {
                 $course = Course::with(['students'])->findOrFail($courseId);
 
-                return $course->students->map(function (User $student) use ($courseId) {
-                    // Load grades per-student untuk menghindari memory spike
-                    $grades = Grade::with(['gradeable'])
-                        ->where('course_id', $courseId)
-                        ->where('user_id', $student->id)
-                        ->get();
+                $studentIds = $course->students->pluck('id');
+
+                if ($studentIds->isEmpty()) {
+                    return [];
+                }
+
+                $allGrades = Grade::with(['gradeable'])
+                    ->where('course_id', $courseId)
+                    ->whereIn('user_id', $studentIds)
+                    ->get()
+                    ->groupBy('user_id');
+
+                return $course->students->map(function (User $student) use ($allGrades) {
+                    $grades = $allGrades->get($student->id, collect());
 
                     return [
                         'student' => [
@@ -45,7 +50,7 @@ class GradebookService
                             'name' => $student->name,
                             'email' => $student->email,
                         ],
-                        'grades' => $grades,
+                        'grades' => $grades->values(),
                         'average_percentage' => $grades->avg('percentage'),
                         'total_grades' => $grades->count(),
                     ];
@@ -103,12 +108,6 @@ class GradebookService
         }
 
         $updatedGrade = $this->gradeRepository->update($gradeId, $data);
-
-        // Warm cache dengan grade terbaru
-        $this->cacheStrategy->put(
-            "grade:{$gradeId}",
-            $updatedGrade->load(['gradeable'])
-        );
 
         $this->cacheStrategy->flushTags([
             'gradebook',

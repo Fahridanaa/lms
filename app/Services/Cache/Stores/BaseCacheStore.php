@@ -53,4 +53,23 @@ abstract class BaseCacheStore implements CacheStoreInterface
     {
         return explode(':', $key);
     }
+
+    /**
+     * Extract multiple IDs dari complex key
+     *
+     * Example: "course:1:user:2:grades" → ['course' => 1, 'user' => 2]
+     */
+    protected function extractIds(string $key): array
+    {
+        $parts = $this->parseKey($key);
+        $ids = [];
+
+        for ($i = 0; $i < count($parts) - 1; $i += 2) {
+            if (isset($parts[$i + 1]) && is_numeric($parts[$i + 1])) {
+                $ids[$parts[$i]] = (int) $parts[$i + 1];
+            }
+        }
+
+        return $ids;
+    }
 }

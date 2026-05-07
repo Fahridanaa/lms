@@ -35,15 +35,19 @@ class GradebookControllerTest extends TestCase
 
     public function test_can_get_course_gradebook(): void
     {
-        // Create grades for different students
         $students = User::factory()->count(5)->create(['role' => 'student']);
 
         foreach ($students as $student) {
+            $this->course->enrollments()->create([
+                'user_id' => $student->id,
+                'enrolled_at' => now(),
+            ]);
+
             Grade::factory()->create([
                 'user_id' => $student->id,
                 'course_id' => $this->course->id,
-                'gradeable_type' => 'quiz',
-                'gradeable_id' => $this->quiz->id,
+                'gradeable_type' => 'submission',
+                'gradeable_id' => 1,
                 'score' => rand(70, 100),
                 'max_score' => 100,
             ]);
@@ -52,24 +56,16 @@ class GradebookControllerTest extends TestCase
         $response = $this->getJson("/api/courses/{$this->course->id}/gradebook");
 
         $response->assertStatus(200)
+            ->assertJsonCount(5, 'data')
             ->assertJsonStructure([
                 'success',
                 'message',
                 'data' => [
                     '*' => [
-                        'user_id',
-                        'user_name',
-                        'grades' => [
-                            '*' => [
-                                'id',
-                                'gradeable_type',
-                                'gradeable_id',
-                                'score',
-                                'max_score',
-                                'percentage',
-                            ]
-                        ],
-                        'average',
+                        'student' => ['id', 'name', 'email'],
+                        'grades',
+                        'average_percentage',
+                        'total_grades',
                     ]
                 ]
             ]);
