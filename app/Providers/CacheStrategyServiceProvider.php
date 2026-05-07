@@ -9,6 +9,7 @@ use App\Services\Cache\Loaders\AttemptCacheLoader;
 use App\Services\Cache\Loaders\CourseCacheLoader;
 use App\Services\Cache\Loaders\MaterialCacheLoader;
 use App\Services\Cache\Loaders\QuizCacheLoader;
+use App\Services\Cache\Loaders\SubmissionCacheLoader;
 use App\Services\Cache\Loaders\UserCacheLoader;
 use App\Services\Cache\NoCacheStrategy;
 use App\Services\Cache\ReadThroughStrategy;
@@ -17,6 +18,7 @@ use App\Services\Cache\Stores\AttemptCacheStore;
 use App\Services\Cache\Stores\CourseCacheStore;
 use App\Services\Cache\Stores\MaterialCacheStore;
 use App\Services\Cache\Stores\QuizCacheStore;
+use App\Services\Cache\Stores\SubmissionCacheStore;
 use App\Services\Cache\Stores\UserCacheStore;
 use App\Services\Cache\WriteThroughStrategy;
 use Illuminate\Support\ServiceProvider;
@@ -72,6 +74,7 @@ class CacheStrategyServiceProvider extends ServiceProvider
             $app->make(AttemptCacheLoader::class),
             $app->make(CourseCacheLoader::class),
             $app->make(UserCacheLoader::class),
+            $app->make(SubmissionCacheLoader::class),
         ]);
     }
 
@@ -92,6 +95,7 @@ class CacheStrategyServiceProvider extends ServiceProvider
             $app->make(AttemptCacheStore::class),
             $app->make(CourseCacheStore::class),
             $app->make(UserCacheStore::class),
+            $app->make(SubmissionCacheStore::class),
         ]);
     }
 

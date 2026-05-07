@@ -162,26 +162,35 @@ class CacheAsideStrategy implements CacheStrategyInterface
 
         $prefixedKey = $this->getPrefixedKey($key);
 
-        // STEP 1-2: Cek cache (dengan atau tanpa tags)
-        if (!empty($this->cacheTags)) {
-            $value = Cache::tags($this->cacheTags)->get($prefixedKey);
-        } else {
-            $value = Cache::get($prefixedKey);
-        }
+        // Gunakan try/finally untuk memastikan tags selalu di-reset,
+        // baik setelah sukses maupun jika terjadi exception.
+        try {
+            // STEP 1-2: Cek cache (dengan atau tanpa tags)
+            if (!empty($this->cacheTags)) {
+                $value = Cache::tags($this->cacheTags)->get($prefixedKey);
+            } else {
+                $value = Cache::get($prefixedKey);
+            }
 
-        // STEP 2: CACHE HIT - langsung return
-        if ($value !== null) {
+            // STEP 2: CACHE HIT - langsung return
+            if ($value !== null) {
+                return $value;
+            }
+
+            // STEP 3: CACHE MISS - eksekusi callback untuk fetch dari database
+            $value = $callback();
+
+            // STEP 4: Simpan ke cache untuk request berikutnya
+            // Catatan: $this->cacheTags masih berisi tags dari chain sebelumnya,
+            // sehingga put() internal akan menggunakan tags yang sama.
+            $this->put($key, $value);
+
+            // STEP 5: Return data
             return $value;
+        } finally {
+            // Reset tags setelah operasi selesai
+            $this->cacheTags = [];
         }
-
-        // STEP 3: CACHE MISS - eksekusi callback untuk fetch dari database
-        $value = $callback();
-
-        // STEP 4: Simpan ke cache untuk request berikutnya
-        $this->put($key, $value);
-
-        // STEP 5: Return data
-        return $value;
     }
 
     /**
@@ -189,47 +198,44 @@ class CacheAsideStrategy implements CacheStrategyInterface
      * PUT - Menyimpan data ke cache
      * ═══════════════════════════════════════════════════════════════════
      *
-     * PENTING: Di Cache-Aside, method ini HANYA update cache.
-     * Aplikasi yang bertanggung jawab untuk update database secara terpisah!
+     * Di Cache-Aside:
+     * 1. Eksekusi persist callback untuk update database (jika ada)
+     * 2. Simpan/update value di cache
      *
-     * FLOW:
-     * 1. Aplikasi sudah update DB (di luar method ini)
-     * 2. Method ini hanya simpan/update value di cache
-     *
-     * CONTOH PENGGUNAAN (Yang BENAR):
+     * CONTOH PENGGUNAAN:
      * ```php
-     * // Step 1: Update database dulu
-     * $quiz = Quiz::find(123);
-     * $quiz->update(['title' => 'New Title']);
-     *
-     * // Step 2: Update cache
-     * $cacheStrategy->put('quiz:123', $quiz);
+     * $cacheStrategy->put(
+     *     'submission:1',
+     *     $submission,
+     *     fn($data) => Submission::create($data)  // Persist ke DB
+     * );
      * ```
-     *
-     * ATAU bisa juga invalidate (hapus cache):
-     * ```php
-     * $quiz->update(['title' => 'New Title']);
-     * $cacheStrategy->forget('quiz:123');  // Hapus cache
-     * // Request berikutnya akan cache miss → query DB → dapat data terbaru
-     * ```
-     *
-     * CATATAN: Parameter $persist diabaikan di Cache-Aside karena
-     * aplikasi yang manage DB write secara eksplisit.
      *
      * @param string $key Cache key
-     * @param mixed $value Nilai yang akan disimpan di cache
-     * @param callable|null $persist DIABAIKAN di Cache-Aside
-     * @return bool true jika berhasil
+     * @param mixed $value Nilai yang akan disimpan
+     * @param callable|null $persist Callback untuk persist ke database
+     * @return bool Status keberhasilan
      */
     public function put(string $key, mixed $value, ?callable $persist = null): bool
     {
         $prefixedKey = $this->getPrefixedKey($key);
 
-        if (!empty($this->cacheTags)) {
-            return Cache::tags($this->cacheTags)->put($prefixedKey, $value, $this->ttl);
-        }
+        try {
+            // Eksekusi persist callback untuk update database
+            if ($persist !== null) {
+                $persist($value);
+            }
 
-        return Cache::put($prefixedKey, $value, $this->ttl);
+            // Simpan ke cache
+            $result = !empty($this->cacheTags)
+                ? Cache::tags($this->cacheTags)->put($prefixedKey, $value, $this->ttl)
+                : Cache::put($prefixedKey, $value, $this->ttl);
+
+            return $result;
+        } finally {
+            // Reset tags setelah operasi selesai
+            $this->cacheTags = [];
+        }
     }
 
     /**
@@ -257,11 +263,16 @@ class CacheAsideStrategy implements CacheStrategyInterface
     {
         $prefixedKey = $this->getPrefixedKey($key);
 
-        if (!empty($this->cacheTags)) {
-            return Cache::tags($this->cacheTags)->forget($prefixedKey);
-        }
+        try {
+            $result = !empty($this->cacheTags)
+                ? Cache::tags($this->cacheTags)->forget($prefixedKey)
+                : Cache::forget($prefixedKey);
 
-        return Cache::forget($prefixedKey);
+            return $result;
+        } finally {
+            // Reset tags setelah operasi selesai
+            $this->cacheTags = [];
+        }
     }
 
     /**
@@ -289,6 +300,24 @@ class CacheAsideStrategy implements CacheStrategyInterface
      * // Invalidate semua cache dengan tag 'users'
      * $strategy->flushTags(['users']);
      * // Kedua profile:1 dan profile:2 terhapus!
+     * ```
+     *
+     * @param array $tags Array nama tag
+     * @return self Untuk method chaining
+     */
+    /**
+     * TAGS - Set tag untuk operasi cache berkelompok
+     *
+     * Tags akan di-reset secara otomatis setelah operasi cache (get/put/forget)
+     * selesai. Ini mencegah tags bertahan antar operasi yang berbeda.
+     *
+     * CONTOH:
+     * ```php
+     * // Operasi dengan tags
+     * $strategy->tags(['users'])->put('profile:1', $user);
+     *
+     * // Operasi berikutnya TANPA tags
+     * $strategy->get('quiz:1', $callback);  // ← Tags sudah di-reset, aman!
      * ```
      *
      * @param array $tags Array nama tag

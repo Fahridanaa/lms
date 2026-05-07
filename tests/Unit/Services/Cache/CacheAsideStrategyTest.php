@@ -246,26 +246,186 @@ class CacheAsideStrategyTest extends TestCase
     }
 
     /**
-     * Test: Cache-Aside does NOT automatically execute persist callback
-     * Application manages DB writes separately
+     * Test: Cache-Aside now executes persist callback
+     * Application manages DB writes via the persist callback
      */
-    public function test_put_ignores_persist_callback(): void
+    public function test_put_executes_persist_callback(): void
     {
         $key = 'test:key';
         $value = ['data'];
 
         $persistCalled = false;
-        $persist = function () use (&$persistCalled) {
+        $persistedValue = null;
+        $persist = function ($val) use (&$persistCalled, &$persistedValue) {
             $persistCalled = true;
+            $persistedValue = $val;
         };
 
         Cache::shouldReceive('put')
             ->once()
+            ->with('lms:test:key', $value, 3600)
             ->andReturn(true);
 
         $this->strategy->put($key, $value, $persist);
 
-        // In Cache-Aside, persist callback is ignored (app handles DB writes)
-        $this->assertFalse($persistCalled, 'Cache-Aside should NOT execute persist callback');
+        // Cache-Aside now DOES execute persist callback
+        $this->assertTrue($persistCalled, 'Cache-Aside should execute persist callback');
+        $this->assertEquals($value, $persistedValue);
+    }
+
+    /**
+     * Test: Tags are reset after get() operation
+     * Ensures tags don't leak between different cache operations
+     */
+    public function test_tags_are_reset_after_get(): void
+    {
+        $key1 = 'users:1';
+        $tags = ['users', 'profiles'];
+        $value = ['tagged' => 'data'];
+
+        // First call with tags: expect tagged cache access
+        $taggedCache = \Mockery::mock();
+        $taggedCache->shouldReceive('get')
+            ->once()
+            ->with('lms:users:1')
+            ->andReturn($value);
+
+        Cache::shouldReceive('tags')
+            ->once()
+            ->with($tags)
+            ->andReturn($taggedCache);
+
+        $this->strategy->tags($tags)->get($key1, fn() => ['fallback']);
+
+        // Second call WITHOUT tags: expect direct cache access (no tags)
+        $key2 = 'quiz:1';
+        Cache::shouldReceive('get')
+            ->once()
+            ->with('lms:quiz:1')
+            ->andReturn('quiz-data');
+
+        // Should NOT call Cache::tags() because tags were reset
+        $result = $this->strategy->get($key2, fn() => ['fallback']);
+
+        $this->assertEquals('quiz-data', $result);
+    }
+
+    /**
+     * Test: Tags are reset after put() operation
+     */
+    public function test_tags_are_reset_after_put(): void
+    {
+        $tags = ['users'];
+        $value = ['data'];
+
+        // First call with tags: expect tagged cache put
+        $taggedCache = \Mockery::mock();
+        $taggedCache->shouldReceive('put')
+            ->once()
+            ->with('lms:users:1', $value, 3600)
+            ->andReturn(true);
+
+        Cache::shouldReceive('tags')
+            ->once()
+            ->with($tags)
+            ->andReturn($taggedCache);
+
+        $this->strategy->tags($tags)->put('users:1', $value);
+
+        // Second call WITHOUT tags: expect direct cache put (no tags)
+        Cache::shouldReceive('put')
+            ->once()
+            ->with('lms:quiz:1', $value, 3600)
+            ->andReturn(true);
+
+        // Should NOT call Cache::tags() because tags were reset
+        $result = $this->strategy->put('quiz:1', $value);
+
+        $this->assertTrue($result);
+    }
+
+    /**
+     * Test: Tags are reset after forget() operation
+     */
+    public function test_tags_are_reset_after_forget(): void
+    {
+        $tags = ['users'];
+
+        // First call with tags: expect tagged cache forget
+        $taggedCache = \Mockery::mock();
+        $taggedCache->shouldReceive('forget')
+            ->once()
+            ->with('lms:users:1')
+            ->andReturn(true);
+
+        Cache::shouldReceive('tags')
+            ->once()
+            ->with($tags)
+            ->andReturn($taggedCache);
+
+        $this->strategy->tags($tags)->forget('users:1');
+
+        // Second call WITHOUT tags: expect direct cache forget (no tags)
+        Cache::shouldReceive('forget')
+            ->once()
+            ->with('lms:quiz:1')
+            ->andReturn(true);
+
+        // Should NOT call Cache::tags() because tags were reset
+        $result = $this->strategy->forget('quiz:1');
+
+        $this->assertTrue($result);
+    }
+
+    /**
+     * Test: Multiple chained get() calls don't interfere with each other's tags
+     *
+     * When get() has a cache miss, it calls put() internally BEFORE tags are reset.
+     * The put() uses the same tags that were set for the get().
+     * After the entire get() operation completes, tags are reset.
+     */
+    public function test_consecutive_tagged_operations_work_independently(): void
+    {
+        // First: tagged get (cache miss, then put with same tags)
+        $taggedCache1 = \Mockery::mock();
+        $taggedCache1->shouldReceive('get')
+            ->once()
+            ->with('lms:users:1')
+            ->andReturn(null);
+
+        Cache::shouldReceive('tags')
+            ->once()
+            ->with(['users'])
+            ->andReturn($taggedCache1);
+
+        // After miss, put() is called from within get(), still using ['users'] tags
+        $taggedCache1b = \Mockery::mock();
+        $taggedCache1b->shouldReceive('put')
+            ->once()
+            ->with('lms:users:1', ['new'], 3600)
+            ->andReturn(true);
+
+        Cache::shouldReceive('tags')
+            ->once()
+            ->with(['users'])
+            ->andReturn($taggedCache1b);
+
+        $this->strategy->tags(['users'])->get('users:1', fn() => ['new']);
+
+        // Second: tagged get with DIFFERENT tags (cache hit)
+        $taggedCache2 = \Mockery::mock();
+        $taggedCache2->shouldReceive('get')
+            ->once()
+            ->with('lms:quiz:1')
+            ->andReturn('quiz-data');
+
+        Cache::shouldReceive('tags')
+            ->once()
+            ->with(['quizzes'])
+            ->andReturn($taggedCache2);
+
+        $result = $this->strategy->tags(['quizzes'])->get('quiz:1', fn() => ['fallback']);
+
+        $this->assertEquals('quiz-data', $result);
     }
 }

@@ -67,6 +67,12 @@ class AssignmentService
             throw new BusinessException(AssignmentMessage::ALREADY_SUBMITTED, 400);
         }
 
+        // Warm cache untuk entity baru, lalu flush list caches
+        $this->cacheStrategy->put(
+            "submission:{$submission->id}",
+            $submission->load(['user', 'assignment'])
+        );
+
         $this->cacheStrategy->flushTags([
             "assignment:{$assignmentId}:submissions",
             "user:{$userId}:submissions",
@@ -109,10 +115,15 @@ class AssignmentService
             'graded_at' => now(),
         ]);
 
+        // Warm cache dengan entity terbaru (Write-Through: cache + DB sync)
+        $this->cacheStrategy->put(
+            "submission:{$submissionId}",
+            $updatedSubmission->load(['user', 'assignment'])
+        );
+
         $this->cacheStrategy->flushTags([
             "assignment:{$submission->assignment_id}:submissions",
             "user:{$submission->user_id}:submissions",
-            "submission:{$submissionId}",
         ]);
 
         return $updatedSubmission;

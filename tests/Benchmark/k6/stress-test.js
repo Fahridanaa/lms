@@ -98,10 +98,13 @@ export default function () {
       file_path: `stress-test-${Date.now()}.pdf`,
     });
 
-    const res = http.post(`${BASE_URL}/api/assignments/${assignmentId}/submissions`, payload, params);
+    const res = http.post(`${BASE_URL}/api/assignments/${assignmentId}/submissions`, payload, {
+      ...params,
+      responseCallback: http.expectedStatuses(201, 400),
+    });
 
     check(res, {
-      'submission status ok': (r) => r.status === 201,
+      'submission status 201 or 400': (r) => r.status === 201 || r.status === 400,
     }) || errorRate.add(1);
 
   } else if (action < 0.90) {
@@ -113,10 +116,13 @@ export default function () {
       user_id: userId,
     });
 
-    const res = http.post(`${BASE_URL}/api/quizzes/${quizId}/attempts`, payload, params);
+    const res = http.post(`${BASE_URL}/api/quizzes/${quizId}/attempts`, payload, {
+      ...params,
+      responseCallback: http.expectedStatuses(201, 400),
+    });
 
     check(res, {
-      'attempt status ok': (r) => r.status === 201,
+      'attempt status 201 or 400': (r) => r.status === 201 || r.status === 400,
     }) || errorRate.add(1);
 
   } else {

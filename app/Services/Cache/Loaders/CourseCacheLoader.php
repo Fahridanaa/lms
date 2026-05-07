@@ -3,21 +3,23 @@
 namespace App\Services\Cache\Loaders;
 
 use App\Models\Course;
+use App\Models\Grade;
 use App\Models\User;
 use App\Repositories\AssignmentRepository;
 use App\Repositories\GradeRepository;
 use App\Repositories\MaterialRepository;
 
 /**
- * Cache Loader untuk Course-related cache keys
+ * Cache Loader untuk Course entity dan turunannya
  *
  * Handles keys:
- *   - course:{id}:materials → getMaterials()
- *   - course:{id}:assignments → getAssignments()
- *   - course:{id}:gradebook → computed gradebook
- *   - course:{id}:statistics → getStatistics()
- *   - course:{id}:top-performers:{limit} → getTopPerformers() with user data
- *   - course:{id}:user:{userId}:grades → getUserGrades with computed fields
+ *   - course:{id} → find course
+ *   - course:{id}:materials → getByCourse()
+ *   - course:{id}:assignments → getByCourse()
+ *   - course:{id}:gradebook → aggregated gradebook
+ *   - course:{id}:statistics → course statistics
+ *   - course:{id}:top-performers:{limit} → top performers
+ *   - course:{id}:user:{userId}:grades → user grades in course
  */
 class CourseCacheLoader extends BaseCacheLoader
 {
@@ -31,43 +33,39 @@ class CourseCacheLoader extends BaseCacheLoader
 
     public function load(string $key): mixed
     {
-        $parts = $this->parseKey($key);
-        $courseId = (int) ($parts[1] ?? 0);
-        $subkey = $parts[2] ?? null;
+        $ids = $this->extractIds($key);
+        $courseId = $ids['course'] ?? $this->extractId($key);
+        $subkey = $this->extractSubkey($key);
 
-        // Handle "course:{id}:user:{userId}:grades"
-        if ($subkey === 'user' && isset($parts[4]) && $parts[4] === 'grades') {
-            $userId = (int) $parts[3];
-            return $this->loadUserCourseGrades($courseId, $userId);
-        }
-
-        // Handle "course:{id}:top-performers:{limit}"
-        if ($subkey === 'top-performers' && isset($parts[3])) {
-            $limit = (int) $parts[3];
-            return $this->loadTopPerformers($courseId, $limit);
-        }
-
-        return match ($subkey) {
-            'materials' => $this->materialRepository->getByCourse($courseId),
-            'assignments' => $this->assignmentRepository->getByCourse($courseId),
-            'gradebook' => $this->loadGradebook($courseId),
-            'statistics' => $this->gradeRepository->getCourseStatistics($courseId),
-            default => null,
+        return match (true) {
+            $subkey === 'materials' => $this->materialRepository->getByCourse($courseId),
+            $subkey === 'assignments' => $this->assignmentRepository->getByCourse($courseId),
+            $subkey === 'gradebook' => $this->loadGradebook($courseId),
+            $subkey === 'statistics' => $this->gradeRepository->getCourseStatistics($courseId),
+            str_starts_with((string) $subkey, 'top-performers:') => $this->loadTopPerformers($courseId, $subkey),
+            str_contains((string) $subkey, 'user:') => $this->loadUserCourseGrades($key, $courseId),
+            $subkey === null => Course::with(['instructor'])->find($courseId),
+            default => Course::with(['instructor'])->find($courseId),
         };
     }
 
     /**
-     * Load full gradebook for a course
+     * Load aggregated gradebook for a course
      */
     protected function loadGradebook(int $courseId): array
     {
         $course = Course::with(['students'])->findOrFail($courseId);
-        $gradebook = [];
 
-        foreach ($course->students as $student) {
-            $grades = $this->gradeRepository->getUserCourseGrades($student->id, $courseId);
+        $allGrades = Grade::with(['gradeable'])
+            ->where('course_id', $courseId)
+            ->whereIn('user_id', $course->students->pluck('id'))
+            ->get()
+            ->groupBy('user_id');
 
-            $gradebook[] = [
+        return $course->students->map(function (User $student) use ($allGrades) {
+            $grades = $allGrades->get($student->id, collect());
+
+            return [
                 'student' => [
                     'id' => $student->id,
                     'name' => $student->name,
@@ -77,16 +75,43 @@ class CourseCacheLoader extends BaseCacheLoader
                 'average_percentage' => $grades->avg('percentage'),
                 'total_grades' => $grades->count(),
             ];
-        }
-
-        return $gradebook;
+        })->values()->all();
     }
 
     /**
-     * Load user's grades in a course with computed fields
+     * Load top performers with limit from subkey
      */
-    protected function loadUserCourseGrades(int $courseId, int $userId): array
+    protected function loadTopPerformers(int $courseId, string $subkey): mixed
     {
+        $limit = 10;
+        if (preg_match('/top-performers:(\d+)$/', $subkey, $matches)) {
+            $limit = (int) $matches[1];
+        }
+
+        $studentAverages = $this->gradeRepository->getTopPerformers($courseId, $limit);
+
+        $users = User::whereIn('id', $studentAverages->pluck('user_id'))
+            ->get()
+            ->keyBy('id');
+
+        return $studentAverages->map(fn ($item) => [
+            'user' => $users->get($item->user_id),
+            'average_percentage' => $item->average_percentage,
+        ]);
+    }
+
+    /**
+     * Extract userId from key like course:{id}:user:{userId}:grades
+     */
+    protected function loadUserCourseGrades(string $key, int $courseId): mixed
+    {
+        $ids = $this->extractIds($key);
+        $userId = $ids['user'] ?? 0;
+
+        if ($userId <= 0) {
+            return null;
+        }
+
         $grades = $this->gradeRepository->getUserCourseGrades($userId, $courseId);
 
         return [
@@ -96,21 +121,5 @@ class CourseCacheLoader extends BaseCacheLoader
             'quiz_grades' => $grades->where('gradeable_type', 'quiz_attempt'),
             'assignment_grades' => $grades->where('gradeable_type', 'submission'),
         ];
-    }
-
-    /**
-     * Load top performers with user data
-     */
-    protected function loadTopPerformers(int $courseId, int $limit): mixed
-    {
-        $studentAverages = $this->gradeRepository->getTopPerformers($courseId, $limit);
-
-        return $studentAverages->map(function ($item) {
-            $user = User::find($item->user_id);
-            return [
-                'user' => $user,
-                'average_percentage' => $item->average_percentage,
-            ];
-        });
     }
 }

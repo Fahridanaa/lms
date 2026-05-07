@@ -2,17 +2,19 @@
 
 namespace App\Services\Cache\Loaders;
 
+use App\Models\User;
 use App\Repositories\GradeRepository;
 use App\Repositories\QuizAttemptRepository;
 
 /**
- * Cache Loader untuk User-related cache keys
+ * Cache Loader untuk User entity dan turunannya
  *
  * Handles keys:
- *   - user:{id}:all-attempts → getUserAttempts()
- *   - user:{id}:quiz:{quizId}:attempts → getUserAttempts(userId, quizId)
- *   - user:{id}:performance:summary → computed performance summary
- *   - user:{id}:grades:all → getUserGrades()
+ *   - user:{id} → find user
+ *   - user:{id}:all-attempts → all quiz attempts
+ *   - user:{id}:quiz:{quizId}:attempts → attempts for specific quiz
+ *   - user:{id}:grades:all → all grades
+ *   - user:{id}:performance:summary → performance summary
  */
 class UserCacheLoader extends BaseCacheLoader
 {
@@ -25,34 +27,33 @@ class UserCacheLoader extends BaseCacheLoader
 
     public function load(string $key): mixed
     {
-        $parts = $this->parseKey($key);
-        $userId = (int) ($parts[1] ?? 0);
-        $subkey = $parts[2] ?? null;
+        $userId = $this->extractId($key);
+        $subkey = $this->extractSubkey($key);
 
-        // Handle "user:{id}:quiz:{quizId}:attempts"
-        if ($subkey === 'quiz' && isset($parts[4]) && $parts[4] === 'attempts') {
-            $quizId = (int) $parts[3];
-            return $this->quizAttemptRepository->getUserAttempts($userId, $quizId);
-        }
-
-        // Handle "user:{id}:performance:summary"
-        if ($subkey === 'performance' && isset($parts[3]) && $parts[3] === 'summary') {
-            return $this->loadPerformanceSummary($userId);
-        }
-
-        // Handle "user:{id}:grades:all"
-        if ($subkey === 'grades' && isset($parts[3]) && $parts[3] === 'all') {
-            return $this->gradeRepository->getUserGrades($userId);
-        }
-
-        return match ($subkey) {
-            'all-attempts' => $this->quizAttemptRepository->getUserAttempts($userId),
-            default => null,
+        return match (true) {
+            $subkey === 'all-attempts' => $this->quizAttemptRepository->getUserAttempts($userId),
+            str_starts_with((string) $subkey, 'quiz:') => $this->loadAttemptsForQuiz($key, $userId),
+            $subkey === 'grades:all' => $this->gradeRepository->getUserGrades($userId),
+            $subkey === 'performance:summary' => $this->loadPerformanceSummary($userId),
+            $subkey === null => User::find($userId),
+            default => User::find($userId),
         };
     }
 
     /**
-     * Load user's overall performance summary
+     * Load attempts for a specific quiz
+     */
+    protected function loadAttemptsForQuiz(string $key, int $userId): mixed
+    {
+        // Parse quizId from key: user:{id}:quiz:{quizId}:attempts
+        $ids = $this->extractIds($key);
+        $quizId = $ids['quiz'] ?? null;
+
+        return $this->quizAttemptRepository->getUserAttempts($userId, $quizId);
+    }
+
+    /**
+     * Load user performance summary
      */
     protected function loadPerformanceSummary(int $userId): array
     {

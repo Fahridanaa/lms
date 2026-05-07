@@ -56,14 +56,16 @@ use Illuminate\Support\Facades\Cache;
 class WriteThroughStrategy implements CacheStrategyInterface
 {
     protected array $cacheTags = [];
+
     protected int $ttl;
+
     protected string $prefix;
 
     /** @var CacheStoreInterface[] */
     protected array $stores = [];
 
     /**
-     * @param CacheStoreInterface[] $stores Array of stores
+     * @param  CacheStoreInterface[]  $stores  Array of stores
      */
     public function __construct(array $stores = [])
     {
@@ -78,6 +80,7 @@ class WriteThroughStrategy implements CacheStrategyInterface
     public function addStore(CacheStoreInterface $store): static
     {
         $this->stores[] = $store;
+
         return $this;
     }
 
@@ -91,47 +94,60 @@ class WriteThroughStrategy implements CacheStrategyInterface
                 return $store;
             }
         }
+
         return null;
     }
 
     /**
      * ═══════════════════════════════════════════════════════════════════
-     * GET - Membaca data (menggunakan Store.load())
+     * GET - Membaca data (menggunakan Store.load() atau callback fallback)
      * ═══════════════════════════════════════════════════════════════════
      *
-     * @param string $key Cache key
-     * @param callable|null $callback IGNORED - only for interface compatibility
+     * @param  string  $key  Cache key
+     * @param  callable|null  $callback  Fallback jika tidak ada store yang support key ini
      * @return mixed Data dari cache atau database
-     * @throws \RuntimeException If no store supports the key
+     *
+     * @throws \RuntimeException If no store supports the key AND no callback provided
      */
     public function get(string $key, ?callable $callback = null): mixed
     {
         $prefixedKey = $this->getPrefixedKey($key);
 
-        // Check cache
-        if (!empty($this->cacheTags)) {
-            $value = Cache::tags($this->cacheTags)->get($prefixedKey);
-        } else {
-            $value = Cache::get($prefixedKey);
-        }
+        try {
+            // Check cache
+            if (! empty($this->cacheTags)) {
+                $value = Cache::tags($this->cacheTags)->get($prefixedKey);
+            } else {
+                $value = Cache::get($prefixedKey);
+            }
 
-        // Cache HIT
-        if ($value !== null) {
+            // Cache HIT
+            if ($value !== null) {
+                return $value;
+            }
+
+            // Cache MISS - use store
+            $store = $this->findStore($key);
+            if ($store !== null) {
+                $value = $store->load($key);
+                $this->storeInCache($prefixedKey, $value);
+
+                return $value;
+            }
+
+            // Tidak ada store — fallback ke callback
+            if ($callback === null) {
+                throw new \RuntimeException("No store registered for cache key: {$key}");
+            }
+
+            $value = $callback();
+            $this->storeInCache($prefixedKey, $value);
+
             return $value;
+        } finally {
+            // Reset tags setelah operasi selesai
+            $this->cacheTags = [];
         }
-
-        // Cache MISS - use store
-        $store = $this->findStore($key);
-        if ($store === null) {
-            throw new \RuntimeException("No store registered for cache key: {$key}");
-        }
-
-        $value = $store->load($key);
-
-        // Store in cache
-        $this->storeInCache($prefixedKey, $value);
-
-        return $value;
     }
 
     /**
@@ -139,36 +155,56 @@ class WriteThroughStrategy implements CacheStrategyInterface
      * PUT - Write ke DATABASE dan CACHE secara BERSAMAAN
      * ═══════════════════════════════════════════════════════════════════
      *
-     * @param string $key Cache key
-     * @param mixed $value Data yang akan disimpan
-     * @param callable|null $persist IGNORED - only for interface compatibility
-     * @return bool true jika berhasil
-     * @throws \RuntimeException If no store supports the key
+     * Flow:
+     * 1. Ada store? → store.store() (DB write) + cache write
+     * 2. Tidak ada store? → $persist callback (DB write) + cache write
+     * 3. Jika DB write sukses tapi cache write gagal, log warning dan return true
+     *
+     * @param  string  $key  Cache key
+     * @param  mixed  $value  Data yang akan disimpan
+     * @param  callable|null  $persist  Fallback jika tidak ada store yang support key ini
+     * @return bool true jika DB write berhasil
      */
     public function put(string $key, mixed $value, ?callable $persist = null): bool
     {
         $prefixedKey = $this->getPrefixedKey($key);
 
         $store = $this->findStore($key);
-        if ($store === null) {
-            throw new \RuntimeException("No store registered for cache key: {$key}");
+
+        // Validasi: harus ada store atau persist callback
+        if ($store === null && $persist === null) {
+            throw new \RuntimeException("No store registered and no persist callback for cache key: {$key}");
         }
 
         try {
-            // STEP 1: Write ke DATABASE via store
-            $store->store($key, $value);
+            if ($store !== null) {
+                // Ada store — gunakan store.store() untuk DB write
+                $store->store($key, $value);
+            } else {
+                // Tidak ada store — fallback ke persist callback
+                $persist($value);
+            }
 
-            // STEP 2: Write ke CACHE
-            $this->storeInCache($prefixedKey, $value);
+            // Write ke CACHE
+            try {
+                // Catatan: $this->cacheTags masih berisi tags dari chain sebelumnya
+                $this->storeInCache($prefixedKey, $value);
+            } catch (\Exception $e) {
+                // Cache write gagal — log warning, jangan fail-kan operasi
+                \Illuminate\Support\Facades\Log::warning("Cache write failed for key {$prefixedKey}: {$e->getMessage()}");
+            }
 
             return true;
         } catch (\Exception $e) {
             return false;
+        } finally {
+            // Reset tags setelah operasi selesai
+            $this->cacheTags = [];
         }
     }
 
     /**
-     * FORGET - Hapus dari cache dan database (via Store.erase())
+     * FORGET - Hapus dari cache dan database (via Store.erase() atau callback fallback)
      *
      * @throws \RuntimeException If no store supports the key
      */
@@ -176,23 +212,29 @@ class WriteThroughStrategy implements CacheStrategyInterface
     {
         $prefixedKey = $this->getPrefixedKey($key);
 
-        $store = $this->findStore($key);
-        if ($store === null) {
-            throw new \RuntimeException("No store registered for cache key: {$key}");
-        }
-
         try {
-            // Erase dari database via store
-            $store->erase($key);
+            $store = $this->findStore($key);
+            if ($store !== null) {
+                try {
+                    // Erase dari database via store
+                    $store->erase($key);
 
-            // Hapus dari cache
-            if (!empty($this->cacheTags)) {
-                return Cache::tags($this->cacheTags)->forget($prefixedKey);
+                    // Hapus dari cache
+                    return !empty($this->cacheTags)
+                        ? Cache::tags($this->cacheTags)->forget($prefixedKey)
+                        : Cache::forget($prefixedKey);
+                } catch (\Exception $e) {
+                    return false;
+                }
             }
 
-            return Cache::forget($prefixedKey);
-        } catch (\Exception $e) {
-            return false;
+            // Tidak ada store — cukup hapus dari cache
+            return !empty($this->cacheTags)
+                ? Cache::tags($this->cacheTags)->forget($prefixedKey)
+                : Cache::forget($prefixedKey);
+        } finally {
+            // Reset tags setelah operasi selesai
+            $this->cacheTags = [];
         }
     }
 
@@ -210,6 +252,7 @@ class WriteThroughStrategy implements CacheStrategyInterface
     public function tags(array $tags): self
     {
         $this->cacheTags = $tags;
+
         return $this;
     }
 
@@ -218,8 +261,12 @@ class WriteThroughStrategy implements CacheStrategyInterface
      */
     public function flushTags(array $tags): bool
     {
+        // Reset cacheTags karena operasi ini eksplisit menggunakan tags baru
+        $this->cacheTags = [];
+
         try {
             Cache::tags($tags)->flush();
+
             return true;
         } catch (\Exception $e) {
             return false;
@@ -229,9 +276,15 @@ class WriteThroughStrategy implements CacheStrategyInterface
     /**
      * Store ke cache (dengan atau tanpa tags)
      */
+    /**
+     * Store ke cache (dengan atau tanpa tags)
+     *
+     * @param string $key Prefixed cache key
+     * @param mixed $value Data to cache
+     */
     protected function storeInCache(string $key, mixed $value): void
     {
-        if (!empty($this->cacheTags)) {
+        if (! empty($this->cacheTags)) {
             Cache::tags($this->cacheTags)->put($key, $value, $this->ttl);
         } else {
             Cache::put($key, $value, $this->ttl);

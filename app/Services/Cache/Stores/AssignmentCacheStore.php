@@ -38,19 +38,9 @@ class AssignmentCacheStore extends BaseCacheStore
 
     public function store(string $key, mixed $value): void
     {
-        $subkey = $this->extractSubkey($key);
-
-        // Handle submission store
-        if ($subkey !== null && str_starts_with($subkey, 'submissions')) {
-            if ($value instanceof \App\Models\Submission) {
-                $value->save();
-            }
-            return;
-        }
-
-        // Handle assignment store
         if ($value instanceof \App\Models\Assignment) {
             $value->save();
+
             return;
         }
 

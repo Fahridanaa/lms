@@ -83,10 +83,17 @@ class QuizService
 
     /**
      * Submit quiz answers
+     *
+     * @throws BusinessException Jika attempt tidak ditemukan atau quizId mismatch
      */
-    public function submitQuizAnswers(int $attemptId, array $answers): QuizAttempt
+    public function submitQuizAnswers(int $attemptId, array $answers, ?int $expectedQuizId = null): QuizAttempt
     {
         $attempt = $this->quizAttemptRepository->findWithQuizAndQuestions($attemptId);
+
+        // Validasi quizId jika diberikan
+        if ($expectedQuizId !== null && $attempt->quiz_id !== $expectedQuizId) {
+            throw new BusinessException(QuizMessage::NOT_FOUND, 404);
+        }
 
         if ($attempt->completed_at !== null) {
             throw new BusinessException(QuizMessage::ALREADY_ATTEMPTED, 400);

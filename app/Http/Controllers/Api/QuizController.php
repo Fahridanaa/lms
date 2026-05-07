@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Constants\Messages\QuizMessage;
+use App\Exceptions\BusinessException;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponseTrait;
 use App\Http\Requests\StartAttemptQuizRequest;
@@ -63,17 +64,28 @@ class QuizController extends Controller
      */
     public function submitAttempt(SubmitAttemptQuizRequest $request, int $quizId, int $attemptId)
     {
-        $attempt = $this->quizService->submitQuizAnswers($attemptId, $request->validated()['answers']);
+        $attempt = $this->quizService->submitQuizAnswers(
+            $attemptId,
+            $request->validated()['answers'],
+            $quizId  // Pass quizId untuk validasi
+        );
 
         return $this->success($attempt, QuizMessage::QUIZ_SUBMITTED);
     }
 
     /**
      * GET /api/quizzes/{quizId}/attempts/{attemptId}/result
+     *
+     * Validates that the attempt belongs to the specified quiz before returning result.
      */
     public function attemptResult(int $quizId, int $attemptId)
     {
         $result = $this->quizService->getAttemptResult($attemptId);
+
+        // Validasi bahwa attempt milik quiz yang benar
+        if ($result->quiz_id !== $quizId) {
+            throw new BusinessException(QuizMessage::NOT_FOUND, 404);
+        }
 
         return $this->success($result);
     }

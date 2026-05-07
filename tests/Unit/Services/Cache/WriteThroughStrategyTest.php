@@ -18,6 +18,7 @@ use Tests\TestCase;
 class WriteThroughStrategyTest extends TestCase
 {
     protected WriteThroughStrategy $strategy;
+
     protected $mockStore;
 
     protected function setUp(): void
@@ -46,29 +47,48 @@ class WriteThroughStrategyTest extends TestCase
     }
 
     /**
-     * Test: put() throws exception when no store is registered
+     * Test: put() throws exception when no store is registered AND no persist callback
      */
-    public function test_put_throws_exception_when_no_store_registered(): void
+    public function test_put_throws_exception_when_no_store_and_no_persist(): void
     {
         $strategy = new WriteThroughStrategy([]); // No stores
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('No store registered for cache key: test:key');
+        $this->expectExceptionMessage('No store registered and no persist callback for cache key: test:key');
 
         $strategy->put('test:key', ['data']);
     }
 
     /**
-     * Test: forget() throws exception when no store is registered
+     * Test: forget() without store removes from cache only (no exception)
      */
-    public function test_forget_throws_exception_when_no_store_registered(): void
+    public function test_forget_without_store_removes_from_cache_only(): void
     {
         $strategy = new WriteThroughStrategy([]); // No stores
+
+        Cache::shouldReceive('forget')
+            ->once()
+            ->with('lms:test:key')
+            ->andReturn(true);
+
+        $result = $strategy->forget('test:key');
+
+        $this->assertTrue($result);
+    }
+
+    /**
+     * Test: get() throws exception when no store is registered AND no callback
+     */
+    public function test_get_throws_exception_when_no_store_and_no_callback(): void
+    {
+        $strategy = new WriteThroughStrategy([]); // No stores
+
+        Cache::shouldReceive('get')->andReturn(null);
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('No store registered for cache key: test:key');
 
-        $strategy->forget('test:key');
+        $strategy->get('test:key');
     }
 
     /**
@@ -342,6 +362,7 @@ class WriteThroughStrategyTest extends TestCase
             ->once()
             ->andReturnUsing(function () use (&$operations) {
                 $operations[] = 'cache_write';
+
                 return true;
             });
 
@@ -420,5 +441,155 @@ class WriteThroughStrategyTest extends TestCase
 
         $this->assertTrue($result);
         $this->assertFalse($callbackExecuted);
+    }
+
+    /**
+     * Test: Tags are reset after get() operation
+     */
+    public function test_tags_are_reset_after_get(): void
+    {
+        $tags = ['users', 'profiles'];
+        $value = ['tagged' => 'data'];
+
+        // First call with tags: expect tagged cache get
+        $taggedCache = \Mockery::mock();
+        $taggedCache->shouldReceive('get')
+            ->once()
+            ->with('lms:users:1')
+            ->andReturn($value);
+
+        Cache::shouldReceive('tags')
+            ->once()
+            ->with($tags)
+            ->andReturn($taggedCache);
+
+        $this->strategy->tags($tags)->get('users:1');
+
+        // Second call WITHOUT tags: expect direct cache get (no tags)
+        Cache::shouldReceive('get')
+            ->once()
+            ->with('lms:quiz:1')
+            ->andReturn('quiz-data');
+
+        // Should NOT call Cache::tags() because tags were reset
+        $result = $this->strategy->get('quiz:1');
+
+        $this->assertEquals('quiz-data', $result);
+    }
+
+    /**
+     * Test: Tags are reset after put() operation
+     */
+    public function test_tags_are_reset_after_put(): void
+    {
+        $key = 'test:key';
+        $tags = ['users'];
+        $value = ['data'];
+
+        $this->mockStore->shouldReceive('store')->once()->with($key, $value);
+
+        // First call with tags: expect tagged cache put
+        $taggedCache = \Mockery::mock();
+        $taggedCache->shouldReceive('put')
+            ->once()
+            ->with('lms:test:key', $value, 3600);
+
+        Cache::shouldReceive('tags')
+            ->once()
+            ->with($tags)
+            ->andReturn($taggedCache);
+
+        $this->strategy->tags($tags)->put($key, $value);
+
+        // Second call WITHOUT tags: mock store also matches 'other:1'
+        $this->mockStore->shouldReceive('store')->once()->with('other:1', $value);
+
+        Cache::shouldReceive('put')
+            ->once()
+            ->with('lms:other:1', $value, 3600);
+
+        // Should NOT call Cache::tags() because tags were reset
+        $result = $this->strategy->put('other:1', $value);
+
+        $this->assertTrue($result);
+    }
+
+    /**
+     * Test: Tags are reset after forget() operation
+     */
+    public function test_tags_are_reset_after_forget(): void
+    {
+        $tags = ['users'];
+
+        $this->mockStore->shouldReceive('erase')->once()->with('users:1');
+
+        // First call with tags: expect tagged cache forget
+        $taggedCache = \Mockery::mock();
+        $taggedCache->shouldReceive('forget')
+            ->once()
+            ->with('lms:users:1')
+            ->andReturn(true);
+
+        Cache::shouldReceive('tags')
+            ->once()
+            ->with($tags)
+            ->andReturn($taggedCache);
+
+        $this->strategy->tags($tags)->forget('users:1');
+
+        // Second call WITHOUT tags: mock store also matches 'quiz:1'
+        $this->mockStore->shouldReceive('erase')->once()->with('quiz:1');
+
+        Cache::shouldReceive('forget')
+            ->once()
+            ->with('lms:quiz:1')
+            ->andReturn(true);
+
+        // Should NOT call Cache::tags() because tags were reset
+        $result = $this->strategy->forget('quiz:1');
+
+        $this->assertTrue($result);
+    }
+
+    /**
+     * Test: Consecutive tagged operations work independently
+     */
+    public function test_consecutive_tagged_operations_work_independently(): void
+    {
+        $this->mockStore->shouldReceive('store')
+            ->with('users:1', ['user-data'])
+            ->once();
+
+        $this->mockStore->shouldReceive('store')
+            ->with('quiz:1', ['quiz-data'])
+            ->once();
+
+        // First operation with ['users'] tags
+        $taggedCache1 = \Mockery::mock();
+        $taggedCache1->shouldReceive('put')
+            ->once()
+            ->with('lms:users:1', ['user-data'], 3600);
+
+        Cache::shouldReceive('tags')
+            ->once()
+            ->with(['users'])
+            ->andReturn($taggedCache1);
+
+        $this->strategy->tags(['users'])->put('users:1', ['user-data']);
+
+        // Second operation with ['quizzes'] tags
+        $taggedCache2 = \Mockery::mock();
+        $taggedCache2->shouldReceive('put')
+            ->once()
+            ->with('lms:quiz:1', ['quiz-data'], 3600);
+
+        Cache::shouldReceive('tags')
+            ->once()
+            ->with(['quizzes'])
+            ->andReturn($taggedCache2);
+
+        $result = $this->strategy->tags(['quizzes'])->put('quiz:1', ['quiz-data']);
+
+        $this->assertTrue($result);
     }
 }

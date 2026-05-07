@@ -8,11 +8,12 @@ use App\Models\Quiz;
 use App\Models\QuizAttempt;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
 class QuizControllerTest extends TestCase
 {
-    use RefreshDatabase;
+    use DatabaseTransactions;
 
     protected User $user;
     protected Course $course;
@@ -274,5 +275,51 @@ class QuizControllerTest extends TestCase
         $response = $this->getJson("/api/quizzes/{$this->quiz->id}/attempts/99999/result");
 
         $response->assertStatus(404);
+    }
+
+    public function test_attempt_result_validates_quiz_id(): void
+    {
+        // Create a completed attempt for the current quiz
+        $attempt = QuizAttempt::factory()->create([
+            'quiz_id' => $this->quiz->id,
+            'user_id' => $this->user->id,
+            'started_at' => now()->subMinutes(30),
+            'completed_at' => now(),
+            'score' => 85,
+            'answers' => json_encode([]),
+        ]);
+
+        // Try to access result with WRONG quizId
+        $wrongQuizId = $this->quiz->id + 999;
+        $response = $this->getJson("/api/quizzes/{$wrongQuizId}/attempts/{$attempt->id}/result");
+
+        $response->assertStatus(404)
+            ->assertJson(['success' => false]);
+    }
+
+    public function test_submit_attempt_validates_quiz_id(): void
+    {
+        // Create a quiz attempt for the current quiz
+        $attempt = QuizAttempt::factory()->create([
+            'quiz_id' => $this->quiz->id,
+            'user_id' => $this->user->id,
+            'started_at' => now(),
+            'completed_at' => null,
+        ]);
+
+        $questions = $this->quiz->questions;
+        $answers = [];
+        foreach ($questions as $question) {
+            $answers[$question->id] = $question->correct_answer;
+        }
+
+        // Try to submit with WRONG quizId
+        $wrongQuizId = $this->quiz->id + 999;
+        $response = $this->putJson("/api/quizzes/{$wrongQuizId}/attempts/{$attempt->id}", [
+            'answers' => $answers,
+        ]);
+
+        $response->assertStatus(404)
+            ->assertJson(['success' => false]);
     }
 }

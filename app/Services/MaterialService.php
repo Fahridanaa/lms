@@ -106,9 +106,14 @@ class MaterialService
 
         $updatedMaterial = $this->materialRepository->update($materialId, $data);
 
+        // Warm cache dengan entity terbaru
+        $this->cacheStrategy->put(
+            "material:{$materialId}",
+            $updatedMaterial->load(['course'])
+        );
+
         $this->cacheStrategy->flushTags([
             'materials',
-            "material:{$materialId}",
             "course:{$material->course_id}"
         ]);
 

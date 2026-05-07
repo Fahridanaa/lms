@@ -2,17 +2,21 @@
 
 namespace App\Services\Cache\Stores;
 
+use App\Models\User;
 use App\Repositories\GradeRepository;
 use App\Repositories\QuizAttemptRepository;
 
 /**
- * Cache Store untuk User-related cache keys
+ * Cache Store untuk User entity dan turunannya
  *
  * Handles keys:
- *   - user:{id}:all-attempts → getUserAttempts()
- *   - user:{id}:quiz:{quizId}:attempts → getUserAttempts(userId, quizId)
- *   - user:{id}:performance:summary → computed performance
- *   - user:{id}:grades:all → getUserGrades()
+ *   - user:{id} → find user
+ *   - user:{id}:all-attempts → all quiz attempts
+ *   - user:{id}:quiz:{quizId}:attempts → attempts for specific quiz
+ *   - user:{id}:grades:all → all grades
+ *   - user:{id}:performance:summary → performance summary
+ *
+ * Store/erase hanya berlaku untuk key sederhana (user:{id}).
  */
 class UserCacheStore extends BaseCacheStore
 {
@@ -25,32 +29,33 @@ class UserCacheStore extends BaseCacheStore
 
     public function load(string $key): mixed
     {
-        $parts = $this->parseKey($key);
-        $userId = (int) ($parts[1] ?? 0);
-        $subkey = $parts[2] ?? null;
+        $userId = $this->extractId($key);
+        $subkey = $this->extractSubkey($key);
 
-        // Handle "user:{id}:quiz:{quizId}:attempts"
-        if ($subkey === 'quiz' && isset($parts[4]) && $parts[4] === 'attempts') {
-            $quizId = (int) $parts[3];
-            return $this->quizAttemptRepository->getUserAttempts($userId, $quizId);
-        }
-
-        // Handle "user:{id}:performance:summary"
-        if ($subkey === 'performance' && isset($parts[3]) && $parts[3] === 'summary') {
-            return $this->loadPerformanceSummary($userId);
-        }
-
-        // Handle "user:{id}:grades:all"
-        if ($subkey === 'grades' && isset($parts[3]) && $parts[3] === 'all') {
-            return $this->gradeRepository->getUserGrades($userId);
-        }
-
-        return match ($subkey) {
-            'all-attempts' => $this->quizAttemptRepository->getUserAttempts($userId),
-            default => null,
+        return match (true) {
+            $subkey === 'all-attempts' => $this->quizAttemptRepository->getUserAttempts($userId),
+            str_starts_with((string) $subkey, 'quiz:') => $this->loadAttemptsForQuiz($key, $userId),
+            $subkey === 'grades:all' => $this->gradeRepository->getUserGrades($userId),
+            $subkey === 'performance:summary' => $this->loadPerformanceSummary($userId),
+            $subkey === null => User::find($userId),
+            default => User::find($userId),
         };
     }
 
+    /**
+     * Load attempts for a specific quiz
+     */
+    protected function loadAttemptsForQuiz(string $key, int $userId): mixed
+    {
+        $ids = $this->extractIds($key);
+        $quizId = $ids['quiz'] ?? null;
+
+        return $this->quizAttemptRepository->getUserAttempts($userId, $quizId);
+    }
+
+    /**
+     * Load user performance summary
+     */
     protected function loadPerformanceSummary(int $userId): array
     {
         $grades = $this->gradeRepository->getUserGrades($userId);
@@ -73,33 +78,22 @@ class UserCacheStore extends BaseCacheStore
 
     public function store(string $key, mixed $value): void
     {
-        $parts = $this->parseKey($key);
-        $subkey = $parts[2] ?? null;
-
-        // Handle quiz attempt store
-        if ($subkey === 'quiz' || $subkey === 'all-attempts') {
-            if ($value instanceof \App\Models\QuizAttempt) {
-                $value->save();
-            }
+        if ($value instanceof User) {
+            $value->save();
             return;
         }
 
-        // Handle grades store
-        if ($subkey === 'grades') {
-            if (is_iterable($value)) {
-                foreach ($value as $grade) {
-                    if ($grade instanceof \App\Models\Grade) {
-                        $grade->save();
-                    }
-                }
-            }
+        $id = $this->extractId($key);
+        if ($id > 0 && is_array($value)) {
+            User::updateOrCreate(['id' => $id], $value);
         }
     }
 
     public function erase(string $key): void
     {
-        // User aggregations are not directly deletable
-        // They are derived from other entities
-        // Erase is a no-op for safety
+        $id = $this->extractId($key);
+        if ($id > 0) {
+            User::destroy($id);
+        }
     }
 }

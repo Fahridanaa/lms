@@ -3,24 +3,26 @@
 namespace App\Services\Cache\Stores;
 
 use App\Models\Course;
+use App\Models\Grade;
 use App\Models\User;
 use App\Repositories\AssignmentRepository;
 use App\Repositories\GradeRepository;
 use App\Repositories\MaterialRepository;
 
 /**
- * Cache Store untuk Course-related cache keys
+ * Cache Store untuk Course entity dan turunannya
  *
  * Handles keys:
- *   - course:{id}:materials → getMaterials()
- *   - course:{id}:assignments → getAssignments()
- *   - course:{id}:gradebook → computed gradebook
- *   - course:{id}:statistics → getStatistics()
- *   - course:{id}:top-performers:{limit} → getTopPerformers()
- *   - course:{id}:user:{userId}:grades → getUserGrades()
+ *   - course:{id} → course details
+ *   - course:{id}:materials → getByCourse()
+ *   - course:{id}:assignments → getByCourse()
+ *   - course:{id}:gradebook → aggregated gradebook
+ *   - course:{id}:statistics → course statistics
+ *   - course:{id}:top-performers:{limit} → top performers
+ *   - course:{id}:user:{userId}:grades → user grades in course
  *
- * Note: Most course-related data is read-heavy.
- * Store operations mainly for grade updates.
+ * Store/erase hanya berlaku untuk key sederhana (course:{id}).
+ * Untuk subkey kompleks, store/erase tidak didukung (read-only aggregation).
  */
 class CourseCacheStore extends BaseCacheStore
 {
@@ -34,40 +36,39 @@ class CourseCacheStore extends BaseCacheStore
 
     public function load(string $key): mixed
     {
-        $parts = $this->parseKey($key);
-        $courseId = (int) ($parts[1] ?? 0);
-        $subkey = $parts[2] ?? null;
+        $ids = $this->extractIds($key);
+        $courseId = $ids['course'] ?? $this->extractId($key);
+        $subkey = $this->extractSubkey($key);
 
-        // Handle "course:{id}:user:{userId}:grades"
-        if ($subkey === 'user' && isset($parts[4]) && $parts[4] === 'grades') {
-            $userId = (int) $parts[3];
-            return $this->loadUserCourseGrades($courseId, $userId);
-        }
-
-        // Handle "course:{id}:top-performers:{limit}"
-        if ($subkey === 'top-performers' && isset($parts[3])) {
-            $limit = (int) $parts[3];
-            return $this->loadTopPerformers($courseId, $limit);
-        }
-
-        return match ($subkey) {
-            'materials' => $this->materialRepository->getByCourse($courseId),
-            'assignments' => $this->assignmentRepository->getByCourse($courseId),
-            'gradebook' => $this->loadGradebook($courseId),
-            'statistics' => $this->gradeRepository->getCourseStatistics($courseId),
-            default => null,
+        return match (true) {
+            $subkey === 'materials' => $this->materialRepository->getByCourse($courseId),
+            $subkey === 'assignments' => $this->assignmentRepository->getByCourse($courseId),
+            $subkey === 'gradebook' => $this->loadGradebook($courseId),
+            $subkey === 'statistics' => $this->gradeRepository->getCourseStatistics($courseId),
+            str_starts_with((string) $subkey, 'top-performers:') => $this->loadTopPerformers($courseId, $subkey),
+            str_contains((string) $subkey, 'user:') => $this->loadUserCourseGrades($key, $courseId),
+            $subkey === null => Course::with(['instructor'])->find($courseId),
+            default => Course::with(['instructor'])->find($courseId),
         };
     }
 
+    /**
+     * Load aggregated gradebook for a course
+     */
     protected function loadGradebook(int $courseId): array
     {
         $course = Course::with(['students'])->findOrFail($courseId);
-        $gradebook = [];
 
-        foreach ($course->students as $student) {
-            $grades = $this->gradeRepository->getUserCourseGrades($student->id, $courseId);
+        $allGrades = Grade::with(['gradeable'])
+            ->where('course_id', $courseId)
+            ->whereIn('user_id', $course->students->pluck('id'))
+            ->get()
+            ->groupBy('user_id');
 
-            $gradebook[] = [
+        return $course->students->map(function (User $student) use ($allGrades) {
+            $grades = $allGrades->get($student->id, collect());
+
+            return [
                 'student' => [
                     'id' => $student->id,
                     'name' => $student->name,
@@ -77,13 +78,43 @@ class CourseCacheStore extends BaseCacheStore
                 'average_percentage' => $grades->avg('percentage'),
                 'total_grades' => $grades->count(),
             ];
-        }
-
-        return $gradebook;
+        })->values()->all();
     }
 
-    protected function loadUserCourseGrades(int $courseId, int $userId): array
+    /**
+     * Load top performers with limit from subkey
+     */
+    protected function loadTopPerformers(int $courseId, string $subkey): mixed
     {
+        $limit = 10;
+        if (preg_match('/top-performers:(\d+)$/', $subkey, $matches)) {
+            $limit = (int) $matches[1];
+        }
+
+        $studentAverages = $this->gradeRepository->getTopPerformers($courseId, $limit);
+
+        $users = User::whereIn('id', $studentAverages->pluck('user_id'))
+            ->get()
+            ->keyBy('id');
+
+        return $studentAverages->map(fn ($item) => [
+            'user' => $users->get($item->user_id),
+            'average_percentage' => $item->average_percentage,
+        ]);
+    }
+
+    /**
+     * Extract userId from key like course:{id}:user:{userId}:grades
+     */
+    protected function loadUserCourseGrades(string $key, int $courseId): mixed
+    {
+        $ids = $this->extractIds($key);
+        $userId = $ids['user'] ?? 0;
+
+        if ($userId <= 0) {
+            return null;
+        }
+
         $grades = $this->gradeRepository->getUserCourseGrades($userId, $courseId);
 
         return [
@@ -95,44 +126,26 @@ class CourseCacheStore extends BaseCacheStore
         ];
     }
 
-    protected function loadTopPerformers(int $courseId, int $limit): mixed
-    {
-        $studentAverages = $this->gradeRepository->getTopPerformers($courseId, $limit);
-
-        return $studentAverages->map(function ($item) {
-            $user = User::find($item->user_id);
-            return [
-                'user' => $user,
-                'average_percentage' => $item->average_percentage,
-            ];
-        });
-    }
-
     public function store(string $key, mixed $value): void
     {
-        // Course data is mostly read-only aggregations
-        // Direct updates go through specific repositories
-        // This is mainly for cache consistency
+        if ($value instanceof Course) {
+            $value->save();
+            return;
+        }
 
-        $parts = $this->parseKey($key);
-        $subkey = $parts[2] ?? null;
-
-        // Handle grade updates for "course:{id}:user:{userId}:grades"
-        if ($subkey === 'user' && isset($parts[4]) && $parts[4] === 'grades') {
-            if (isset($value['grades']) && is_iterable($value['grades'])) {
-                foreach ($value['grades'] as $grade) {
-                    if ($grade instanceof \App\Models\Grade) {
-                        $grade->save();
-                    }
-                }
-            }
+        $id = $this->extractId($key);
+        if ($id > 0 && is_array($value)) {
+            $value['id'] = $id;
+            // Use updateOrCreate for idempotency
+            Course::updateOrCreate(['id' => $id], $value);
         }
     }
 
     public function erase(string $key): void
     {
-        // Course aggregations are not directly deletable
-        // They are derived from other entities
-        // Erase is a no-op for safety
+        $id = $this->extractId($key);
+        if ($id > 0) {
+            Course::destroy($id);
+        }
     }
 }

@@ -5,11 +5,12 @@ namespace Tests\Feature\Api;
 use App\Models\Course;
 use App\Models\Material;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
 class MaterialControllerTest extends TestCase
 {
-    use RefreshDatabase;
+    use DatabaseTransactions;
 
     protected Course $course;
     protected Material $material;

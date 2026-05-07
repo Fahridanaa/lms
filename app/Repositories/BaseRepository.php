@@ -94,9 +94,13 @@ abstract class BaseRepository implements RepositoryInterface
 
     public function restore(int $id): bool
     {
+        if (!method_exists($this->model, 'restore')) {
+            throw new \RuntimeException("Model " . get_class($this->model) . " does not use SoftDeletes, cannot restore.");
+        }
+
         $query = $this->model->newQuery();
 
-        // Check if model uses SoftDeletes
+        // Check if model uses SoftDeletes (has withTrashed method)
         if (method_exists($this->model, 'withTrashed')) {
             $query = $query->withTrashed();
         }
