@@ -43,6 +43,13 @@ echo ""
 
 cd "${PROJECT_DIR}"
 
+# Load environment variables for DB_PASSWORD
+if [ -f "${PROJECT_DIR}/.env" ]; then
+  set -a
+  source "${PROJECT_DIR}/.env"
+  set +a
+fi
+
 # ─────────────────────────────────────────────
 # 1. Verifikasi container Docker
 # ─────────────────────────────────────────────
@@ -130,13 +137,21 @@ fi
 
 # Tunggu MySQL siap kembali
 echo -e "${YELLOW}  Menunggu MySQL siap...${NC}"
+MYSQL_READY=0
 for i in $(seq 1 30); do
-  if docker compose exec -T mysql mysqladmin ping -p"${DB_PASSWORD}" --silent 2>/dev/null; then
+  if docker compose exec -T mysql mysqladmin ping -h localhost -p"${DB_PASSWORD}" --silent --connect-timeout=3 2>/dev/null; then
     echo -e "${GREEN}  MySQL siap setelah ${i} detik.${NC}"
+    MYSQL_READY=1
     break
   fi
   sleep 1
 done
+
+if [ "${MYSQL_READY}" -eq 0 ]; then
+  echo -e "${RED}Error: MySQL tidak mau menyala setelah restart.${NC}"
+  echo -e "${RED}Cek logs: docker compose logs mysql${NC}"
+  exit 1
+fi
 
 # Clear Linux page cache agar data tidak tersimpan di OS filesystem cache
 # Ini memaksa semua DB read operasi benchmark benar-benar dari disk
