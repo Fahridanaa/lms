@@ -13,7 +13,7 @@ services:
                 condition: service_healthy
             redis:
                 condition: service_healthy
-        mem_limit: 1536m
+        mem_limit: 2560m
         restart: unless-stopped
 
     nginx:
@@ -37,6 +37,7 @@ services:
         command:
             - --innodb-flush-log-at-trx-commit=2
             - --max-connections=300
+            - --innodb-buffer-pool-size=64M
         environment:
             MYSQL_ROOT_PASSWORD: "${DB_PASSWORD}"
             MYSQL_ROOT_HOST: "%"

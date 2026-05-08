@@ -12,6 +12,7 @@
 #   2. Verifikasi koneksi database
 #   3. migrate:fresh --seed (data bersih, konsisten)
 #   4. Kosongkan semua cache (artisan + Redis FLUSHALL)
+#   4b. Clear OS page cache + restart MySQL (reset InnoDB buffer pool)
 #   5. Restart container 'app' untuk menghilangkan state di memory
 #   6. Verifikasi jumlah data seeder
 #   7. Verifikasi semua strategi caching dapat di-load
@@ -98,7 +99,7 @@ echo -e "${GREEN}✓ Database di-reset dan di-seed ulang.${NC}"
 # 4. Kosongkan semua cache
 # ─────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}[4/6] Mengosongkan cache...${NC}"
+echo -e "${YELLOW}[4/7] Mengosongkan cache...${NC}"
 
 docker compose exec -T app php artisan cache:clear  --quiet 2>/dev/null || true
 docker compose exec -T app php artisan config:clear --quiet 2>/dev/null || true
@@ -112,6 +113,49 @@ else
 fi
 
 echo -e "${GREEN}✓ Semua cache bersih.${NC}"
+
+# ─────────────────────────────────────────────
+# 4b. Clear OS page cache + restart MySQL (reset InnoDB buffer pool)
+# ─────────────────────────────────────────────
+echo ""
+echo -e "${YELLOW}[4b/7] Clearing OS page cache dan resetting InnoDB buffer pool...${NC}"
+
+# Restart MySQL container agar InnoDB buffer pool kosong (64M limit)
+# dan data pages harus dibaca ulang dari disk
+docker compose restart mysql
+if [ $? -ne 0 ]; then
+  echo -e "${RED}Error: MySQL restart gagal!${NC}"
+  exit 1
+fi
+
+# Tunggu MySQL siap kembali
+echo -e "${YELLOW}  Menunggu MySQL siap...${NC}"
+for i in $(seq 1 30); do
+  if docker compose exec -T mysql mysqladmin ping -p"${DB_PASSWORD}" --silent 2>/dev/null; then
+    echo -e "${GREEN}  MySQL siap setelah ${i} detik.${NC}"
+    break
+  fi
+  sleep 1
+done
+
+# Clear Linux page cache agar data tidak tersimpan di OS filesystem cache
+# Ini memaksa semua DB read operasi benchmark benar-benar dari disk
+if [ -w /proc/sys/vm/drop_caches ]; then
+  sync
+  echo 3 > /proc/sys/vm/drop_caches
+  echo -e "${GREEN}  OS page cache cleared.${NC}"
+else
+  echo -e "${YELLOW}  Warning: Tidak bisa clear page cache (butuh root/sudo). Mencoba dengan sudo...${NC}"
+  sudo sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches' 2>/dev/null
+  if [ $? -eq 0 ]; then
+    echo -e "${GREEN}  OS page cache cleared (via sudo).${NC}"
+  else
+    echo -e "${RED}  GAGAL clear OS page cache! Benchmark tanpa cache tidak akan benar-benar hit disk.${NC}"
+    echo -e "${RED}  Jalankan: sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches' sebelum benchmark.${NC}"
+  fi
+fi
+
+echo -e "${GREEN}✓ InnoDB buffer pool dan OS page cache berhasil di-reset.${NC}"
 
 # ─────────────────────────────────────────────
 # 5. Restart container app (§3.4.4.1 — hilangkan state memory)

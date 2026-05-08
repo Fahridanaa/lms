@@ -27,11 +27,8 @@ RUN { \
 
 RUN { \
     echo '[www]'; \
-    echo 'pm = dynamic'; \
-    echo 'pm.max_children = 25'; \
-    echo 'pm.start_servers = 10'; \
-    echo 'pm.min_spare_servers = 3'; \
-    echo 'pm.max_spare_servers = 20'; \
+    echo 'pm = static'; \
+    echo 'pm.max_children = 50'; \
 } > /usr/local/etc/php-fpm.d/zz-benchmark.conf
 
 WORKDIR /var/www/html

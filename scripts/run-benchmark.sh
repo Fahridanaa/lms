@@ -243,21 +243,39 @@ start_resource_monitor() {
       read -r _ mem_total mem_used _ < <(free -m | grep "^Mem:")
       mem_pct=$(echo "scale=1; ${mem_used} * 100 / ${mem_total}" | bc 2>/dev/null || echo "0")
 
-      # Disk I/O — dari iostat (sesuai proposal)
+      # Disk I/O — prioritas: iostat > /proc/diskstats
       local disk_read disk_write
       if command -v iostat &>/dev/null; then
         # iostat -d -m: MB/s, ambil baris disk utama (sda/vda/nvme)
         local iostat_line
         iostat_line=$(iostat -d -m 1 1 2>/dev/null \
-          | grep -E "^(sda|vda|nvme|xvda|sdb|vdb)" | head -1)
+          | grep -E "^(sda|vda|nvme|xvda|sdb|vdb|dm-)" | head -1)
         disk_read=$(echo  "${iostat_line}" | awk '{print $3}' | tr -d ',' || echo "0")
         disk_write=$(echo "${iostat_line}" | awk '{print $4}' | tr -d ',' || echo "0")
         # Pastikan tidak kosong
         disk_read=${disk_read:-0}
         disk_write=${disk_write:-0}
       else
-        disk_read="N/A"
-        disk_write="N/A"
+        # Fallback: baca /proc/diskstats untuk hitung MB/s delta
+        # Field 6 = sectors read, Field 10 = sectors written (1 sector = 512 bytes)
+        local disk_stats_line1 disk_stats_line2
+        local sectors_read1 sectors_written1 sectors_read2 sectors_written2
+        disk_stats_line1=$(grep -E "\s+(sda|vda|nvme0n1|xvda|dm-0)\s" /proc/diskstats | head -1)
+        sectors_read1=$(echo "${disk_stats_line1}" | awk '{print $6}')
+        sectors_written1=$(echo "${disk_stats_line1}" | awk '{print $10}')
+        sectors_read1=${sectors_read1:-0}
+        sectors_written1=${sectors_written1:-0}
+        sleep 1
+        disk_stats_line2=$(grep -E "\s+(sda|vda|nvme0n1|xvda|dm-0)\s" /proc/diskstats | head -1)
+        sectors_read2=$(echo "${disk_stats_line2}" | awk '{print $6}')
+        sectors_written2=$(echo "${disk_stats_line2}" | awk '{print $10}')
+        sectors_read2=${sectors_read2:-0}
+        sectors_written2=${sectors_written2:-0}
+        # Konversi delta sectors ke MB/s (1 sector = 512 bytes)
+        local delta_read=$(( sectors_read2 - sectors_read1 ))
+        local delta_write=$(( sectors_written2 - sectors_written1 ))
+        disk_read=$(echo "scale=2; ${delta_read} * 512 / 1048576" | bc 2>/dev/null || echo "0")
+        disk_write=$(echo "scale=2; ${delta_write} * 512 / 1048576" | bc 2>/dev/null || echo "0")
       fi
 
       echo "${ts},${cpu_pct},${mem_used},${mem_total},${mem_pct},${disk_read},${disk_write}"
