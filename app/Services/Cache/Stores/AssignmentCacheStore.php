@@ -39,7 +39,9 @@ class AssignmentCacheStore extends BaseCacheStore
     public function store(string $key, mixed $value): void
     {
         if ($value instanceof \App\Models\Assignment) {
-            $value->save();
+            if ($value->isDirty()) {
+                $value->save();
+            }
 
             return;
         }

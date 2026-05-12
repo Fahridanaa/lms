@@ -51,19 +51,40 @@ class CourseCacheLoader extends BaseCacheLoader
 
     /**
      * Load aggregated gradebook for a course
+     *
+     * Uses SQL aggregation instead of loading all Grade models
+     * with polymorphic gradeable relations into memory.
      */
     protected function loadGradebook(int $courseId): array
     {
-        $course = Course::with(['students'])->findOrFail($courseId);
+        // Aggregate grades per student in a single SQL query
+        // instead of loading all Grade models + polymorphic gradeable relations
+        $studentAverages = Grade::where('course_id', $courseId)
+            ->whereNull('deleted_at')
+            ->selectRaw('
+                user_id,
+                AVG(percentage) as average_percentage,
+                COUNT(*) as total_grades,
+                SUM(CASE WHEN gradeable_type = ? THEN 1 ELSE 0 END) as quiz_count,
+                SUM(CASE WHEN gradeable_type = ? THEN 1 ELSE 0 END) as assignment_count
+            ', ['quiz_attempt', 'submission'])
+            ->groupBy('user_id')
+            ->get();
 
-        $allGrades = Grade::with(['gradeable'])
-            ->where('course_id', $courseId)
-            ->whereIn('user_id', $course->students->pluck('id'))
+        if ($studentAverages->isEmpty()) {
+            return [];
+        }
+
+        // Batch-load student info in one query instead of per-student
+        $students = User::whereIn('id', $studentAverages->pluck('user_id'))
             ->get()
-            ->groupBy('user_id');
+            ->keyBy('id');
 
-        return $course->students->map(function (User $student) use ($allGrades) {
-            $grades = $allGrades->get($student->id, collect());
+        return $studentAverages->map(function ($row) use ($students) {
+            $student = $students->get($row->user_id);
+            if (! $student) {
+                return null;
+            }
 
             return [
                 'student' => [
@@ -71,11 +92,12 @@ class CourseCacheLoader extends BaseCacheLoader
                     'name' => $student->name,
                     'email' => $student->email,
                 ],
-                'grades' => $grades,
-                'average_percentage' => $grades->avg('percentage'),
-                'total_grades' => $grades->count(),
+                'average_percentage' => round($row->average_percentage, 2),
+                'total_grades' => (int) $row->total_grades,
+                'quiz_count' => (int) $row->quiz_count,
+                'assignment_count' => (int) $row->assignment_count,
             ];
-        })->values()->all();
+        })->filter()->values()->all();
     }
 
     /**

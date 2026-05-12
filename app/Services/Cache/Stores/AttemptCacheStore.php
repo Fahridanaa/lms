@@ -32,7 +32,10 @@ class AttemptCacheStore extends BaseCacheStore
     public function store(string $key, mixed $value): void
     {
         if ($value instanceof \App\Models\QuizAttempt) {
-            $value->save();
+            if ($value->isDirty()) {
+                $value->save();
+            }
+
             return;
         }
 

@@ -79,7 +79,10 @@ class UserCacheStore extends BaseCacheStore
     public function store(string $key, mixed $value): void
     {
         if ($value instanceof User) {
-            $value->save();
+            if ($value->isDirty()) {
+                $value->save();
+            }
+
             return;
         }
 

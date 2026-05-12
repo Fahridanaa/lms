@@ -48,7 +48,10 @@ class QuizCacheStore extends BaseCacheStore
     {
         // Quiz updates biasanya full model save
         if ($value instanceof \App\Models\Quiz) {
-            $value->save();
+            if ($value->isDirty()) {
+                $value->save();
+            }
+
             return;
         }
 

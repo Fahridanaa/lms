@@ -29,7 +29,10 @@ class SubmissionCacheStore extends BaseCacheStore
     public function store(string $key, mixed $value): void
     {
         if ($value instanceof Submission) {
-            $value->save();
+            if ($value->isDirty()) {
+                $value->save();
+            }
+
             return;
         }
 

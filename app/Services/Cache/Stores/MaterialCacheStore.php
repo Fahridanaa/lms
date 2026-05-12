@@ -51,7 +51,10 @@ class MaterialCacheStore extends BaseCacheStore
     public function store(string $key, mixed $value): void
     {
         if ($value instanceof \App\Models\Material) {
-            $value->save();
+            if ($value->isDirty()) {
+                $value->save();
+            }
+
             return;
         }
 
