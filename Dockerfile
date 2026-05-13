@@ -28,7 +28,7 @@ RUN { \
 RUN { \
     echo '[www]'; \
     echo 'pm = static'; \
-    echo 'pm.max_children = 50'; \
+    echo 'pm.max_children = 90'; \
 } > /usr/local/etc/php-fpm.d/zz-benchmark.conf
 
 WORKDIR /var/www/html
