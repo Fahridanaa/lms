@@ -114,7 +114,7 @@ docker compose exec -T app php artisan route:clear  --quiet 2>/dev/null || true
 docker compose exec -T app php artisan view:clear   --quiet 2>/dev/null || true
 
 # FLUSHALL pada single Redis, atau semua cluster nodes
-local flushed=false
+flushed=false
 if docker compose exec -T redis redis-cli FLUSHALL > /dev/null 2>&1; then
   flushed=true
 else
