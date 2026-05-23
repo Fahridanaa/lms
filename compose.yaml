@@ -16,6 +16,169 @@ services:
         mem_limit: 2560m
         restart: unless-stopped
 
+    # ── Redis Cluster Nodes (profile: redis-cluster) ────────────
+    # Saat benchmark cluster: docker compose --profile redis-cluster up -d
+    # 3 masters + 3 replicas, masing-masing dengan node-id unik dari Redis
+    redis-c1:
+        image: "redis:7-alpine"
+        profiles: [redis-cluster]
+        command:
+            - redis-server
+            - --cluster-enabled yes
+            - --cluster-config-file nodes.conf
+            - --cluster-node-timeout 5000
+            - --appendonly yes
+            - --maxmemory 256mb
+            - --maxmemory-policy allkeys-lru
+        networks:
+            - sail
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            retries: 15
+            timeout: 3s
+            interval: 2s
+        restart: unless-stopped
+
+    redis-c2:
+        image: "redis:7-alpine"
+        profiles: [redis-cluster]
+        command:
+            - redis-server
+            - --cluster-enabled yes
+            - --cluster-config-file nodes.conf
+            - --cluster-node-timeout 5000
+            - --appendonly yes
+            - --maxmemory 256mb
+            - --maxmemory-policy allkeys-lru
+        networks:
+            - sail
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            retries: 15
+            timeout: 3s
+            interval: 2s
+        restart: unless-stopped
+
+    redis-c3:
+        image: "redis:7-alpine"
+        profiles: [redis-cluster]
+        command:
+            - redis-server
+            - --cluster-enabled yes
+            - --cluster-config-file nodes.conf
+            - --cluster-node-timeout 5000
+            - --appendonly yes
+            - --maxmemory 256mb
+            - --maxmemory-policy allkeys-lru
+        networks:
+            - sail
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            retries: 15
+            timeout: 3s
+            interval: 2s
+        restart: unless-stopped
+
+    redis-c4:
+        image: "redis:7-alpine"
+        profiles: [redis-cluster]
+        command:
+            - redis-server
+            - --cluster-enabled yes
+            - --cluster-config-file nodes.conf
+            - --cluster-node-timeout 5000
+            - --appendonly yes
+            - --maxmemory 256mb
+            - --maxmemory-policy allkeys-lru
+        networks:
+            - sail
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            retries: 15
+            timeout: 3s
+            interval: 2s
+        restart: unless-stopped
+
+    redis-c5:
+        image: "redis:7-alpine"
+        profiles: [redis-cluster]
+        command:
+            - redis-server
+            - --cluster-enabled yes
+            - --cluster-config-file nodes.conf
+            - --cluster-node-timeout 5000
+            - --appendonly yes
+            - --maxmemory 256mb
+            - --maxmemory-policy allkeys-lru
+        networks:
+            - sail
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            retries: 15
+            timeout: 3s
+            interval: 2s
+        restart: unless-stopped
+
+    redis-c6:
+        image: "redis:7-alpine"
+        profiles: [redis-cluster]
+        command:
+            - redis-server
+            - --cluster-enabled yes
+            - --cluster-config-file nodes.conf
+            - --cluster-node-timeout 5000
+            - --appendonly yes
+            - --maxmemory 256mb
+            - --maxmemory-policy allkeys-lru
+        networks:
+            - sail
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            retries: 15
+            timeout: 3s
+            interval: 2s
+        restart: unless-stopped
+
+    # One-shot cluster initializer — menjalankan redis-cli --cluster create
+    # setelah semua node siap. Auto-exit setelah cluster terbentuk.
+    redis-cluster-init:
+        image: "redis:7-alpine"
+        profiles: [redis-cluster]
+        depends_on:
+            redis-c1:
+                condition: service_healthy
+            redis-c2:
+                condition: service_healthy
+            redis-c3:
+                condition: service_healthy
+            redis-c4:
+                condition: service_healthy
+            redis-c5:
+                condition: service_healthy
+            redis-c6:
+                condition: service_healthy
+        networks:
+            - sail
+        entrypoint:
+            - sh
+            - -c
+            - |
+                echo "Menunggu semua node Redis cluster siap..."
+                sleep 3
+                echo "Membentuk Redis cluster (3 masters, 3 replicas)..."
+                redis-cli --cluster create \
+                    redis-c1:6379 redis-c2:6379 redis-c3:6379 \
+                    redis-c4:6379 redis-c5:6379 redis-c6:6379 \
+                    --cluster-replicas 1 \
+                    --cluster-yes
+                echo "Cluster terbentuk. Memverifikasi..."
+                sleep 2
+                redis-cli -h redis-c1 CLUSTER INFO
+                echo "=== Cluster nodes ==="
+                redis-cli -h redis-c1 CLUSTER NODES
+                echo "Cluster siap."
+        restart: "no"
+
     nginx:
         image: "nginx:alpine"
         ports:
