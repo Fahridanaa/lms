@@ -3,6 +3,12 @@
 /**
  * Scoring System — Proposal §7.11
  *
+ * Usage: php scripts/compute-scoring.php [results_dir]
+ *
+ * Examples:
+ *   php scripts/compute-scoring.php                         # benchmark-results/
+ *   php scripts/compute-scoring.php benchmark-results-cluster # cluster results
+ *
  * Sources:
  *   - metrics-summary.csv   (from analyze-results.sh)  — k6 metrics per strategy/scenario/VU
  *   - resources-summary.csv (from analyze-resources.sh) — CPU/Memory per strategy/scenario/VU
@@ -29,7 +35,11 @@ function loadCsv(string $path): array
     return $rows;
 }
 
-$base = __DIR__ . "/../benchmark-results";
+$base = $argv[1] ?? __DIR__ . "/../benchmark-results";
+
+// Strip trailing slash for consistency
+$base = rtrim($base, "/");
+
 $strategies = ["no-cache", "cache-aside", "read-through", "write-through"];
 $scenarios = ["read-heavy", "write-heavy"];
 

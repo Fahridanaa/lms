@@ -3,10 +3,13 @@
 # ============================================================
 # Analyze Benchmark Results
 #
-# Usage  : ./scripts/analyze-results.sh
+# Usage  : ./scripts/analyze-results.sh [results_dir]
+# Contoh :
+#   ./scripts/analyze-results.sh                    # benchmark-results/
+#   ./scripts/analyze-results.sh benchmark-results-cluster
 #
-# Script ini membaca semua file *-summary.json di benchmark-results/
-# dan mengekstrak metrik utama ke CSV yang siap dipakai di skripsi:
+# Script ini membaca semua file *-summary.json di direktori hasil
+# benchmark dan mengekstrak metrik utama ke CSV:
 #   - response_time_avg, p90, p95, p99
 #   - throughput (req/s)
 #   - error_rate
@@ -14,7 +17,7 @@
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RESULTS_DIR="${SCRIPT_DIR}/../benchmark-results"
+RESULTS_DIR="${1:-${SCRIPT_DIR}/../benchmark-results}"
 OUTPUT_CSV="${RESULTS_DIR}/metrics-summary.csv"
 
 GREEN='\033[0;32m'

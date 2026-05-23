@@ -3,10 +3,13 @@
 # ============================================================
 # Analyze Resource Usage from Benchmark Runs
 #
-# Usage  : ./scripts/analyze-resources.sh
+# Usage  : ./scripts/analyze-resources.sh [results_dir]
+# Contoh :
+#   ./scripts/analyze-resources.sh                    # benchmark-results/
+#   ./scripts/analyze-resources.sh benchmark-results-cluster
 #
-# Script ini membaca semua file *-resources.csv di benchmark-results/
-# dan mengekstrak metrik resource (CPU, memory, disk I/O) ke CSV:
+# Script ini membaca semua file *-resources.csv di direktori hasil
+# benchmark dan mengekstrak metrik resource (CPU, memory, disk I/O) ke CSV:
 #   - cpu_avg_pct, cpu_max_pct
 #   - mem_avg_mb, mem_max_mb, mem_avg_pct, mem_max_pct
 #   - disk_read_avg_mb_s, disk_read_max_mb_s
@@ -14,7 +17,7 @@
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RESULTS_DIR="${SCRIPT_DIR}/../benchmark-results"
+RESULTS_DIR="${1:-${SCRIPT_DIR}/../benchmark-results}"
 OUTPUT_CSV="${RESULTS_DIR}/resources-summary.csv"
 
 GREEN='\033[0;32m'

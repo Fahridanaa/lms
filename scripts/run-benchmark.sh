@@ -49,11 +49,16 @@ ITERATION=${4:-1}
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-RESULTS_DIR="${PROJECT_DIR}/benchmark-results"
 K6_SCRIPT="${PROJECT_DIR}/tests/Benchmark/k6/${SCENARIO}-scenario.js"
 
 CONCURRENT_USERS_LEVELS=(100 250 500 750 1000 1500 2000)
 CLUSTER_NODES=("redis-c1" "redis-c2" "redis-c3" "redis-c4" "redis-c5" "redis-c6")
+
+if [ "${CLUSTER_MODE}" = "true" ]; then
+  RESULTS_DIR="${PROJECT_DIR}/benchmark-results-cluster"
+else
+  RESULTS_DIR="${PROJECT_DIR}/benchmark-results"
+fi
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
