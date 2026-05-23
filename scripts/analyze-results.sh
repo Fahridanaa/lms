@@ -41,7 +41,7 @@ echo ""
 # ─────────────────────────────────────────────
 # Buat header CSV
 # ─────────────────────────────────────────────
-echo "strategy,scenario,concurrent_users,avg_ms,p90_ms,p95_ms,p99_ms,max_ms,throughput_rps,error_rate_pct,http_reqs_total,cache_hit_ratio_pct,iterations_averaged" > "${OUTPUT_CSV}"
+echo "strategy,scenario,concurrent_users,avg_ms,p90_ms,p95_ms,p99_ms,max_ms,throughput_rps,error_rate_pct,http_reqs_total,cache_hit_ratio_pct,iterations_averaged,read_avg_ms,write_avg_ms,redis_mode" > "${OUTPUT_CSV}"
 
 # ─────────────────────────────────────────────
 # Parse setiap summary JSON
@@ -49,7 +49,7 @@ echo "strategy,scenario,concurrent_users,avg_ms,p90_ms,p95_ms,p99_ms,max_ms,thro
 FOUND=0
 STRATEGIES=("no-cache" "cache-aside" "read-through" "write-through")
 SCENARIOS=("read-heavy" "write-heavy")
-VU_LEVELS=(100 250 500 750 1000)
+VU_LEVELS=(100 250 500 750 1000 1500 2000)
 
 for strategy in "${STRATEGIES[@]}"; do
   for scenario in "${SCENARIOS[@]}"; do
@@ -68,15 +68,35 @@ for strategy in "${STRATEGIES[@]}"; do
 
       FOUND=$((FOUND + 1))
 
+      # Deteksi redis mode dari marker file
+      local redis_mode="single"
+      local first_iter_dir=$(echo "${SUMMARY_FILES}" | cut -d';' -f1 | xargs dirname 2>/dev/null)
+      if [ -f "${first_iter_dir}/../.redis-mode" ]; then
+        redis_mode=$(cat "${first_iter_dir}/../.redis-mode")
+      elif [ -f "${RESULTS_DIR}/${strategy}/${scenario}/.redis-mode" ]; then
+        redis_mode=$(cat "${RESULTS_DIR}/${strategy}/${scenario}/.redis-mode")
+      fi
+
       # Parse & rata-rata metrik dari semua iterasi menggunakan Python
-      METRICS=$(python3 - "${SUMMARY_FILES}" "${HIT_RATIO_FILES}" <<'PYEOF'
+      METRICS=$(python3 - "${SUMMARY_FILES}" "${HIT_RATIO_FILES}" "${scenario}" <<'PYEOF'
 import sys, json, os
 
 summary_files    = [f for f in sys.argv[1].split(';') if f and os.path.exists(f)]
 hit_ratio_files  = [f for f in sys.argv[2].split(';') if f and os.path.exists(f)] if len(sys.argv) > 2 else []
+scenario         = sys.argv[3] if len(sys.argv) > 3 else ""
+
+# Per-scenario mapping of read/write custom Trend metric names (from k6)
+SCENARIO_READ_METRICS = {
+    "read-heavy":   ["quiz_detail_duration", "materials_list_duration", "material_detail_duration", "gradebook_duration"],
+    "write-heavy":  ["assignment_detail_duration", "gradebook_duration"],
+}
+SCENARIO_WRITE_METRICS = {
+    "read-heavy":   ["start_attempt_duration", "submit_assignment_duration"],
+    "write-heavy":  ["submit_assignment_duration", "submit_quiz_duration", "grade_submission_duration"],
+}
 
 if not summary_files:
-    print("N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0")
+    print("N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0,N/A,N/A")
     sys.exit(0)
 
 def get_metric(data, *keys):
@@ -97,6 +117,26 @@ for sf in summary_files:
         dur    = m.get("http_req_duration", {}).get("values", {})
         reqs   = m.get("http_reqs",         {}).get("values", {})
         failed = m.get("http_req_failed",   {}).get("values", {})
+        # Extract per-endpoint read/write averages from custom Trend metrics
+        def trend_avg(metric_name):
+            try:
+                return float(data["metrics"][metric_name]["values"]["avg"])
+            except:
+                return None
+
+        read_trends = []
+        write_trends = []
+        if scenario in SCENARIO_READ_METRICS:
+            for mn in SCENARIO_READ_METRICS[scenario]:
+                v = trend_avg(mn)
+                if v is not None:
+                    read_trends.append(v)
+        if scenario in SCENARIO_WRITE_METRICS:
+            for mn in SCENARIO_WRITE_METRICS[scenario]:
+                v = trend_avg(mn)
+                if v is not None:
+                    write_trends.append(v)
+
         collected.append({
             'avg_ms':     get_metric(dur, "avg"),
             'p90_ms':     get_metric(dur, "p(90)"),
@@ -106,6 +146,8 @@ for sf in summary_files:
             'throughput': get_metric(reqs, "rate"),
             'total_reqs': get_metric(reqs, "count"),
             'error_pct':  (get_metric(failed, "rate") or 0) * 100,
+            'read_avg':   round(sum(read_trends) / len(read_trends), 2) if read_trends else None,
+            'write_avg':  round(sum(write_trends) / len(write_trends), 2) if write_trends else None,
         })
     except:
         pass
@@ -125,11 +167,11 @@ for hf in hit_ratio_files:
 avg_hr = round(sum(hit_ratios) / len(hit_ratios), 2) if hit_ratios else "N/A"
 
 n = len(collected)
-print(f"{avg_key('avg_ms')},{avg_key('p90_ms')},{avg_key('p95_ms')},{avg_key('p99_ms')},{avg_key('max_ms')},{avg_key('throughput')},{avg_key('error_pct')},{avg_key('total_reqs')},{avg_hr},{n}")
+print(f"{avg_key('avg_ms')},{avg_key('p90_ms')},{avg_key('p95_ms')},{avg_key('p99_ms')},{avg_key('max_ms')},{avg_key('throughput')},{avg_key('error_pct')},{avg_key('total_reqs')},{avg_hr},{n},{avg_key('read_avg')},{avg_key('write_avg')}")
 PYEOF
 )
 
-      echo "${strategy},${scenario},${vu},${METRICS}" >> "${OUTPUT_CSV}"
+      echo "${strategy},${scenario},${vu},${METRICS},${redis_mode}" >> "${OUTPUT_CSV}"
       echo -e "${GREEN}[ok] ${strategy} / ${scenario} / ${vu}vu${NC}"
     done
   done

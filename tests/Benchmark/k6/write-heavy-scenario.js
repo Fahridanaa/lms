@@ -53,6 +53,7 @@ export const options = {
     scenario:         'write-heavy',
     concurrent_users: `${CONCURRENT_USERS}`,
     cache_strategy:   __ENV.CACHE_STRATEGY || 'unknown',
+    cluster_mode:     __ENV.CLUSTER_MODE || 'false',
   },
 };
 

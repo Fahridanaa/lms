@@ -41,7 +41,7 @@ echo ""
 # ─────────────────────────────────────────────
 # Buat header CSV
 # ─────────────────────────────────────────────
-echo "strategy,scenario,concurrent_users,cpu_avg_pct,cpu_max_pct,mem_avg_mb,mem_max_mb,mem_avg_pct,mem_max_pct,disk_read_avg_mb_s,disk_read_max_mb_s,disk_write_avg_mb_s,disk_write_max_mb_s,iterations_averaged" > "${OUTPUT_CSV}"
+echo "strategy,scenario,concurrent_users,cpu_avg_pct,cpu_max_pct,mem_avg_mb,mem_max_mb,mem_avg_pct,mem_max_pct,disk_read_avg_mb_s,disk_read_max_mb_s,disk_write_avg_mb_s,disk_write_max_mb_s,iterations_averaged,redis_mode" > "${OUTPUT_CSV}"
 
 # ─────────────────────────────────────────────
 # Parse setiap resources CSV
@@ -49,7 +49,7 @@ echo "strategy,scenario,concurrent_users,cpu_avg_pct,cpu_max_pct,mem_avg_mb,mem_
 FOUND=0
 STRATEGIES=("no-cache" "cache-aside" "read-through" "write-through")
 SCENARIOS=("read-heavy" "write-heavy")
-VU_LEVELS=(100 250 500 750 1000)
+VU_LEVELS=(100 250 500 750 1000 1500 2000)
 
 for strategy in "${STRATEGIES[@]}"; do
   for scenario in "${SCENARIOS[@]}"; do
@@ -64,6 +64,15 @@ for strategy in "${STRATEGIES[@]}"; do
       fi
 
       FOUND=$((FOUND + 1))
+
+      # Deteksi redis mode dari marker file
+      local redis_mode="single"
+      local first_file_dir=$(echo "${RESOURCE_FILES}" | cut -d';' -f1 | xargs dirname 2>/dev/null)
+      if [ -f "${first_file_dir}/../.redis-mode" ]; then
+        redis_mode=$(cat "${first_file_dir}/../.redis-mode")
+      elif [ -f "${RESULTS_DIR}/${strategy}/${scenario}/.redis-mode" ]; then
+        redis_mode=$(cat "${RESULTS_DIR}/${strategy}/${scenario}/.redis-mode")
+      fi
 
       # Parse & rata-rata metrik dari semua iterasi menggunakan Python
       METRICS=$(python3 - "${RESOURCE_FILES}" <<'PYEOF'
@@ -188,7 +197,7 @@ print(result)
 PYEOF
 )
 
-      echo "${strategy},${scenario},${vu},${METRICS}" >> "${OUTPUT_CSV}"
+      echo "${strategy},${scenario},${vu},${METRICS},${redis_mode}" >> "${OUTPUT_CSV}"
       echo -e "${GREEN}[ok] ${strategy} / ${scenario} / ${vu}vu${NC}"
     done
   done

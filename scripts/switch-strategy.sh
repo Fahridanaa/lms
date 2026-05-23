@@ -79,6 +79,16 @@ show_config() {
     grep "^CACHE_TTL="      "$ENV_FILE" || true
     grep "^CACHE_DRIVER="   "$ENV_FILE" || true
     grep "^REDIS_HOST="     "$ENV_FILE" || true
+    echo ""
+    local cluster_mode
+    cluster_mode=$(grep "^REDIS_CLUSTER_MODE=" "$ENV_FILE" | cut -d'=' -f2)
+    if [ "${cluster_mode}" = "true" ]; then
+        local cluster_hosts
+        cluster_hosts=$(grep "^REDIS_CLUSTER_HOSTS=" "$ENV_FILE" | cut -d'=' -f2)
+        echo "REDIS_CLUSTER_MODE=true  (hosts: ${cluster_hosts:-N/A})"
+    else
+        echo "REDIS_CLUSTER_MODE=false (single-node)"
+    fi
     echo "====================================="
     echo ""
 }

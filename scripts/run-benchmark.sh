@@ -3,8 +3,13 @@
 # ============================================================
 # LMS Caching Strategy Benchmark Runner
 #
-# Usage  : ./scripts/run-benchmark.sh [strategy] [scenario] [base_url]
-# Contoh : ./scripts/run-benchmark.sh cache-aside read-heavy http://localhost
+# Usage  : ./scripts/run-benchmark.sh [--cluster] [strategy] [scenario] [base_url]
+# Contoh :
+#   ./scripts/run-benchmark.sh cache-aside read-heavy http://localhost
+#   ./scripts/run-benchmark.sh --cluster cache-aside read-heavy http://localhost
+#
+# --cluster  : Jalankan benchmark terhadap Redis Cluster (3 masters + 3 replicas)
+#              Pastikan cluster sudah up: ./scripts/setup-redis-cluster.sh up
 #
 # Script ini menjalankan k6 untuk satu strategi + satu skenario,
 # berulang untuk 7 level concurrent users sesuai proposal:
@@ -15,7 +20,27 @@
 #   - resources CSV    : CPU%, Memory (MB), Disk I/O (MB/s) setiap 10 detik
 #                        menggunakan top, free, iostat (sesuai proposal: htop & iostat)
 #   - redis stats      : keyspace hits/misses sebelum & sesudah → cache hit ratio
+#   - cluster stats    : (jika --cluster) per-node cluster info, keyspace, nodes
 # ============================================================
+
+CLUSTER_MODE=false
+
+# Parse --cluster flag (before positional args)
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --cluster)
+      CLUSTER_MODE=true
+      shift
+      ;;
+    -*)
+      echo -e "${RED}Error: Unknown option $1${NC}"
+      exit 1
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
 
 STRATEGY=${1:-cache-aside}
 SCENARIO=${2:-read-heavy}
@@ -28,6 +53,7 @@ RESULTS_DIR="${PROJECT_DIR}/benchmark-results"
 K6_SCRIPT="${PROJECT_DIR}/tests/Benchmark/k6/${SCENARIO}-scenario.js"
 
 CONCURRENT_USERS_LEVELS=(100 250 500 750 1000 1500 2000)
+CLUSTER_NODES=("redis-c1" "redis-c2" "redis-c3" "redis-c4" "redis-c5" "redis-c6")
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -90,7 +116,15 @@ clear_all_caches() {
   cd "${PROJECT_DIR}"
   docker compose exec -T app php artisan cache:clear  --quiet 2>/dev/null || true
   docker compose exec -T app php artisan config:clear --quiet 2>/dev/null || true
-  docker compose exec -T redis redis-cli FLUSHALL >/dev/null 2>&1 || true
+
+  if [ "${CLUSTER_MODE}" = "true" ]; then
+    # FLUSHALL on all cluster nodes
+    for node in "${CLUSTER_NODES[@]}"; do
+      docker compose exec -T "$node" redis-cli FLUSHALL >/dev/null 2>&1 || true
+    done
+  else
+    docker compose exec -T redis redis-cli FLUSHALL >/dev/null 2>&1 || true
+  fi
   echo -e "${GREEN}[setup] Cache bersih.${NC}"
 }
 
@@ -142,13 +176,36 @@ warmup_cache() {
 # ─────────────────────────────────────────────
 get_redis_hits() {
   cd "${PROJECT_DIR}"
-  docker compose exec -T redis redis-cli INFO stats 2>/dev/null \
-    | grep "keyspace_hits:" | cut -d':' -f2 | tr -d '\r ' || echo "0"
+  if [ "${CLUSTER_MODE}" = "true" ]; then
+    # Sum hits across all cluster nodes
+    local total=0
+    for node in "${CLUSTER_NODES[@]}"; do
+      local hits
+      hits=$(docker compose exec -T "$node" redis-cli INFO stats 2>/dev/null \
+        | grep "keyspace_hits:" | cut -d':' -f2 | tr -d '\r ' || echo "0")
+      total=$(( total + hits ))
+    done
+    echo "${total}"
+  else
+    docker compose exec -T redis redis-cli INFO stats 2>/dev/null \
+      | grep "keyspace_hits:" | cut -d':' -f2 | tr -d '\r ' || echo "0"
+  fi
 }
 get_redis_misses() {
   cd "${PROJECT_DIR}"
-  docker compose exec -T redis redis-cli INFO stats 2>/dev/null \
-    | grep "keyspace_misses:" | cut -d':' -f2 | tr -d '\r ' || echo "0"
+  if [ "${CLUSTER_MODE}" = "true" ]; then
+    local total=0
+    for node in "${CLUSTER_NODES[@]}"; do
+      local misses
+      misses=$(docker compose exec -T "$node" redis-cli INFO stats 2>/dev/null \
+        | grep "keyspace_misses:" | cut -d':' -f2 | tr -d '\r ' || echo "0")
+      total=$(( total + misses ))
+    done
+    echo "${total}"
+  else
+    docker compose exec -T redis redis-cli INFO stats 2>/dev/null \
+      | grep "keyspace_misses:" | cut -d':' -f2 | tr -d '\r ' || echo "0"
+  fi
 }
 
 # ─────────────────────────────────────────────
@@ -159,8 +216,20 @@ save_redis_stats() {
   local output_file=$2
   cd "${PROJECT_DIR}"
   echo "=== Redis INFO stats (${label}) - $(date) ===" >> "${output_file}"
-  docker compose exec -T redis redis-cli INFO stats  >> "${output_file}" 2>/dev/null || echo "Redis tidak tersedia" >> "${output_file}"
-  docker compose exec -T redis redis-cli INFO memory >> "${output_file}" 2>/dev/null || true
+
+  if [ "${CLUSTER_MODE}" = "true" ]; then
+    # Collect stats from each cluster node
+    for node in "${CLUSTER_NODES[@]}"; do
+      echo "--- Node: ${node} ---" >> "${output_file}"
+      docker compose exec -T "$node" redis-cli INFO stats >> "${output_file}" 2>/dev/null || true
+      docker compose exec -T "$node" redis-cli INFO memory >> "${output_file}" 2>/dev/null || true
+      docker compose exec -T "$node" redis-cli CLUSTER INFO >> "${output_file}" 2>/dev/null || true
+      echo "" >> "${output_file}"
+    done
+  else
+    docker compose exec -T redis redis-cli INFO stats  >> "${output_file}" 2>/dev/null || echo "Redis tidak tersedia" >> "${output_file}"
+    docker compose exec -T redis redis-cli INFO memory >> "${output_file}" 2>/dev/null || true
+  fi
   echo "" >> "${output_file}"
 }
 
@@ -310,6 +379,13 @@ run_k6_for_level() {
 
   mkdir -p "${result_dir}"
 
+  # Marker file untuk redis mode (dibaca oleh analyze-results.sh)
+  if [ "${CLUSTER_MODE}" = "true" ]; then
+    echo "cluster" > "${result_dir}/.redis-mode"
+  else
+    echo "single" > "${result_dir}/.redis-mode"
+  fi
+
   echo ""
   echo -e "${CYAN}────────────────────────────────────────────${NC}"
   echo -e "${CYAN}  Concurrent Users : ${vu_count}${NC}"
@@ -353,14 +429,21 @@ run_k6_for_level() {
   local monitor_pid
   monitor_pid=$(start_resource_monitor "${resources_csv}")
 
-  # Jalankan k6
+  # Jalankan k6 (dengan CLUSTER_MODE env jika cluster)
   echo -e "${YELLOW}[${vu_count}vu] Menjalankan k6...${NC}"
-  k6 run \
-    --env BASE_URL="${BASE_URL}" \
-    --env CONCURRENT_USERS="${vu_count}" \
-    --env CACHE_STRATEGY="${STRATEGY}" \
-    --env SUMMARY_EXPORT="${summary_output}" \
-    "${K6_SCRIPT}"
+
+  local k6_envs=(
+    --env BASE_URL="${BASE_URL}"
+    --env CONCURRENT_USERS="${vu_count}"
+    --env CACHE_STRATEGY="${STRATEGY}"
+    --env SUMMARY_EXPORT="${summary_output}"
+  )
+
+  if [ "${CLUSTER_MODE}" = "true" ]; then
+    k6_envs+=(--env CLUSTER_MODE=true)
+  fi
+
+  k6 run "${k6_envs[@]}" "${K6_SCRIPT}"
 
   local k6_exit=$?
 
@@ -375,6 +458,23 @@ run_k6_for_level() {
   misses_after=${misses_after:-0}
 
   save_redis_stats "after" "${redis_file}"
+
+  # ── Cluster-specific stats (jika --cluster) ────────────
+  if [ "${CLUSTER_MODE}" = "true" ]; then
+    local cluster_file="${result_prefix}-${timestamp}-cluster-stats.txt"
+    echo "=== Cluster Stats - $(date) ===" > "${cluster_file}"
+    echo "" >> "${cluster_file}"
+    for node in "${CLUSTER_NODES[@]}"; do
+      echo "--- ${node} ---" >> "${cluster_file}"
+      docker compose exec -T "$node" redis-cli CLUSTER INFO 2>/dev/null >> "${cluster_file}" || true
+      echo "" >> "${cluster_file}"
+      docker compose exec -T "$node" redis-cli CLUSTER NODES 2>/dev/null >> "${cluster_file}" || true
+      echo "" >> "${cluster_file}"
+      docker compose exec -T "$node" redis-cli INFO keyspace 2>/dev/null >> "${cluster_file}" || true
+      echo "" >> "${cluster_file}"
+    done
+    echo -e "${GREEN}  Cluster stats : ${cluster_file}${NC}"
+  fi
 
   local hit_ratio
   hit_ratio=$(compute_cache_hit_ratio \
@@ -408,6 +508,11 @@ main() {
   echo -e "  Skenario  : ${BLUE}${SCENARIO}${NC}"
   echo -e "  Iterasi   : ${BLUE}${ITERATION}${NC}"
   echo -e "  Base URL  : ${BLUE}${BASE_URL}${NC}"
+  if [ "${CLUSTER_MODE}" = "true" ]; then
+    echo -e "  Redis     : ${BLUE}Cluster${NC} (3 masters + 3 replicas)"
+  else
+    echo -e "  Redis     : ${BLUE}Single${NC} (standalone)"
+  fi
   echo -e "  VU Levels : ${BLUE}${CONCURRENT_USERS_LEVELS[*]}${NC}"
   echo -e "  Hasil     : ${BLUE}${RESULTS_DIR}/${STRATEGY}/${SCENARIO}/iter${ITERATION}/${NC}"
   echo "=============================================="

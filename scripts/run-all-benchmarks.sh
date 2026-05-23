@@ -19,6 +19,25 @@
 #   no-cache → cache-aside → read-through → write-through
 # ============================================================
 
+CLUSTER_MODE=false
+
+# Parse --cluster flag
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --cluster)
+      CLUSTER_MODE=true
+      shift
+      ;;
+    -*)
+      echo -e "${RED}Error: Unknown option $1${NC}"
+      exit 1
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
 BASE_URL=${1:-http://localhost}
 SKIP_PREPARE=${2:-no}   # set "yes" untuk skip prepare (debug/resume)
 
@@ -58,6 +77,12 @@ echo -e "  Base URL      : ${BLUE}${BASE_URL}${NC}"
 echo -e "  Strategi      : ${BLUE}${STRATEGIES[*]}${NC}"
 echo -e "  Skenario      : ${BLUE}${SCENARIOS[*]}${NC}"
 echo -e "  Iterasi       : ${BLUE}${ITERATIONS}x per kombinasi (sesuai proposal §3.4.4.4)${NC}"
+
+if [ "${CLUSTER_MODE}" = "true" ]; then
+  echo -e "  Redis         : ${BLUE}Cluster${NC} (3 masters + 3 replicas)"
+else
+  echo -e "  Redis         : ${BLUE}Single${NC} (standalone)"
+fi
 echo -e "  Total Runs    : ${BLUE}${TOTAL_RUNS} kombinasi (masing-masing 7 VU levels)${NC}"
 echo -e "  Est. Waktu    : ${BLUE}~73–90 jam (prepare ~15m × 200 VU levels + benchmark ~7m × 200)${NC}"
 echo -e "  Log           : ${BLUE}${LOG_FILE}${NC}"
@@ -147,7 +172,14 @@ for iteration in $(seq 1 ${ITERATIONS}); do
       echo -e "${CYAN}  Mulai    : $(date)${NC}"
       echo -e "${CYAN}══════════════════════════════════════════════${NC}"
 
-      "${SCRIPT_DIR}/run-benchmark.sh" "${strategy}" "${scenario}" "${BASE_URL}" "${iteration}"
+      local run_cmd=(
+        "${SCRIPT_DIR}/run-benchmark.sh"
+      )
+      if [ "${CLUSTER_MODE}" = "true" ]; then
+        run_cmd+=(--cluster)
+      fi
+      run_cmd+=("${strategy}" "${scenario}" "${BASE_URL}" "${iteration}")
+      "${run_cmd[@]}"
 
       if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ Selesai (iterasi ${iteration}, ${strategy} × ${scenario})${NC}"
