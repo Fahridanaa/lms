@@ -102,6 +102,26 @@ validate_inputs() {
     echo -e "${YELLOW}Warning: iostat tidak ditemukan. Install dengan: apt-get install sysstat${NC}"
     echo -e "${YELLOW}Disk I/O tidak akan dimonitor.${NC}"
   fi
+
+  # ─────────────────────────────────────────────
+  # Cluster mode validation
+  # ─────────────────────────────────────────────
+  if [ "${CLUSTER_MODE}" = "true" ]; then
+    if ! grep -q "^REDIS_CLUSTER_MODE=true" "${PROJECT_DIR}/.env" 2>/dev/null; then
+      echo -e "${RED}Error: Cluster mode requested but REDIS_CLUSTER_MODE=true not found in .env${NC}"
+      echo -e "${YELLOW}  Jalankan: ./scripts/setup-redis-cluster.sh up${NC}"
+      exit 1
+    fi
+
+    if ! docker compose exec -T redis-c1 redis-cli CLUSTER INFO 2>/dev/null | grep -q "cluster_state:ok"; then
+      echo -e "${RED}Error: Redis Cluster tidak reachable atau cluster_state tidak ok.${NC}"
+      echo -e "${YELLOW}  Jalankan: ./scripts/setup-redis-cluster.sh status${NC}"
+      echo -e "${YELLOW}  Atau:      ./scripts/setup-redis-cluster.sh up${NC}"
+      exit 1
+    fi
+
+    echo -e "${GREEN}[cluster] ✓ Redis Cluster terverifikasi (cluster_state: ok)${NC}"
+  fi
 }
 
 # ─────────────────────────────────────────────

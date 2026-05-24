@@ -43,7 +43,12 @@ SKIP_PREPARE=${2:-no}   # set "yes" untuk skip prepare (debug/resume)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-RESULTS_DIR="${SCRIPT_DIR}/../benchmark-results"
+
+if [ "${CLUSTER_MODE}" = "true" ]; then
+  RESULTS_DIR="${SCRIPT_DIR}/../benchmark-results-cluster"
+else
+  RESULTS_DIR="${SCRIPT_DIR}/../benchmark-results"
+fi
 
 STRATEGIES=("no-cache" "cache-aside" "read-through" "write-through")
 SCENARIOS=("read-heavy" "write-heavy")
