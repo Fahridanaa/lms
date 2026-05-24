@@ -161,6 +161,7 @@ return [
                     fn($h) => trim($h) . ':' . env('REDIS_CLUSTER_PORT', '6379'),
                     explode(',', env('REDIS_CLUSTER_HOSTS', 'redis-c1'))
                 ),
+                'port' => env('REDIS_CLUSTER_PORT', '6379'),
                 'username' => env('REDIS_USERNAME'),
                 'password' => env('REDIS_PASSWORD'),
                 'database' => env('REDIS_DB', '0'),
@@ -190,6 +191,7 @@ return [
                     fn($h) => trim($h) . ':' . env('REDIS_CLUSTER_PORT', '6379'),
                     explode(',', env('REDIS_CLUSTER_HOSTS', 'redis-c1'))
                 ),
+                'port' => env('REDIS_CLUSTER_PORT', '6379'),
                 'username' => env('REDIS_USERNAME'),
                 'password' => env('REDIS_PASSWORD'),
                 'database' => env('REDIS_CACHE_DB', '1'),
