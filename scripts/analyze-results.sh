@@ -72,8 +72,8 @@ for strategy in "${STRATEGIES[@]}"; do
       FOUND=$((FOUND + 1))
 
       # Deteksi redis mode dari marker file
-      local redis_mode="single"
-      local first_iter_dir=$(echo "${SUMMARY_FILES}" | cut -d';' -f1 | xargs dirname 2>/dev/null)
+      redis_mode="single"
+      first_iter_dir=$(echo "${SUMMARY_FILES}" | cut -d';' -f1 | xargs dirname 2>/dev/null)
       if [ -f "${first_iter_dir}/../.redis-mode" ]; then
         redis_mode=$(cat "${first_iter_dir}/../.redis-mode")
       elif [ -f "${RESULTS_DIR}/${strategy}/${scenario}/.redis-mode" ]; then
