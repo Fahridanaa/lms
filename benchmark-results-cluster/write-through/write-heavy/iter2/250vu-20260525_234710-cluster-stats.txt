@@ -1,0 +1,176 @@
+=== Cluster Stats - Tue May 26 12:01:54 AM WIB 2026 ===
+
+--- redis-c1 ---
+cluster_state:ok
+cluster_slots_assigned:16384
+cluster_slots_ok:16384
+cluster_slots_pfail:0
+cluster_slots_fail:0
+cluster_known_nodes:6
+cluster_size:3
+cluster_current_epoch:6
+cluster_my_epoch:1
+cluster_stats_messages_ping_sent:311611
+cluster_stats_messages_pong_sent:307022
+cluster_stats_messages_sent:618633
+cluster_stats_messages_ping_received:307017
+cluster_stats_messages_pong_received:311611
+cluster_stats_messages_meet_received:5
+cluster_stats_messages_received:618633
+total_cluster_links_buffer_limit_exceeded:0
+
+64199b54c79e515599aa4129aa895e51f65694e2 172.18.0.6:6379@16379 slave ef41d2e4910651b7ee0f58d55547467ff0469f0d 0 1779728513344 2 connected
+a3509a87155a2cc4dd3b667f8901eebd06762c13 172.18.0.8:6379@16379 myself,master - 0 0 1 connected 0-5460
+f6eb270a94cf4df944a554989e9f9187472eb84a 172.18.0.11:6379@16379 slave dfb3f16e7bd912ec83e5e192ab676b3fee90438a 0 1779728513000 3 connected
+ef41d2e4910651b7ee0f58d55547467ff0469f0d 172.18.0.7:6379@16379 master - 0 1779728514000 2 connected 5461-10922
+2b277a0bc2176a18948321fdf5e445611230b76e 172.18.0.9:6379@16379 slave a3509a87155a2cc4dd3b667f8901eebd06762c13 0 1779728512534 1 connected
+dfb3f16e7bd912ec83e5e192ab676b3fee90438a 172.18.0.10:6379@16379 master - 0 1779728514390 3 connected 10923-16383
+
+# Keyspace
+db0:keys=2765,expires=2655,avg_ttl=3391601,subexpiry=0
+
+--- redis-c2 ---
+cluster_state:ok
+cluster_slots_assigned:16384
+cluster_slots_ok:16384
+cluster_slots_pfail:0
+cluster_slots_fail:0
+cluster_known_nodes:6
+cluster_size:3
+cluster_current_epoch:6
+cluster_my_epoch:2
+cluster_stats_messages_ping_sent:306732
+cluster_stats_messages_pong_sent:306012
+cluster_stats_messages_meet_sent:1
+cluster_stats_messages_sent:612745
+cluster_stats_messages_ping_received:306012
+cluster_stats_messages_pong_received:306733
+cluster_stats_messages_received:612745
+total_cluster_links_buffer_limit_exceeded:0
+
+64199b54c79e515599aa4129aa895e51f65694e2 172.18.0.6:6379@16379 slave ef41d2e4910651b7ee0f58d55547467ff0469f0d 0 1779728515523 2 connected
+f6eb270a94cf4df944a554989e9f9187472eb84a 172.18.0.11:6379@16379 slave dfb3f16e7bd912ec83e5e192ab676b3fee90438a 0 1779728514000 3 connected
+dfb3f16e7bd912ec83e5e192ab676b3fee90438a 172.18.0.10:6379@16379 master - 0 1779728514596 3 connected 10923-16383
+ef41d2e4910651b7ee0f58d55547467ff0469f0d 172.18.0.7:6379@16379 myself,master - 0 0 2 connected 5461-10922
+a3509a87155a2cc4dd3b667f8901eebd06762c13 172.18.0.8:6379@16379 master - 0 1779728514000 1 connected 0-5460
+2b277a0bc2176a18948321fdf5e445611230b76e 172.18.0.9:6379@16379 slave a3509a87155a2cc4dd3b667f8901eebd06762c13 0 1779728515110 1 connected
+
+# Keyspace
+db0:keys=2764,expires=2661,avg_ttl=3394252,subexpiry=0
+
+--- redis-c3 ---
+cluster_state:ok
+cluster_slots_assigned:16384
+cluster_slots_ok:16384
+cluster_slots_pfail:0
+cluster_slots_fail:0
+cluster_known_nodes:6
+cluster_size:3
+cluster_current_epoch:6
+cluster_my_epoch:3
+cluster_stats_messages_ping_sent:307087
+cluster_stats_messages_pong_sent:308524
+cluster_stats_messages_meet_sent:1
+cluster_stats_messages_sent:615612
+cluster_stats_messages_ping_received:308524
+cluster_stats_messages_pong_received:307088
+cluster_stats_messages_received:615612
+total_cluster_links_buffer_limit_exceeded:0
+
+ef41d2e4910651b7ee0f58d55547467ff0469f0d 172.18.0.7:6379@16379 master - 0 1779728514000 2 connected 5461-10922
+a3509a87155a2cc4dd3b667f8901eebd06762c13 172.18.0.8:6379@16379 master - 0 1779728515442 1 connected 0-5460
+64199b54c79e515599aa4129aa895e51f65694e2 172.18.0.6:6379@16379 slave ef41d2e4910651b7ee0f58d55547467ff0469f0d 0 1779728513924 2 connected
+2b277a0bc2176a18948321fdf5e445611230b76e 172.18.0.9:6379@16379 slave a3509a87155a2cc4dd3b667f8901eebd06762c13 0 1779728515039 1 connected
+dfb3f16e7bd912ec83e5e192ab676b3fee90438a 172.18.0.10:6379@16379 myself,master - 0 0 3 connected 10923-16383
+f6eb270a94cf4df944a554989e9f9187472eb84a 172.18.0.11:6379@16379 slave dfb3f16e7bd912ec83e5e192ab676b3fee90438a 0 1779728514532 3 connected
+
+# Keyspace
+db0:keys=2753,expires=2645,avg_ttl=3390257,subexpiry=0
+
+--- redis-c4 ---
+cluster_state:ok
+cluster_slots_assigned:16384
+cluster_slots_ok:16384
+cluster_slots_pfail:0
+cluster_slots_fail:0
+cluster_known_nodes:6
+cluster_size:3
+cluster_current_epoch:6
+cluster_my_epoch:3
+cluster_stats_messages_ping_sent:306644
+cluster_stats_messages_pong_sent:305788
+cluster_stats_messages_meet_sent:1
+cluster_stats_messages_sent:612433
+cluster_stats_messages_ping_received:305788
+cluster_stats_messages_pong_received:306645
+cluster_stats_messages_received:612433
+total_cluster_links_buffer_limit_exceeded:0
+
+ef41d2e4910651b7ee0f58d55547467ff0469f0d 172.18.0.7:6379@16379 master - 0 1779728515606 2 connected 5461-10922
+2b277a0bc2176a18948321fdf5e445611230b76e 172.18.0.9:6379@16379 slave a3509a87155a2cc4dd3b667f8901eebd06762c13 0 1779728515000 1 connected
+f6eb270a94cf4df944a554989e9f9187472eb84a 172.18.0.11:6379@16379 myself,slave dfb3f16e7bd912ec83e5e192ab676b3fee90438a 0 0 3 connected
+a3509a87155a2cc4dd3b667f8901eebd06762c13 172.18.0.8:6379@16379 master - 0 1779728516518 1 connected 0-5460
+dfb3f16e7bd912ec83e5e192ab676b3fee90438a 172.18.0.10:6379@16379 master - 0 1779728516620 3 connected 10923-16383
+64199b54c79e515599aa4129aa895e51f65694e2 172.18.0.6:6379@16379 slave ef41d2e4910651b7ee0f58d55547467ff0469f0d 0 1779728516000 2 connected
+
+# Keyspace
+db0:keys=2753,expires=2645,avg_ttl=0,subexpiry=0
+
+--- redis-c5 ---
+cluster_state:ok
+cluster_slots_assigned:16384
+cluster_slots_ok:16384
+cluster_slots_pfail:0
+cluster_slots_fail:0
+cluster_known_nodes:6
+cluster_size:3
+cluster_current_epoch:6
+cluster_my_epoch:1
+cluster_stats_messages_ping_sent:305342
+cluster_stats_messages_pong_sent:305957
+cluster_stats_messages_meet_sent:1
+cluster_stats_messages_sent:611300
+cluster_stats_messages_ping_received:305957
+cluster_stats_messages_pong_received:305343
+cluster_stats_messages_received:611300
+total_cluster_links_buffer_limit_exceeded:0
+
+a3509a87155a2cc4dd3b667f8901eebd06762c13 172.18.0.8:6379@16379 master - 0 1779728517509 1 connected 0-5460
+2b277a0bc2176a18948321fdf5e445611230b76e 172.18.0.9:6379@16379 myself,slave a3509a87155a2cc4dd3b667f8901eebd06762c13 0 0 1 connected
+ef41d2e4910651b7ee0f58d55547467ff0469f0d 172.18.0.7:6379@16379 master - 0 1779728517509 2 connected 5461-10922
+64199b54c79e515599aa4129aa895e51f65694e2 172.18.0.6:6379@16379 slave ef41d2e4910651b7ee0f58d55547467ff0469f0d 0 1779728516000 2 connected
+dfb3f16e7bd912ec83e5e192ab676b3fee90438a 172.18.0.10:6379@16379 master - 0 1779728517000 3 connected 10923-16383
+f6eb270a94cf4df944a554989e9f9187472eb84a 172.18.0.11:6379@16379 slave dfb3f16e7bd912ec83e5e192ab676b3fee90438a 0 1779728517509 3 connected
+
+# Keyspace
+db0:keys=2765,expires=2655,avg_ttl=0,subexpiry=0
+
+--- redis-c6 ---
+cluster_state:ok
+cluster_slots_assigned:16384
+cluster_slots_ok:16384
+cluster_slots_pfail:0
+cluster_slots_fail:0
+cluster_known_nodes:6
+cluster_size:3
+cluster_current_epoch:6
+cluster_my_epoch:2
+cluster_stats_messages_ping_sent:310644
+cluster_stats_messages_pong_sent:314760
+cluster_stats_messages_meet_sent:1
+cluster_stats_messages_sent:625405
+cluster_stats_messages_ping_received:314760
+cluster_stats_messages_pong_received:310645
+cluster_stats_messages_received:625405
+total_cluster_links_buffer_limit_exceeded:0
+
+2b277a0bc2176a18948321fdf5e445611230b76e 172.18.0.9:6379@16379 slave a3509a87155a2cc4dd3b667f8901eebd06762c13 0 1779728517589 1 connected
+ef41d2e4910651b7ee0f58d55547467ff0469f0d 172.18.0.7:6379@16379 master - 0 1779728517000 2 connected 5461-10922
+dfb3f16e7bd912ec83e5e192ab676b3fee90438a 172.18.0.10:6379@16379 master - 0 1779728518000 3 connected 10923-16383
+64199b54c79e515599aa4129aa895e51f65694e2 172.18.0.6:6379@16379 myself,slave ef41d2e4910651b7ee0f58d55547467ff0469f0d 0 0 2 connected
+f6eb270a94cf4df944a554989e9f9187472eb84a 172.18.0.11:6379@16379 slave dfb3f16e7bd912ec83e5e192ab676b3fee90438a 0 1779728519025 3 connected
+a3509a87155a2cc4dd3b667f8901eebd06762c13 172.18.0.8:6379@16379 master - 0 1779728518009 1 connected 0-5460
+
+# Keyspace
+db0:keys=2764,expires=2661,avg_ttl=0,subexpiry=0
+

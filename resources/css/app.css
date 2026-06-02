@@ -9,3 +9,703 @@
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
 }
+
+@layer components {
+    html:has(.benchmark-page) {
+        color-scheme: dark;
+        scroll-behavior: smooth;
+    }
+
+    .benchmark-page {
+        --bench-bg: #08090b;
+        --bench-panel: #111315;
+        --bench-panel-soft: #15181b;
+        --bench-line: rgba(255, 255, 255, 0.18);
+        --bench-line-strong: rgba(255, 255, 255, 0.32);
+        --bench-text: #f8fbff;
+        --bench-muted: #a5adba;
+        --bench-soft: #d8e0ec;
+        --bench-accent: #eaff63;
+        --bench-blue: #39a3ff;
+        --bench-violet: #5b45ff;
+        --bench-teal: #19c7a6;
+        --bench-danger: #ff6b80;
+        --strategy-no-cache: #f97316;
+        --strategy-cache-aside: #9dff5f;
+        --strategy-read-through: #6aa7ff;
+        --strategy-write-through: #d778ff;
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bench-bg);
+        color: var(--bench-text);
+        font-family: Outfit, ui-sans-serif, system-ui, sans-serif;
+        -webkit-tap-highlight-color: rgba(234, 255, 99, 0.18);
+        touch-action: manipulation;
+    }
+
+    .benchmark-page * {
+        box-sizing: border-box;
+    }
+
+    .benchmark-shell {
+        width: min(100%, 1180px);
+        min-height: 100vh;
+        margin-inline: auto;
+        padding: 1.25rem;
+        padding-left: max(1.25rem, env(safe-area-inset-left));
+        padding-right: max(1.25rem, env(safe-area-inset-right));
+    }
+
+    .skip-link {
+        position: fixed;
+        top: 1rem;
+        left: 1rem;
+        z-index: 50;
+        transform: translateY(-150%);
+        border: 1px solid #f8fbff;
+        border-radius: 999px;
+        padding: 0.75rem 1rem;
+        background: var(--bench-accent);
+        color: #08090b;
+        font-weight: 700;
+        text-decoration: none;
+        transition: transform 180ms ease;
+    }
+
+    .skip-link:focus-visible {
+        transform: translateY(0);
+        outline: 3px solid rgba(255, 255, 255, 0.7);
+        outline-offset: 2px;
+    }
+
+    .benchmark-console {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        padding-block: 1rem;
+        background: linear-gradient(180deg, rgba(8, 9, 11, 0.98), rgba(8, 9, 11, 0.88) 78%, transparent);
+        backdrop-filter: blur(14px);
+    }
+
+    .benchmark-titlebar {
+        display: grid;
+        grid-template-columns: minmax(10rem, 1fr) minmax(18rem, 2fr) minmax(10rem, 1fr);
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .benchmark-brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.65rem;
+        min-width: 0;
+        width: max-content;
+        color: var(--bench-text);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-decoration: none;
+        text-transform: uppercase;
+    }
+
+    .benchmark-brand:focus-visible {
+        border-radius: 6px;
+        outline: 2px solid rgba(234, 255, 99, 0.7);
+        outline-offset: 4px;
+    }
+
+    .benchmark-brand-mark {
+        width: 0.7rem;
+        height: 0.7rem;
+        border: 2px solid var(--bench-accent);
+        border-radius: 50%;
+        box-shadow: 0 0 20px rgba(234, 255, 99, 0.58);
+    }
+
+    .benchmark-tabs {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        overflow: hidden;
+        border: 1px solid var(--bench-line);
+        border-radius: 6px;
+        background: #101113;
+    }
+
+    .benchmark-tabs button,
+    .segmented-field button,
+    .vu-options button {
+        min-height: 2.35rem;
+        border: 0;
+        background: transparent;
+        color: var(--bench-muted);
+        cursor: pointer;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem;
+        font-weight: 700;
+        transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .benchmark-tabs button + button {
+        border-left: 1px solid var(--bench-line);
+    }
+
+    .benchmark-tabs button:hover,
+    .benchmark-tabs button.is-active,
+    .segmented-field button:hover,
+    .segmented-field button.is-active,
+    .vu-options button:hover,
+    .vu-options button.is-active {
+        color: var(--bench-text);
+    }
+
+    .benchmark-tabs button:focus-visible,
+    .segmented-field button:focus-visible,
+    .vu-options button:focus-visible {
+        color: var(--bench-text);
+        outline: 2px solid rgba(234, 255, 99, 0.7);
+        outline-offset: -2px;
+        box-shadow: 0 0 0 3px rgba(234, 255, 99, 0.16);
+    }
+
+    .benchmark-tabs button.is-active {
+        background: #17191d;
+        color: var(--bench-text);
+    }
+
+    .benchmark-controls {
+        display: grid;
+        grid-template-columns: minmax(12rem, 0.7fr) minmax(0, 1.7fr) minmax(18rem, 0.8fr);
+        gap: 1rem;
+        align-items: end;
+        margin-top: 1.25rem;
+    }
+
+    .benchmark-controls fieldset {
+        min-width: 0;
+        margin: 0;
+        border: 0;
+        padding: 0;
+    }
+
+    .benchmark-controls legend,
+    .analysis-controls span,
+    .section-heading p,
+    .comparison-block h2,
+    .panel-header span,
+    .benchmark-overview span,
+    .simulation-card h3 {
+        color: var(--bench-accent);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0;
+        text-transform: uppercase;
+    }
+
+    .segmented-field {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.45rem;
+    }
+
+    .segmented-field legend {
+        grid-column: 1 / -1;
+    }
+
+    .segmented-field button {
+        width: 100%;
+        border: 1px solid var(--bench-line);
+        border-radius: 999px;
+    }
+
+    .segmented-field button + button {
+        margin-left: 0;
+    }
+
+    .segmented-field button.is-active,
+    .vu-options button.is-active {
+        border-color: #f8fbff;
+        color: #f8fbff;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+    }
+
+    .vu-field {
+        display: grid;
+        gap: 0.45rem;
+    }
+
+    .vu-options {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: 0.75rem;
+    }
+
+    .vu-options button {
+        border: 1px solid var(--bench-line-strong);
+        border-radius: 999px;
+        padding-inline: 0.6rem;
+        white-space: nowrap;
+    }
+
+    .analysis-controls {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.65rem;
+    }
+
+    .analysis-controls[hidden] {
+        display: none;
+    }
+
+    .benchmark-controls:has(.analysis-controls:not([hidden])) [data-vu-controls] {
+        display: none;
+    }
+
+    .analysis-controls label {
+        display: grid;
+        gap: 0.45rem;
+        min-width: 0;
+    }
+
+    .analysis-controls select {
+        width: 100%;
+        min-height: 2.35rem;
+        border: 1px solid var(--bench-line);
+        border-radius: 6px;
+        padding-inline: 0.65rem;
+        background: #101113;
+        color: var(--bench-text);
+        font: inherit;
+    }
+
+    .analysis-controls select:focus-visible {
+        border-color: var(--bench-accent);
+        outline: 2px solid rgba(234, 255, 99, 0.22);
+        outline-offset: 2px;
+    }
+
+    .benchmark-tab-panel {
+        padding-block: 1.5rem 3rem;
+    }
+
+    .benchmark-tab-panel[hidden] {
+        display: none;
+    }
+
+    .section-heading {
+        display: grid;
+        gap: 0.55rem;
+        max-width: 52rem;
+        margin-block: 1rem 1.5rem;
+    }
+
+    .section-heading h1 {
+        margin: 0;
+        font-family: 'Space Grotesk', Outfit, sans-serif;
+        font-size: clamp(1.75rem, 4vw, 3.4rem);
+        line-height: 1;
+        letter-spacing: 0;
+        text-wrap: balance;
+    }
+
+    .section-heading span {
+        color: var(--bench-muted);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.78rem;
+    }
+
+    .analysis-brief {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+        margin-block: 1rem 1.5rem;
+    }
+
+    .analysis-brief p {
+        margin: 0;
+        border-left: 2px solid var(--bench-accent);
+        padding: 0.25rem 0 0.25rem 1rem;
+        color: var(--bench-soft);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.78rem;
+        line-height: 1.65;
+    }
+
+    .analysis-brief strong {
+        display: block;
+        margin-bottom: 0.2rem;
+        color: var(--bench-text);
+        font-family: 'Space Grotesk', Outfit, sans-serif;
+        font-size: 1.1rem;
+        line-height: 1;
+    }
+
+    .comparison-block {
+        margin-top: 2.4rem;
+    }
+
+    .comparison-block > h2 {
+        margin: 0 0 1rem;
+    }
+
+    .simulation-grid {
+        overflow: hidden;
+        border: 1px solid var(--bench-line-strong);
+        border-radius: 8px;
+        background: #141516;
+    }
+
+    [data-strategy='no-cache'] {
+        color: var(--strategy-no-cache) !important;
+    }
+
+    [data-strategy='cache-aside'] {
+        color: var(--strategy-cache-aside) !important;
+    }
+
+    [data-strategy='read-through'] {
+        color: var(--strategy-read-through) !important;
+    }
+
+    [data-strategy='write-through'] {
+        color: var(--strategy-write-through) !important;
+    }
+
+    .benchmark-overview {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
+        margin-block: 1.5rem;
+    }
+
+    .benchmark-overview article,
+    .benchmark-panel {
+        border: 1px solid var(--bench-line);
+        border-radius: 8px;
+        background: #121417;
+        box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+    }
+
+    .benchmark-overview article {
+        min-height: 8.5rem;
+        padding: 1rem;
+    }
+
+    .benchmark-overview strong {
+        display: block;
+        margin-top: 1rem;
+        color: var(--bench-text);
+        font-family: 'Space Grotesk', Outfit, sans-serif;
+        font-size: clamp(1.35rem, 2vw, 2rem);
+        line-height: 1;
+    }
+
+    .benchmark-overview small {
+        display: block;
+        margin-top: 0.65rem;
+        color: var(--bench-muted);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.73rem;
+    }
+
+    .analysis-grid {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 1rem;
+    }
+
+    .benchmark-panel {
+        grid-column: span 6;
+        min-height: 24rem;
+        overflow: hidden;
+        padding: 1rem;
+    }
+
+    .benchmark-panel-wide {
+        grid-column: span 8;
+    }
+
+    .benchmark-panel-full {
+        grid-column: 1 / -1;
+        min-height: 18rem;
+    }
+
+    .benchmark-panel-wide + .benchmark-panel {
+        grid-column: span 4;
+    }
+
+    .benchmark-panel-dark {
+        background: #0d0e10;
+    }
+
+    .panel-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        min-height: 3.4rem;
+    }
+
+    .panel-header > div {
+        min-width: 0;
+    }
+
+    .panel-header h2 {
+        margin: 0.35rem 0 0;
+        font-family: 'Space Grotesk', Outfit, sans-serif;
+        font-size: clamp(1.05rem, 1.7vw, 1.55rem);
+        line-height: 1.05;
+        text-wrap: balance;
+    }
+
+    .strategy-legend {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.45rem;
+    }
+
+    .strategy-legend span {
+        display: inline-flex;
+        align-items: center;
+        min-height: 1.55rem;
+        border: 1px solid var(--bench-line);
+        border-radius: 999px;
+        padding-inline: 0.55rem;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.68rem;
+    }
+
+    .strategy-legend span::before {
+        width: 0.4rem;
+        height: 0.4rem;
+        margin-right: 0.35rem;
+        border-radius: 50%;
+        content: '';
+        background: currentColor;
+    }
+
+    .chart-frame {
+        width: 100%;
+        min-height: 20rem;
+        margin-top: 1rem;
+    }
+
+    .chart-frame.compact {
+        min-height: 16rem;
+    }
+
+    .chart-frame svg {
+        width: 100%;
+        height: auto;
+        min-height: inherit;
+        overflow: visible;
+    }
+
+    .chart-axis,
+    .chart-grid {
+        stroke: rgba(255, 255, 255, 0.12);
+        stroke-width: 1;
+    }
+
+    .chart-label {
+        fill: var(--bench-muted);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+    }
+
+    .chart-value {
+        fill: var(--bench-soft);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    .metric-table {
+        margin-top: 1rem;
+        overflow-x: auto;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .simulation-table-wrap {
+        overflow-x: auto;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .simulation-table {
+        width: 100%;
+        min-width: 68rem;
+        border-collapse: collapse;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.75rem;
+    }
+
+    .simulation-table caption {
+        padding: 0.85rem 1rem;
+        border-bottom: 1px solid var(--bench-line);
+        color: var(--bench-muted);
+        text-align: left;
+    }
+
+    .simulation-table th,
+    .simulation-table td {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 0.85rem 0.75rem;
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .simulation-table thead th {
+        color: var(--bench-accent);
+        font-size: 0.68rem;
+        text-transform: uppercase;
+    }
+
+    .simulation-table th:first-child,
+    .simulation-table td:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        background: #141516;
+        text-align: left;
+    }
+
+    .simulation-table tbody th {
+        font-weight: 700;
+    }
+
+    .simulation-table tbody tr:hover {
+        background: rgba(255, 255, 255, 0.04);
+    }
+
+    .metric-table table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.76rem;
+    }
+
+    .metric-table th,
+    .metric-table td {
+        border-bottom: 1px solid var(--bench-line);
+        padding: 0.72rem 0.55rem;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    .metric-table th {
+        color: var(--bench-accent);
+        font-size: 0.68rem;
+        text-transform: uppercase;
+    }
+
+    .metric-table td {
+        color: var(--bench-soft);
+    }
+
+    .table-empty {
+        border: 1px solid var(--bench-line);
+        border-radius: 6px;
+        padding: 1rem;
+        color: var(--bench-muted);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.76rem;
+    }
+
+    .statistics-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .statistics-layout .benchmark-panel {
+        grid-column: auto;
+        min-height: 30rem;
+    }
+
+    @media (max-width: 1080px) {
+        .benchmark-titlebar,
+        .benchmark-controls {
+            grid-template-columns: 1fr;
+        }
+
+        .benchmark-brand {
+            justify-self: start;
+        }
+
+        .vu-options {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .analysis-controls {
+            max-width: 32rem;
+        }
+
+        .simulation-grid,
+        .analysis-brief,
+        .benchmark-overview,
+        .statistics-layout {
+            grid-template-columns: 1fr;
+        }
+
+        .benchmark-panel,
+        .benchmark-panel-full,
+        .benchmark-panel-wide,
+        .benchmark-panel-wide + .benchmark-panel {
+            grid-column: 1 / -1;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .benchmark-shell {
+            padding: 0.85rem;
+        }
+
+        .benchmark-console {
+            position: static;
+        }
+
+        .benchmark-tabs,
+        .analysis-controls {
+            grid-template-columns: 1fr;
+        }
+
+        .vu-options {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.55rem;
+        }
+
+        .segmented-field button {
+            width: 100%;
+        }
+
+        .simulation-grid {
+            padding: 0.75rem;
+        }
+
+        .panel-header {
+            display: grid;
+        }
+
+        .strategy-legend {
+            justify-content: flex-start;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        html:has(.benchmark-page) {
+            scroll-behavior: auto;
+        }
+
+        .skip-link {
+            transition: none;
+        }
+
+        .benchmark-tabs button,
+        .segmented-field button,
+        .vu-options button {
+            transition: none;
+        }
+    }
+}

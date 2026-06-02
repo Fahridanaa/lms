@@ -157,14 +157,18 @@ cluster_up() {
         echo "REDIS_CLUSTER_MODE=true" >> "${ENV_FILE}"
     fi
 
-    if grep -q "^REDIS_CLUSTER_HOSTS=" "${ENV_FILE}"; then
-        sed -i "s/^REDIS_CLUSTER_HOSTS=.*/REDIS_CLUSTER_HOSTS=${CLUSTER_HOSTS}/" "${ENV_FILE}"
-    else
-        echo "REDIS_CLUSTER_HOSTS=${CLUSTER_HOSTS}" >> "${ENV_FILE}"
-    fi
+    for i in 1 2 3; do
+        var="REDIS_CLUSTER_HOST_${i}"
+        host="redis-c${i}"
+        if grep -q "^${var}=" "${ENV_FILE}"; then
+            sed -i "s/^${var}=.*/${var}=${host}/" "${ENV_FILE}"
+        else
+            echo "${var}=${host}" >> "${ENV_FILE}"
+        fi
+    done
 
     echo -e "${GREEN}  ✓ .env diupdate: REDIS_CLUSTER_MODE=true${NC}"
-    echo -e "${GREEN}  ✓ .env diupdate: REDIS_CLUSTER_HOSTS=${CLUSTER_HOSTS}${NC}"
+    echo -e "${GREEN}  ✓ .env diupdate: REDIS_CLUSTER_HOST_1, REDIS_CLUSTER_HOST_2, REDIS_CLUSTER_HOST_3${NC}"
     echo -e "${YELLOW}  Backup .env: ${ENV_FILE}.cluster-backup${NC}"
 
     # ─────────────────────────────────────────
@@ -180,12 +184,19 @@ cluster_up() {
     echo "=============================================="
     echo ""
 
+    # Clear config cache
+    echo ""
+    echo -e "${YELLOW}[5/5] Clearing config cache...${NC}"
+    docker compose exec -T app php artisan config:clear 2>/dev/null || true
+    echo -e "${GREEN}✓ Config cache cleared.${NC}"
+
     echo -e "${GREEN}✓ Redis Cluster siap digunakan.${NC}"
     echo ""
     echo "Langkah selanjutnya:"
     echo "  Restart app container: docker compose restart app"
     echo "  Jalankan benchmark:    ./scripts/run-benchmark.sh --cluster ..."
     echo ""
+    echo -e "${GREEN}Tip: Jika masih error, restart app: docker compose restart app${NC}"
 }
 
 # ─────────────────────────────────────────────

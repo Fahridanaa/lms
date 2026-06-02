@@ -71,13 +71,16 @@ for strategy in "${STRATEGIES[@]}"; do
 
       FOUND=$((FOUND + 1))
 
-      # Deteksi redis mode dari marker file
+      # Deteksi redis mode dari marker file.
+      # run-benchmark.sh writes this marker inside each iteration directory.
       redis_mode="single"
       first_iter_dir=$(echo "${SUMMARY_FILES}" | cut -d';' -f1 | xargs dirname 2>/dev/null)
-      if [ -f "${first_iter_dir}/../.redis-mode" ]; then
-        redis_mode=$(cat "${first_iter_dir}/../.redis-mode")
+      if [ -f "${first_iter_dir}/.redis-mode" ]; then
+        redis_mode=$(tr -d '\r\n' < "${first_iter_dir}/.redis-mode")
+      elif [ -f "${first_iter_dir}/../.redis-mode" ]; then
+        redis_mode=$(tr -d '\r\n' < "${first_iter_dir}/../.redis-mode")
       elif [ -f "${RESULTS_DIR}/${strategy}/${scenario}/.redis-mode" ]; then
-        redis_mode=$(cat "${RESULTS_DIR}/${strategy}/${scenario}/.redis-mode")
+        redis_mode=$(tr -d '\r\n' < "${RESULTS_DIR}/${strategy}/${scenario}/.redis-mode")
       fi
 
       # Parse & rata-rata metrik dari semua iterasi menggunakan Python
