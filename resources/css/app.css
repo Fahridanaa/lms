@@ -408,6 +408,151 @@
         font-size: 0.73rem;
     }
 
+    .score-summary {
+        margin-block: 1.75rem;
+    }
+
+    .score-summary-heading {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .score-summary-heading p {
+        margin: 0;
+        color: var(--bench-accent);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.74rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .score-summary-heading h2 {
+        margin: 0.35rem 0 0;
+        font-family: 'Space Grotesk', Outfit, sans-serif;
+        font-size: clamp(1.25rem, 2vw, 2rem);
+        line-height: 1.05;
+        text-wrap: balance;
+    }
+
+    .score-summary-heading > span {
+        max-width: 28rem;
+        color: var(--bench-muted);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.76rem;
+        line-height: 1.55;
+    }
+
+    .score-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+    }
+
+    .score-card {
+        display: grid;
+        gap: 1rem;
+        border: 1px solid var(--bench-line);
+        border-radius: 8px;
+        padding: 1rem;
+        background: #121417;
+        box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+    }
+
+    .score-card h3,
+    .score-card-header span {
+        margin: 0;
+        color: var(--bench-accent);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .score-card-header strong {
+        display: block;
+        margin-top: 0.35rem;
+        font-family: 'Space Grotesk', Outfit, sans-serif;
+        font-size: clamp(1.35rem, 2vw, 2.1rem);
+        line-height: 1;
+    }
+
+    .score-card-header small {
+        display: block;
+        margin-top: 0.55rem;
+        color: var(--bench-muted);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.74rem;
+    }
+
+    .score-card-meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.7rem;
+        margin: 0;
+    }
+
+    .score-card-meta div {
+        border: 1px solid var(--bench-line);
+        border-radius: 6px;
+        padding: 0.7rem;
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .score-card-meta dt {
+        color: var(--bench-muted);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.68rem;
+        text-transform: uppercase;
+    }
+
+    .score-card-meta dd {
+        margin: 0.35rem 0 0;
+        color: var(--bench-text);
+        font-family: 'Space Grotesk', Outfit, sans-serif;
+        font-size: 1.25rem;
+        font-weight: 700;
+    }
+
+    .score-dimensions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+    }
+
+    .score-dimensions span {
+        display: inline-flex;
+        min-height: 1.65rem;
+        align-items: center;
+        border: 1px solid var(--bench-line);
+        border-radius: 999px;
+        padding-inline: 0.6rem;
+        color: var(--bench-soft);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.68rem;
+    }
+
+    .score-ranking {
+        display: grid;
+        gap: 0.45rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.75rem;
+    }
+
+    .score-ranking li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        border-top: 1px solid var(--bench-line);
+        padding-top: 0.45rem;
+    }
+
     .analysis-grid {
         display: grid;
         grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -645,8 +790,13 @@
         .simulation-grid,
         .analysis-brief,
         .benchmark-overview,
+        .score-summary-grid,
         .statistics-layout {
             grid-template-columns: 1fr;
+        }
+
+        .score-summary-heading {
+            display: grid;
         }
 
         .benchmark-panel,
@@ -686,6 +836,10 @@
 
         .panel-header {
             display: grid;
+        }
+
+        .score-card-meta {
+            grid-template-columns: 1fr;
         }
 
         .strategy-legend {

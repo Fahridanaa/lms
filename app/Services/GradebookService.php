@@ -26,11 +26,13 @@ class GradebookService
      */
     public function getCourseGradebook(int $courseId): array
     {
+        Course::query()->findOrFail($courseId);
+
         return $this->cacheStrategy
             ->tags(['gradebook', "course:{$courseId}"])
             ->get("course:{$courseId}:gradebook", function () use ($courseId) {
                 // Aggregate grades per student in a single SQL query
-                // instead of loading all Grade models + polymorphic gradeable relations
+                // instead of loading all Grade models + polymorphic gradeable relations.
                 $studentAverages = Grade::where('course_id', $courseId)
                     ->whereNull('deleted_at')
                     ->selectRaw('
@@ -52,7 +54,23 @@ class GradebookService
                     ->get()
                     ->keyBy('id');
 
-                return $studentAverages->map(function ($row) use ($students) {
+                $gradesByStudent = Grade::where('course_id', $courseId)
+                    ->whereNull('deleted_at')
+                    ->get([
+                        'id',
+                        'user_id',
+                        'course_id',
+                        'gradeable_type',
+                        'gradeable_id',
+                        'score',
+                        'max_score',
+                        'percentage',
+                        'created_at',
+                        'updated_at',
+                    ])
+                    ->groupBy('user_id');
+
+                return $studentAverages->map(function ($row) use ($gradesByStudent, $students) {
                     $student = $students->get($row->user_id);
                     if (! $student) {
                         return null;
@@ -64,6 +82,7 @@ class GradebookService
                             'name' => $student->name,
                             'email' => $student->email,
                         ],
+                        'grades' => $gradesByStudent->get($row->user_id, collect())->values(),
                         'average_percentage' => round($row->average_percentage, 2),
                         'total_grades' => (int) $row->total_grades,
                         'quiz_count' => (int) $row->quiz_count,

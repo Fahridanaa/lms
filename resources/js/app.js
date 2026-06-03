@@ -15,7 +15,7 @@ if (dashboard && window.benchmarkData) {
 
     const ANALYSIS_VU = 1500;
     const SATURATION_VU = 2000;
-    const simulationStrategies = ['cache-aside', 'read-through', 'write-through'];
+    const simulationStrategies = data.strategies;
     const tabs = ['benchmark', 'analysis'];
     const strategyColors = {
         'no-cache': '#f97316',
@@ -223,6 +223,7 @@ if (dashboard && window.benchmarkData) {
         renderBarChart('[data-chart="bar"]', selectedMetrics, state.metric, data.metricOptions[state.metric]);
         renderBarChart('[data-chart="cpu"]', selectedResources, 'cpu_avg_pct', 'Rata-rata CPU');
         renderBarChart('[data-chart="memory"]', selectedResources, 'mem_avg_mb', 'Rata-rata memori');
+        renderScoreSummary();
         renderReliabilityTable(selectedMetrics);
         renderSaturationTable();
         renderAnovaTable();
@@ -278,6 +279,52 @@ if (dashboard && window.benchmarkData) {
         text('[data-summary="significance"]', `${significantCount}/6`);
         text('[data-summary="saturation"]', `${formatNumber(saturatedIterations)}/${formatNumber(saturationTotalIterations)}`);
         text('[data-summary="saturationValue"]', `${formatNumber(saturatedStrategies)} strategi punya iterasi jenuh`);
+    }
+
+    function renderScoreSummary() {
+        const groups = data.scoreSummary?.groups ?? [];
+
+        html('[data-score-summary]', groups.map((group) => scoreSummaryCard(group)).join(''));
+    }
+
+    function scoreSummaryCard(group) {
+        const rankings = group.rankings ?? [];
+        const winner = group.winner ?? rankings[0];
+
+        if (!winner) {
+            return `<article class="score-card">
+                <h3>${escapeHtml(group.redis_label)} · ${escapeHtml(group.scenario_label)}</h3>
+                <p class="table-empty" role="status">Tidak ada data skor untuk kombinasi ini.</p>
+            </article>`;
+        }
+
+        const rankingItems = rankings.map((ranking) => `<li>
+            <span><strong data-strategy="${escapeHtml(ranking.strategy)}">#${formatNumber(ranking.rank)} ${escapeHtml(ranking.label)}</strong></span>
+            <span>${escapeHtml(formatNumber(ranking.score))}</span>
+        </li>`).join('');
+        const dimensionItems = Object.values(winner.dimensions ?? {}).map((dimension) => `<span>
+            ${escapeHtml(dimension.label)}: ${escapeHtml(formatNumber(dimension.weighted_score))}
+        </span>`).join('');
+
+        return `<article class="score-card">
+            <div class="score-card-header">
+                <span>${escapeHtml(group.redis_label)} · ${escapeHtml(group.scenario_label)}</span>
+                <strong data-strategy="${escapeHtml(winner.strategy)}">${escapeHtml(winner.label)}</strong>
+                <small>Skor ${escapeHtml(formatNumber(winner.score))} pada ${formatNumber(data.scoreSummary.analysis_vu)} VU</small>
+            </div>
+            <dl class="score-card-meta">
+                <div>
+                    <dt>Valid 1500 VU</dt>
+                    <dd>${escapeHtml(formatNumber(group.valid_iterations))}/${escapeHtml(formatNumber(group.total_iterations))}</dd>
+                </div>
+                <div>
+                    <dt>Saturasi 2000 VU</dt>
+                    <dd>${escapeHtml(formatNumber(group.saturated_iterations))}/${escapeHtml(formatNumber(group.saturation_total_iterations))}</dd>
+                </div>
+            </dl>
+            <div class="score-dimensions" aria-label="Kontribusi skor pemenang">${dimensionItems}</div>
+            <ol class="score-ranking">${rankingItems}</ol>
+        </article>`;
     }
 
     function renderLineChart() {

@@ -177,7 +177,7 @@ for iteration in $(seq 1 ${ITERATIONS}); do
       echo -e "${CYAN}  Mulai    : $(date)${NC}"
       echo -e "${CYAN}══════════════════════════════════════════════${NC}"
 
-      local run_cmd=(
+      run_cmd=(
         "${SCRIPT_DIR}/run-benchmark.sh"
       )
       if [ "${CLUSTER_MODE}" = "true" ]; then

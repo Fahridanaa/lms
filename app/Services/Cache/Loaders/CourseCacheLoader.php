@@ -80,7 +80,23 @@ class CourseCacheLoader extends BaseCacheLoader
             ->get()
             ->keyBy('id');
 
-        return $studentAverages->map(function ($row) use ($students) {
+        $gradesByStudent = Grade::where('course_id', $courseId)
+            ->whereNull('deleted_at')
+            ->get([
+                'id',
+                'user_id',
+                'course_id',
+                'gradeable_type',
+                'gradeable_id',
+                'score',
+                'max_score',
+                'percentage',
+                'created_at',
+                'updated_at',
+            ])
+            ->groupBy('user_id');
+
+        return $studentAverages->map(function ($row) use ($gradesByStudent, $students) {
             $student = $students->get($row->user_id);
             if (! $student) {
                 return null;
@@ -92,6 +108,7 @@ class CourseCacheLoader extends BaseCacheLoader
                     'name' => $student->name,
                     'email' => $student->email,
                 ],
+                'grades' => $gradesByStudent->get($row->user_id, collect())->values(),
                 'average_percentage' => round($row->average_percentage, 2),
                 'total_grades' => (int) $row->total_grades,
                 'quiz_count' => (int) $row->quiz_count,

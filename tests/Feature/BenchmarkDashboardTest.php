@@ -8,7 +8,7 @@ class BenchmarkDashboardTest extends TestCase
 {
     public function test_benchmark_dashboard_renders_results_context(): void
     {
-        $response = $this->get('/benchmarks');
+        $response = $this->get('/');
 
         $response
             ->assertStatus(200)
@@ -26,6 +26,9 @@ class BenchmarkDashboardTest extends TestCase
             ->assertSee('2000 VU dipakai untuk diskusi saturasi dan skalabilitas')
             ->assertSee('menjadi titik utama analisis inferensial')
             ->assertSee('ditampilkan sebagai bukti saturasi')
+            ->assertSee('Ringkasan Hasil')
+            ->assertSee('Strategi paling optimal pada titik stabil 1500 VU')
+            ->assertSee('Skor memakai bobot proposal')
             ->assertSee('Perbandingan Mode Node Tunggal')
             ->assertSee('Perbandingan Mode Cluster')
             ->assertSee('P99')
@@ -40,5 +43,10 @@ class BenchmarkDashboardTest extends TestCase
             ->assertSee('ANOVA')
             ->assertSee('Tukey HSD')
             ->assertSee('Iterasi valid vs saturasi');
+    }
+
+    public function test_benchmark_legacy_route_redirects_to_canonical_root(): void
+    {
+        $this->get('/benchmarks')->assertRedirect('/');
     }
 }

@@ -10,7 +10,7 @@ return [
     | This option controls which caching strategy will be used by the application.
     | You can switch between different strategies without changing code.
     |
-    | Supported: "cache-aside", "read-through", "write-through"
+    | Supported: "no-cache", "cache-aside", "read-through", "write-through"
     |
     */
 
@@ -50,6 +50,11 @@ return [
     */
 
     'strategies' => [
+        'no-cache' => [
+            'enabled' => true,
+            'description' => 'Baseline without application cache',
+        ],
+
         'cache-aside' => [
             'enabled' => true,
             'description' => 'Application explicitly manages cache (lazy loading)',

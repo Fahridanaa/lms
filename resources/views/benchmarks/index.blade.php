@@ -150,6 +150,17 @@
                     </article>
                 </section>
 
+                <section class="score-summary" aria-labelledby="score-summary-title">
+                    <div class="score-summary-heading">
+                        <div>
+                            <p>Ringkasan Hasil</p>
+                            <h2 id="score-summary-title">Strategi paling optimal pada titik stabil 1500 VU.</h2>
+                        </div>
+                        <span>Skor memakai bobot proposal; 2000 VU tetap dipakai sebagai bukti saturasi, bukan dasar pemeringkatan.</span>
+                    </div>
+                    <div class="score-summary-grid" aria-live="polite" data-score-summary></div>
+                </section>
+
                 <section class="analysis-grid" aria-label="Grafik analisis benchmark">
                     <article class="benchmark-panel benchmark-panel-full">
                         <div class="panel-header">
