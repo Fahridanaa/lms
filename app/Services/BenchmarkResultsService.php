@@ -93,7 +93,8 @@ class BenchmarkResultsService
      *     defaults: array{scenario: string, redisMode: string, concurrentUsers: int, metric: string},
      *     metricOptions: array<string, string>,
      *     strategyLabels: array<string, string>,
-     *     scoreSummary: array<string, mixed>
+     *     scoreSummary: array<string, mixed>,
+     *     researchSummary: array<string, mixed>
      * }
      */
     public function dashboardData(): array
@@ -101,6 +102,7 @@ class BenchmarkResultsService
         $metrics = $this->readCsv('metrics-summary.csv');
         $resources = $this->readCsv('resources-summary.csv');
         $validity = $this->readCsv('validity-summary.csv');
+        $scoreSummary = $this->scoreSummary($metrics, $resources, $validity);
 
         return [
             'metrics' => $metrics,
@@ -132,7 +134,8 @@ class BenchmarkResultsService
                 'read-through' => 'Read Through',
                 'write-through' => 'Write Through',
             ],
-            'scoreSummary' => $this->scoreSummary($metrics, $resources, $validity),
+            'scoreSummary' => $scoreSummary,
+            'researchSummary' => $this->researchSummary($metrics, $validity, $scoreSummary),
         ];
     }
 
@@ -249,6 +252,362 @@ class BenchmarkResultsService
             'weights' => self::SCORE_DIMENSIONS,
             'groups' => $groups,
         ];
+    }
+
+    /**
+     * @param  list<array<string, bool|float|int|string|null>>  $metrics
+     * @param  list<array<string, bool|float|int|string|null>>  $validity
+     * @param  array<string, mixed>  $scoreSummary
+     * @return array<string, mixed>
+     */
+    private function researchSummary(array $metrics, array $validity, array $scoreSummary): array
+    {
+        $overallWinner = $this->overallWinner($scoreSummary);
+        $workloadWinners = $this->workloadWinners($scoreSummary);
+
+        return [
+            'analysis_vu' => self::ANALYSIS_VU,
+            'saturation_vu' => self::SATURATION_VU,
+            'overall_winner' => $overallWinner,
+            'baseline_improvements' => $this->baselineImprovements($metrics, $scoreSummary),
+            'workload_winners' => $workloadWinners,
+            'redis_mode_insights' => $this->redisModeInsights($metrics, $validity),
+            'trade_offs' => $this->tradeOffs(),
+            'recommendation' => $this->recommendation($overallWinner, $workloadWinners),
+            'threats_to_validity' => [
+                'LMS Mini merepresentasikan alur akademik inti, tetapi belum mencakup seluruh kompleksitas LMS produksi.',
+                'Workload dibentuk melalui skenario k6 sehingga perilaku pengguna nyata dapat memiliki variasi yang lebih lebar.',
+                'Pengujian dilakukan pada lingkungan VPS terbatas; hasil absolut dapat berubah pada perangkat keras atau jaringan berbeda.',
+                'Redis Cluster digunakan sebagai pembanding skalabilitas, bukan sebagai fokus utama optimasi aplikasi.',
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $scoreSummary
+     * @return array<string, mixed>|null
+     */
+    private function overallWinner(array $scoreSummary): ?array
+    {
+        $candidates = [];
+
+        foreach ($scoreSummary['groups'] ?? [] as $group) {
+            foreach ($group['rankings'] ?? [] as $ranking) {
+                $candidates[] = $this->researchRanking($group, $ranking);
+            }
+        }
+
+        return $this->bestResearchRanking($candidates);
+    }
+
+    /**
+     * @param  array<string, mixed>  $scoreSummary
+     * @return list<array<string, mixed>>
+     */
+    private function workloadWinners(array $scoreSummary): array
+    {
+        $winners = [];
+
+        foreach (self::SCENARIOS as $scenario) {
+            $candidates = [];
+
+            foreach ($scoreSummary['groups'] ?? [] as $group) {
+                if (($group['scenario'] ?? null) !== $scenario || ($group['winner'] ?? null) === null) {
+                    continue;
+                }
+
+                $candidates[] = $this->researchRanking($group, $group['winner']);
+            }
+
+            $winner = $this->bestResearchRanking($candidates);
+
+            if ($winner !== null) {
+                $winners[] = $winner;
+            }
+        }
+
+        return $winners;
+    }
+
+    /**
+     * @param  array<string, mixed>  $group
+     * @param  array<string, mixed>  $ranking
+     * @return array<string, mixed>
+     */
+    private function researchRanking(array $group, array $ranking): array
+    {
+        return [
+            'strategy' => (string) $ranking['strategy'],
+            'label' => (string) $ranking['label'],
+            'score' => (float) $ranking['score'],
+            'rank' => (int) $ranking['rank'],
+            'redis_mode' => (string) $group['redis_mode'],
+            'redis_label' => (string) $group['redis_label'],
+            'scenario' => (string) $group['scenario'],
+            'scenario_label' => (string) $group['scenario_label'],
+            'valid_iterations' => (int) $ranking['valid_iterations'],
+            'total_iterations' => (int) $ranking['total_iterations'],
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rankings
+     * @return array<string, mixed>|null
+     */
+    private function bestResearchRanking(array $rankings): ?array
+    {
+        usort($rankings, function (array $left, array $right): int {
+            if ((float) $left['score'] === (float) $right['score']) {
+                return $this->strategyOrder((string) $left['strategy']) <=> $this->strategyOrder((string) $right['strategy']);
+            }
+
+            return (float) $right['score'] <=> (float) $left['score'];
+        });
+
+        return $rankings[0] ?? null;
+    }
+
+    /**
+     * @param  list<array<string, bool|float|int|string|null>>  $metrics
+     * @param  array<string, mixed>  $scoreSummary
+     * @return list<array<string, mixed>>
+     */
+    private function baselineImprovements(array $metrics, array $scoreSummary): array
+    {
+        $improvements = [];
+
+        foreach ($scoreSummary['groups'] ?? [] as $group) {
+            $winner = $group['winner'] ?? null;
+
+            if ($winner === null) {
+                continue;
+            }
+
+            $baselineRow = $this->findBenchmarkRow(
+                $metrics,
+                (string) $group['redis_mode'],
+                (string) $group['scenario'],
+                'no-cache',
+                self::ANALYSIS_VU
+            );
+            $winnerRow = $this->findBenchmarkRow(
+                $metrics,
+                (string) $group['redis_mode'],
+                (string) $group['scenario'],
+                (string) $winner['strategy'],
+                self::ANALYSIS_VU
+            );
+
+            if ($baselineRow === null || $winnerRow === null) {
+                continue;
+            }
+
+            $improvements[] = [
+                'redis_mode' => (string) $group['redis_mode'],
+                'redis_label' => (string) $group['redis_label'],
+                'scenario' => (string) $group['scenario'],
+                'scenario_label' => (string) $group['scenario_label'],
+                'winner_strategy' => (string) $winner['strategy'],
+                'winner_label' => (string) $winner['label'],
+                'latency_pct' => $this->percentageChange($this->numericValue($baselineRow['avg_ms'] ?? null), $this->numericValue($winnerRow['avg_ms'] ?? null), 'lower'),
+                'throughput_pct' => $this->percentageChange($this->numericValue($baselineRow['throughput_rps'] ?? null), $this->numericValue($winnerRow['throughput_rps'] ?? null), 'higher'),
+                'error_rate_pct' => $this->percentageChange($this->numericValue($baselineRow['error_rate_pct'] ?? null), $this->numericValue($winnerRow['error_rate_pct'] ?? null), 'lower'),
+            ];
+        }
+
+        return $improvements;
+    }
+
+    private function percentageChange(float $baseline, float $current, string $direction): ?float
+    {
+        if ($baseline === 0.0) {
+            return $current === 0.0 ? 0.0 : null;
+        }
+
+        $change = $direction === 'lower'
+            ? (($baseline - $current) / abs($baseline)) * 100
+            : (($current - $baseline) / abs($baseline)) * 100;
+
+        return round($change, 2);
+    }
+
+    /**
+     * @param  list<array<string, bool|float|int|string|null>>  $metrics
+     * @param  list<array<string, bool|float|int|string|null>>  $validity
+     * @return list<array<string, mixed>>
+     */
+    private function redisModeInsights(array $metrics, array $validity): array
+    {
+        $insights = [];
+
+        foreach (self::SCENARIOS as $scenario) {
+            $summaries = [];
+
+            foreach (self::REDIS_MODES as $redisMode) {
+                $metricRows = array_values(array_filter($metrics, fn (array $row): bool => (
+                    ($row['scenario'] ?? null) === $scenario
+                    && ($row['redis_mode'] ?? null) === $redisMode
+                    && (int) ($row['concurrent_users'] ?? 0) === self::ANALYSIS_VU
+                )));
+                $saturationRows = array_values(array_filter($validity, fn (array $row): bool => (
+                    ($row['scenario'] ?? null) === $scenario
+                    && ($row['redis_mode'] ?? null) === $redisMode
+                    && (int) ($row['concurrent_users'] ?? 0) === self::SATURATION_VU
+                )));
+
+                $summaries[] = [
+                    'redis_mode' => $redisMode,
+                    'redis_label' => $this->redisModeLabel($redisMode),
+                    'avg_latency_ms' => $this->average($metricRows, 'avg_ms'),
+                    'avg_throughput_rps' => $this->average($metricRows, 'throughput_rps'),
+                    'avg_error_rate_pct' => $this->average($metricRows, 'error_rate_pct'),
+                    'saturated_iterations' => array_sum(array_map(fn (array $row): int => (int) ($row['saturated'] ?? 0), $saturationRows)),
+                    'total_iterations' => array_sum(array_map(fn (array $row): int => (int) ($row['total_iterations'] ?? 0), $saturationRows)),
+                ];
+            }
+
+            $insights[] = [
+                'scenario' => $scenario,
+                'scenario_label' => $this->scenarioLabel($scenario),
+                'faster_mode' => $this->bestMode($summaries, 'avg_latency_ms', 'lower'),
+                'stable_mode' => $this->stableMode($summaries),
+                'mode_summaries' => $summaries,
+            ];
+        }
+
+        return $insights;
+    }
+
+    /**
+     * @param  list<array<string, bool|float|int|string|null>>  $rows
+     */
+    private function average(array $rows, string $metric): float
+    {
+        $values = array_filter(
+            array_map(fn (array $row): float => $this->numericValue($row[$metric] ?? null, NAN), $rows),
+            is_finite(...)
+        );
+
+        if ($values === []) {
+            return 0.0;
+        }
+
+        return round(array_sum($values) / count($values), 3);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $summaries
+     * @return array<string, mixed>|null
+     */
+    private function bestMode(array $summaries, string $metric, string $direction): ?array
+    {
+        usort($summaries, function (array $left, array $right) use ($metric, $direction): int {
+            if ((float) $left[$metric] === (float) $right[$metric]) {
+                return $this->redisModeOrder((string) $left['redis_mode']) <=> $this->redisModeOrder((string) $right['redis_mode']);
+            }
+
+            return $direction === 'lower'
+                ? (float) $left[$metric] <=> (float) $right[$metric]
+                : (float) $right[$metric] <=> (float) $left[$metric];
+        });
+
+        return $summaries[0] ?? null;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $summaries
+     * @return array<string, mixed>|null
+     */
+    private function stableMode(array $summaries): ?array
+    {
+        usort($summaries, function (array $left, array $right): int {
+            if ((float) $left['avg_error_rate_pct'] === (float) $right['avg_error_rate_pct']) {
+                if ((int) $left['saturated_iterations'] === (int) $right['saturated_iterations']) {
+                    return $this->redisModeOrder((string) $left['redis_mode']) <=> $this->redisModeOrder((string) $right['redis_mode']);
+                }
+
+                return (int) $left['saturated_iterations'] <=> (int) $right['saturated_iterations'];
+            }
+
+            return (float) $left['avg_error_rate_pct'] <=> (float) $right['avg_error_rate_pct'];
+        });
+
+        return $summaries[0] ?? null;
+    }
+
+    /**
+     * @return list<array<string, string>>
+     */
+    private function tradeOffs(): array
+    {
+        return [
+            [
+                'strategy' => 'cache-aside',
+                'label' => 'Cache Aside',
+                'strength' => 'Respons tercepat ketika data banyak dibaca berulang.',
+                'trade_off' => 'Membutuhkan invalidasi cache yang disiplin agar data tidak basi.',
+            ],
+            [
+                'strategy' => 'write-through',
+                'label' => 'Write Through',
+                'strength' => 'Konsistensi tulis lebih kuat karena cache diperbarui saat data berubah.',
+                'trade_off' => 'Operasi tulis membayar biaya tambahan untuk sinkronisasi cache.',
+            ],
+            [
+                'strategy' => 'read-through',
+                'label' => 'Read Through',
+                'strength' => 'Akses baca lebih terpusat pada loader cache.',
+                'trade_off' => 'Manfaatnya bergantung pada pola akses dan biaya miss pertama.',
+            ],
+            [
+                'strategy' => 'no-cache',
+                'label' => 'Tanpa Cache',
+                'strength' => 'Baseline paling sederhana untuk mengukur dampak strategi cache.',
+                'trade_off' => 'Tidak memberi perlindungan performa saat jumlah virtual user meningkat.',
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $overallWinner
+     * @param  list<array<string, mixed>>  $workloadWinners
+     * @return array<string, mixed>
+     */
+    private function recommendation(?array $overallWinner, array $workloadWinners): array
+    {
+        $readHeavyWinner = $this->winnerForScenario($workloadWinners, 'read-heavy');
+        $writeHeavyWinner = $this->winnerForScenario($workloadWinners, 'write-heavy');
+
+        return [
+            'title' => 'Rekomendasi implementasi',
+            'primary_strategy' => $overallWinner['strategy'] ?? null,
+            'primary_label' => $overallWinner['label'] ?? 'strategi cache terbaik',
+            'body' => sprintf(
+                'Gunakan %s sebagai strategi utama ketika prioritas penelitian adalah performa komposit pada titik stabil %s VU.',
+                $overallWinner['label'] ?? 'strategi cache terbaik',
+                number_format(self::ANALYSIS_VU, 0, ',', '.')
+            ),
+            'notes' => [
+                sprintf('Untuk Read Heavy, prioritaskan %s.', $readHeavyWinner['label'] ?? 'strategi dengan skor tertinggi'),
+                sprintf('Untuk Write Heavy, prioritaskan %s.', $writeHeavyWinner['label'] ?? 'strategi dengan skor tertinggi'),
+                'Gunakan hasil 2000 VU sebagai sinyal saturasi, bukan dasar inferensi statistik utama.',
+            ],
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $workloadWinners
+     * @return array<string, mixed>|null
+     */
+    private function winnerForScenario(array $workloadWinners, string $scenario): ?array
+    {
+        foreach ($workloadWinners as $winner) {
+            if (($winner['scenario'] ?? null) === $scenario) {
+                return $winner;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -451,6 +810,13 @@ class BenchmarkResultsService
     private function strategyOrder(string $strategy): int
     {
         $index = array_search($strategy, self::STRATEGIES, true);
+
+        return $index === false ? PHP_INT_MAX : $index;
+    }
+
+    private function redisModeOrder(string $redisMode): int
+    {
+        $index = array_search($redisMode, self::REDIS_MODES, true);
 
         return $index === false ? PHP_INT_MAX : $index;
     }

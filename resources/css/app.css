@@ -12,34 +12,37 @@
 
 @layer components {
     html:has(.benchmark-page) {
-        color-scheme: dark;
+        color-scheme: light;
         scroll-behavior: smooth;
     }
 
     .benchmark-page {
-        --bench-bg: #08090b;
-        --bench-panel: #111315;
-        --bench-panel-soft: #15181b;
-        --bench-line: rgba(255, 255, 255, 0.18);
-        --bench-line-strong: rgba(255, 255, 255, 0.32);
-        --bench-text: #f8fbff;
-        --bench-muted: #a5adba;
-        --bench-soft: #d8e0ec;
-        --bench-accent: #eaff63;
-        --bench-blue: #39a3ff;
-        --bench-violet: #5b45ff;
-        --bench-teal: #19c7a6;
-        --bench-danger: #ff6b80;
-        --strategy-no-cache: #f97316;
-        --strategy-cache-aside: #9dff5f;
-        --strategy-read-through: #6aa7ff;
-        --strategy-write-through: #d778ff;
+        --bench-bg: #f8f9fa;
+        --bench-panel: #ffffff;
+        --bench-panel-soft: #fffaf0;
+        --bench-primary: #0b1b43;
+        --bench-maroon: #9a3733;
+        --bench-orange: #f05424;
+        --bench-yellow: #fec115;
+        --bench-line: rgba(11, 27, 67, 0.12);
+        --bench-line-strong: rgba(11, 27, 67, 0.24);
+        --bench-text: #0b1b43;
+        --bench-muted: #64748b;
+        --bench-soft: #334155;
+        --bench-accent: #7a5200;
+        --bench-danger: #9a3733;
+        --strategy-no-cache: #b83612;
+        --strategy-cache-aside: #7a5200;
+        --strategy-read-through: #0b1b43;
+        --strategy-write-through: #9a3733;
         margin: 0;
         min-height: 100vh;
-        background: var(--bench-bg);
+        background:
+            linear-gradient(135deg, rgba(254, 193, 21, 0.12), transparent 32rem),
+            var(--bench-bg);
         color: var(--bench-text);
         font-family: Outfit, ui-sans-serif, system-ui, sans-serif;
-        -webkit-tap-highlight-color: rgba(234, 255, 99, 0.18);
+        -webkit-tap-highlight-color: rgba(254, 193, 21, 0.2);
         touch-action: manipulation;
     }
 
@@ -62,11 +65,11 @@
         left: 1rem;
         z-index: 50;
         transform: translateY(-150%);
-        border: 1px solid #f8fbff;
+        border: 1px solid var(--bench-primary);
         border-radius: 999px;
         padding: 0.75rem 1rem;
-        background: var(--bench-accent);
-        color: #08090b;
+        background: var(--bench-yellow);
+        color: var(--bench-primary);
         font-weight: 700;
         text-decoration: none;
         transition: transform 180ms ease;
@@ -74,7 +77,7 @@
 
     .skip-link:focus-visible {
         transform: translateY(0);
-        outline: 3px solid rgba(255, 255, 255, 0.7);
+        outline: 3px solid rgba(11, 27, 67, 0.22);
         outline-offset: 2px;
     }
 
@@ -83,7 +86,7 @@
         top: 0;
         z-index: 20;
         padding-block: 1rem;
-        background: linear-gradient(180deg, rgba(8, 9, 11, 0.98), rgba(8, 9, 11, 0.88) 78%, transparent);
+        background: linear-gradient(180deg, rgba(248, 249, 250, 0.98), rgba(248, 249, 250, 0.9) 78%, transparent);
         backdrop-filter: blur(14px);
     }
 
@@ -110,25 +113,25 @@
 
     .benchmark-brand:focus-visible {
         border-radius: 6px;
-        outline: 2px solid rgba(234, 255, 99, 0.7);
+        outline: 2px solid rgba(254, 193, 21, 0.78);
         outline-offset: 4px;
     }
 
     .benchmark-brand-mark {
         width: 0.7rem;
         height: 0.7rem;
-        border: 2px solid var(--bench-accent);
+        border: 2px solid var(--bench-yellow);
         border-radius: 50%;
-        box-shadow: 0 0 20px rgba(234, 255, 99, 0.58);
+        box-shadow: 0 0 20px rgba(254, 193, 21, 0.48);
     }
 
     .benchmark-tabs {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         overflow: hidden;
         border: 1px solid var(--bench-line);
         border-radius: 6px;
-        background: #101113;
+        background: var(--bench-panel);
     }
 
     .benchmark-tabs button,
@@ -162,14 +165,14 @@
     .segmented-field button:focus-visible,
     .vu-options button:focus-visible {
         color: var(--bench-text);
-        outline: 2px solid rgba(234, 255, 99, 0.7);
+        outline: 2px solid rgba(254, 193, 21, 0.78);
         outline-offset: -2px;
-        box-shadow: 0 0 0 3px rgba(234, 255, 99, 0.16);
+        box-shadow: 0 0 0 3px rgba(254, 193, 21, 0.18);
     }
 
     .benchmark-tabs button.is-active {
-        background: #17191d;
-        color: var(--bench-text);
+        background: var(--bench-primary);
+        color: #ffffff;
     }
 
     .benchmark-controls {
@@ -178,6 +181,14 @@
         gap: 1rem;
         align-items: end;
         margin-top: 1.25rem;
+    }
+
+    .benchmark-controls:has([data-scenario-controls][hidden]) {
+        display: none;
+    }
+
+    .benchmark-controls [hidden] {
+        display: none !important;
     }
 
     .benchmark-controls fieldset {
@@ -224,9 +235,10 @@
 
     .segmented-field button.is-active,
     .vu-options button.is-active {
-        border-color: #f8fbff;
-        color: #f8fbff;
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+        border-color: var(--bench-primary);
+        background: rgba(254, 193, 21, 0.18);
+        color: var(--bench-primary);
+        box-shadow: inset 0 0 0 1px rgba(11, 27, 67, 0.12);
     }
 
     .vu-field {
@@ -257,10 +269,6 @@
         display: none;
     }
 
-    .benchmark-controls:has(.analysis-controls:not([hidden])) [data-vu-controls] {
-        display: none;
-    }
-
     .analysis-controls label {
         display: grid;
         gap: 0.45rem;
@@ -273,15 +281,19 @@
         border: 1px solid var(--bench-line);
         border-radius: 6px;
         padding-inline: 0.65rem;
-        background: #101113;
+        background: var(--bench-panel);
         color: var(--bench-text);
         font: inherit;
     }
 
     .analysis-controls select:focus-visible {
-        border-color: var(--bench-accent);
-        outline: 2px solid rgba(234, 255, 99, 0.22);
+        border-color: var(--bench-yellow);
+        outline: 2px solid rgba(254, 193, 21, 0.28);
         outline-offset: 2px;
+    }
+
+    .analysis-controls:has([data-redis-controls][hidden]) {
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .benchmark-tab-panel {
@@ -323,7 +335,7 @@
 
     .analysis-brief p {
         margin: 0;
-        border-left: 2px solid var(--bench-accent);
+        border-left: 2px solid var(--bench-yellow);
         padding: 0.25rem 0 0.25rem 1rem;
         color: var(--bench-soft);
         font-family: 'JetBrains Mono', monospace;
@@ -340,6 +352,25 @@
         line-height: 1;
     }
 
+    .benchmark-chart-grid {
+        margin-block: 1.25rem 2rem;
+    }
+
+    .mode-chart-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .mode-chart-grid h3 {
+        margin: 0;
+        color: var(--bench-muted);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+    }
+
     .comparison-block {
         margin-top: 2.4rem;
     }
@@ -352,7 +383,7 @@
         overflow: hidden;
         border: 1px solid var(--bench-line-strong);
         border-radius: 8px;
-        background: #141516;
+        background: var(--bench-panel);
     }
 
     [data-strategy='no-cache'] {
@@ -382,8 +413,8 @@
     .benchmark-panel {
         border: 1px solid var(--bench-line);
         border-radius: 8px;
-        background: #121417;
-        box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+        background: var(--bench-panel);
+        box-shadow: 0 18px 44px rgba(11, 27, 67, 0.06);
     }
 
     .benchmark-overview article {
@@ -406,6 +437,192 @@
         color: var(--bench-muted);
         font-family: 'JetBrains Mono', monospace;
         font-size: 0.73rem;
+    }
+
+    #statistics-panel .benchmark-overview {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .result-report-layout {
+        display: grid;
+        grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+        gap: 1.25rem;
+        align-items: start;
+    }
+
+    .result-toc {
+        position: sticky;
+        top: 8.4rem;
+        display: grid;
+        gap: 0.35rem;
+        border: 1px solid var(--bench-line);
+        border-radius: 8px;
+        padding: 0.85rem;
+        background: var(--bench-panel);
+        font-family: 'JetBrains Mono', monospace;
+    }
+
+    .result-toc span {
+        margin-bottom: 0.35rem;
+        color: var(--bench-accent);
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .result-toc a {
+        border-radius: 5px;
+        padding: 0.48rem 0.55rem;
+        color: var(--bench-muted);
+        font-size: 0.72rem;
+        line-height: 1.35;
+        text-decoration: none;
+    }
+
+    .result-toc a:hover {
+        color: var(--bench-text);
+        background: rgba(11, 27, 67, 0.05);
+    }
+
+    .result-toc a:focus-visible {
+        color: var(--bench-text);
+        outline: 2px solid rgba(254, 193, 21, 0.78);
+        outline-offset: 2px;
+    }
+
+    .result-report {
+        display: grid;
+        gap: 1.25rem;
+    }
+
+    .report-section {
+        scroll-margin-top: 8.5rem;
+    }
+
+    .report-section-heading {
+        display: grid;
+        gap: 0.35rem;
+        margin-bottom: 0.9rem;
+    }
+
+    .report-section-heading span,
+    .research-hero span,
+    .recommendation-panel span,
+    .trade-off-copy dt {
+        color: var(--bench-accent);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .report-section-heading h2 {
+        margin: 0;
+        font-family: 'Space Grotesk', Outfit, sans-serif;
+        font-size: clamp(1.25rem, 2vw, 2rem);
+        line-height: 1.05;
+        text-wrap: balance;
+    }
+
+    .research-hero article,
+    .recommendation-panel {
+        border: 1px solid var(--bench-line-strong);
+        border-radius: 8px;
+        padding: clamp(1rem, 2vw, 1.4rem);
+        background: var(--bench-panel-soft);
+        box-shadow: inset 0 1px rgba(255, 255, 255, 0.7);
+    }
+
+    .research-hero strong,
+    .recommendation-panel strong {
+        display: block;
+        margin-top: 0.45rem;
+        font-family: 'Space Grotesk', Outfit, sans-serif;
+        font-size: clamp(2rem, 5vw, 4rem);
+        line-height: 0.95;
+    }
+
+    .research-hero p,
+    .recommendation-panel p,
+    .report-card-copy {
+        margin: 0.8rem 0 0;
+        color: var(--bench-soft);
+        font-size: 0.95rem;
+        line-height: 1.65;
+    }
+
+    .research-hero small {
+        display: block;
+        margin-top: 0.8rem;
+        color: var(--bench-muted);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.74rem;
+    }
+
+    .result-overview {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .metric-delta-list {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .mode-insight-list,
+    .recommendation-panel ul,
+    .threat-list {
+        display: grid;
+        gap: 0.65rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .mode-insight-list li,
+    .recommendation-panel li,
+    .threat-list li {
+        border-top: 1px solid var(--bench-line);
+        padding-top: 0.65rem;
+        color: var(--bench-soft);
+        line-height: 1.55;
+    }
+
+    .mode-insight-list span,
+    .mode-insight-list strong,
+    .mode-insight-list small {
+        display: block;
+    }
+
+    .mode-insight-list span {
+        color: var(--bench-muted);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+    }
+
+    .mode-insight-list strong {
+        margin-top: 0.2rem;
+        color: var(--bench-text);
+        font-family: 'Space Grotesk', Outfit, sans-serif;
+        font-size: 1.25rem;
+    }
+
+    .mode-insight-list small {
+        margin-top: 0.2rem;
+        color: var(--bench-muted);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem;
+    }
+
+    .trade-off-copy {
+        display: grid;
+        gap: 0.8rem;
+        margin: 0;
+    }
+
+    .trade-off-copy dd {
+        margin: 0.28rem 0 0;
+        color: var(--bench-soft);
+        line-height: 1.55;
     }
 
     .score-summary {
@@ -457,8 +674,8 @@
         border: 1px solid var(--bench-line);
         border-radius: 8px;
         padding: 1rem;
-        background: #121417;
-        box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+        background: var(--bench-panel);
+        box-shadow: 0 14px 34px rgba(11, 27, 67, 0.05);
     }
 
     .score-card h3,
@@ -498,7 +715,7 @@
         border: 1px solid var(--bench-line);
         border-radius: 6px;
         padding: 0.7rem;
-        background: rgba(255, 255, 255, 0.03);
+        background: rgba(11, 27, 67, 0.03);
     }
 
     .score-card-meta dt {
@@ -580,7 +797,7 @@
     }
 
     .benchmark-panel-dark {
-        background: #0d0e10;
+        background: var(--bench-panel-soft);
     }
 
     .panel-header {
@@ -649,7 +866,7 @@
 
     .chart-axis,
     .chart-grid {
-        stroke: rgba(255, 255, 255, 0.12);
+        stroke: rgba(11, 27, 67, 0.12);
         stroke-width: 1;
     }
 
@@ -694,7 +911,7 @@
 
     .simulation-table th,
     .simulation-table td {
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        border-bottom: 1px solid rgba(11, 27, 67, 0.1);
         padding: 0.85rem 0.75rem;
         text-align: right;
         white-space: nowrap;
@@ -711,7 +928,7 @@
         position: sticky;
         left: 0;
         z-index: 1;
-        background: #141516;
+        background: var(--bench-panel);
         text-align: left;
     }
 
@@ -720,7 +937,7 @@
     }
 
     .simulation-table tbody tr:hover {
-        background: rgba(255, 255, 255, 0.04);
+        background: rgba(11, 27, 67, 0.04);
     }
 
     .metric-table table {
@@ -769,6 +986,62 @@
         min-height: 30rem;
     }
 
+    .statistics-layout .benchmark-panel-full {
+        grid-column: 1 / -1;
+        min-height: 0;
+    }
+
+    .significance-matrix-wrap {
+        margin-top: 1rem;
+        overflow-x: auto;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .significance-matrix {
+        width: 100%;
+        min-width: 34rem;
+        border-collapse: collapse;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.78rem;
+    }
+
+    .significance-matrix caption {
+        padding-bottom: 0.8rem;
+        color: var(--bench-muted);
+        text-align: left;
+    }
+
+    .significance-matrix th,
+    .significance-matrix td {
+        border: 1px solid var(--bench-line);
+        padding: 0.78rem;
+        text-align: center;
+    }
+
+    .significance-matrix th {
+        color: var(--bench-accent);
+        text-transform: uppercase;
+    }
+
+    .significance-matrix th:first-child,
+    .significance-matrix td:first-child {
+        text-align: left;
+    }
+
+    .significance-matrix td {
+        color: var(--bench-muted);
+        font-weight: 700;
+    }
+
+    .significance-matrix .is-significant {
+        color: var(--bench-accent);
+        background: rgba(254, 193, 21, 0.2);
+    }
+
+    .significance-matrix .is-not-significant {
+        color: var(--bench-danger);
+    }
+
     @media (max-width: 1080px) {
         .benchmark-titlebar,
         .benchmark-controls {
@@ -790,9 +1063,22 @@
         .simulation-grid,
         .analysis-brief,
         .benchmark-overview,
+        .mode-chart-grid,
+        .result-report-layout,
         .score-summary-grid,
         .statistics-layout {
             grid-template-columns: 1fr;
+        }
+
+        .result-toc {
+            position: static;
+            display: flex;
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+
+        .result-toc span {
+            display: none;
         }
 
         .score-summary-heading {
@@ -818,6 +1104,12 @@
 
         .benchmark-tabs,
         .analysis-controls {
+            grid-template-columns: 1fr;
+        }
+
+        .result-overview,
+        #statistics-panel .benchmark-overview,
+        .metric-delta-list {
             grid-template-columns: 1fr;
         }
 

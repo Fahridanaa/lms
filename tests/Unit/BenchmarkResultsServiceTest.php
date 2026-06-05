@@ -72,5 +72,22 @@ class BenchmarkResultsServiceTest extends TestCase
         $this->assertSame(['cache-aside', 'read-through', 'write-through', 'no-cache'], array_column($group['rankings'], 'strategy'));
         $this->assertSame(4, $group['winner']['dimensions']['read_latency']['points']);
         $this->assertSame(1.0, $group['winner']['dimensions']['read_latency']['weighted_score']);
+
+        $researchSummary = $data['researchSummary'];
+
+        $this->assertSame(1500, $researchSummary['analysis_vu']);
+        $this->assertSame(2000, $researchSummary['saturation_vu']);
+        $this->assertSame('cache-aside', $researchSummary['overall_winner']['strategy']);
+        $this->assertSame('Read Heavy', $researchSummary['overall_winner']['scenario_label']);
+        $this->assertSame('Node Tunggal', $researchSummary['overall_winner']['redis_label']);
+        $this->assertSame('cache-aside', $researchSummary['workload_winners'][0]['strategy']);
+        $this->assertSame('read-heavy', $researchSummary['workload_winners'][0]['scenario']);
+        $this->assertSame('cache-aside', $researchSummary['baseline_improvements'][0]['winner_strategy']);
+        $this->assertSame(66.67, $researchSummary['baseline_improvements'][0]['latency_pct']);
+        $this->assertSame(80.0, $researchSummary['baseline_improvements'][0]['throughput_pct']);
+        $this->assertSame(90.0, $researchSummary['baseline_improvements'][0]['error_rate_pct']);
+        $this->assertSame('cache-aside', $researchSummary['recommendation']['primary_strategy']);
+        $this->assertCount(4, $researchSummary['trade_offs']);
+        $this->assertCount(4, $researchSummary['threats_to_validity']);
     }
 }

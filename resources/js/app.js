@@ -13,15 +13,15 @@ if (dashboard && window.benchmarkData) {
         metric: params.get('metric') || data.defaults.metric,
     };
 
-    const ANALYSIS_VU = 1500;
-    const SATURATION_VU = 2000;
+    const ANALYSIS_VU = data.researchSummary?.analysis_vu ?? 1500;
+    const SATURATION_VU = data.researchSummary?.saturation_vu ?? 2000;
     const simulationStrategies = data.strategies;
-    const tabs = ['benchmark', 'analysis'];
+    const tabs = ['benchmark', 'result', 'statistics'];
     const strategyColors = {
-        'no-cache': '#f97316',
-        'cache-aside': '#9dff5f',
-        'read-through': '#6aa7ff',
-        'write-through': '#d778ff',
+        'no-cache': '#f05424',
+        'cache-aside': '#b98200',
+        'read-through': '#0b1b43',
+        'write-through': '#9a3733',
     };
     const metricUnits = {
         avg_ms: 'ms',
@@ -39,6 +39,10 @@ if (dashboard && window.benchmarkData) {
     renderDashboard();
 
     function validateState() {
+        if (state.tab === 'analysis') {
+            state.tab = 'statistics';
+        }
+
         if (!tabs.includes(state.tab)) {
             state.tab = 'benchmark';
         }
@@ -113,7 +117,8 @@ if (dashboard && window.benchmarkData) {
         syncControls();
         renderTabs();
         renderBenchmark();
-        renderAnalysis();
+        renderResult();
+        renderStatistics();
     }
 
     function renderTabs() {
@@ -128,16 +133,11 @@ if (dashboard && window.benchmarkData) {
             button.setAttribute('tabindex', isActive ? '0' : '-1');
         });
 
-        const analysisControls = dashboard.querySelector('[data-analysis-controls]');
-        const vuControls = dashboard.querySelector('[data-vu-controls]');
-
-        if (analysisControls) {
-            analysisControls.hidden = state.tab !== 'analysis';
-        }
-
-        if (vuControls) {
-            vuControls.hidden = state.tab === 'analysis';
-        }
+        toggle('[data-scenario-controls]', state.tab !== 'result');
+        toggle('[data-vu-controls]', state.tab === 'benchmark');
+        toggle('[data-redis-controls]', state.tab === 'statistics');
+        toggle('[data-metric-controls]', state.tab !== 'result');
+        toggle('[data-filter-controls]', state.tab !== 'result');
     }
 
     function tabIndexFromKey(key, currentIndex) {
@@ -163,6 +163,24 @@ if (dashboard && window.benchmarkData) {
     function renderBenchmark() {
         renderSimulationMode('single');
         renderSimulationMode('cluster');
+        renderLineChart('[data-chart="benchmark-line-single"]', 'single');
+        renderLineChart('[data-chart="benchmark-line-cluster"]', 'cluster');
+        renderBarChart(
+            '[data-chart="benchmark-bar-single"]',
+            filterRowsAtVu(data.metrics, 'single', state.concurrentUsers),
+            state.metric,
+            `Node Tunggal ${formatNumber(state.concurrentUsers)} VU`,
+        );
+        renderBarChart(
+            '[data-chart="benchmark-bar-cluster"]',
+            filterRowsAtVu(data.metrics, 'cluster', state.concurrentUsers),
+            state.metric,
+            `Cluster ${formatNumber(state.concurrentUsers)} VU`,
+        );
+
+        text('[data-benchmark-line-title]', `Tren ${data.metricOptions[state.metric].toLowerCase()} lintas mode Redis`);
+        text('[data-benchmark-bar-single-title]', `Node Tunggal ${formatNumber(state.concurrentUsers)} VU`);
+        text('[data-benchmark-bar-cluster-title]', `Cluster ${formatNumber(state.concurrentUsers)} VU`);
     }
 
     function renderSimulationMode(redisMode) {
@@ -214,23 +232,130 @@ if (dashboard && window.benchmarkData) {
         </div>`;
     }
 
-    function renderAnalysis() {
-        const selectedMetrics = filterRowsAtVu(data.metrics, state.redisMode, ANALYSIS_VU);
-        const selectedResources = filterRowsAtVu(data.resources, state.redisMode, ANALYSIS_VU);
+    function renderResult() {
+        const summary = data.researchSummary ?? {};
 
-        renderSummaries(selectedMetrics);
-        renderLineChart();
-        renderBarChart('[data-chart="bar"]', selectedMetrics, state.metric, data.metricOptions[state.metric]);
-        renderBarChart('[data-chart="cpu"]', selectedResources, 'cpu_avg_pct', 'Rata-rata CPU');
-        renderBarChart('[data-chart="memory"]', selectedResources, 'mem_avg_mb', 'Rata-rata memori');
-        renderScoreSummary();
-        renderReliabilityTable(selectedMetrics);
-        renderSaturationTable();
+        renderResearchWinner(summary.overall_winner);
+        renderBaselineImprovements(summary.baseline_improvements ?? []);
+        renderWorkloadWinners(summary.workload_winners ?? []);
+        renderRedisModeInsights(summary.redis_mode_insights ?? []);
+        renderTradeOffs(summary.trade_offs ?? []);
+        renderRecommendation(summary.recommendation ?? {});
+        renderThreats(summary.threats_to_validity ?? []);
+    }
+
+    function renderResearchWinner(winner) {
+        if (!winner) {
+            html('[data-research-overall-winner]', '<p class="table-empty" role="status">Tidak ada ringkasan hasil penelitian.</p>');
+
+            return;
+        }
+
+        html('[data-research-overall-winner]', `<article>
+            <span>Strategi terbaik</span>
+            <strong data-strategy="${escapeHtml(winner.strategy)}">${escapeHtml(winner.label)}</strong>
+            <p>Skor komposit ${escapeHtml(formatNumber(winner.score))} pada ${escapeHtml(winner.scenario_label)} · ${escapeHtml(winner.redis_label)}.</p>
+            <small>${escapeHtml(formatNumber(winner.valid_iterations))}/${escapeHtml(formatNumber(winner.total_iterations))} iterasi valid di ${formatNumber(ANALYSIS_VU)} VU.</small>
+        </article>`);
+    }
+
+    function renderBaselineImprovements(improvements) {
+        html('[data-baseline-improvements]', improvements.map((improvement) => `<article class="score-card">
+            <div class="score-card-header">
+                <span>${escapeHtml(improvement.redis_label)} · ${escapeHtml(improvement.scenario_label)}</span>
+                <strong data-strategy="${escapeHtml(improvement.winner_strategy)}">${escapeHtml(improvement.winner_label)}</strong>
+                <small>Dibanding baseline Tanpa Cache pada ${formatNumber(ANALYSIS_VU)} VU</small>
+            </div>
+            <dl class="score-card-meta metric-delta-list">
+                <div>
+                    <dt>Latency</dt>
+                    <dd>${escapeHtml(formatDirectionalPercent(improvement.latency_pct, 'lower'))}</dd>
+                </div>
+                <div>
+                    <dt>Throughput</dt>
+                    <dd>${escapeHtml(formatDirectionalPercent(improvement.throughput_pct, 'higher'))}</dd>
+                </div>
+                <div>
+                    <dt>Error Rate</dt>
+                    <dd>${escapeHtml(formatDirectionalPercent(improvement.error_rate_pct, 'lower'))}</dd>
+                </div>
+            </dl>
+        </article>`).join(''));
+    }
+
+    function renderWorkloadWinners(winners) {
+        html('[data-workload-winners]', winners.map((winner) => `<article class="score-card">
+            <div class="score-card-header">
+                <span>${escapeHtml(winner.scenario_label)}</span>
+                <strong data-strategy="${escapeHtml(winner.strategy)}">${escapeHtml(winner.label)}</strong>
+                <small>${escapeHtml(winner.redis_label)} · skor ${escapeHtml(formatNumber(winner.score))}</small>
+            </div>
+            <p class="report-card-copy">Strategi ini menjadi kandidat utama untuk workload ${escapeHtml(winner.scenario_label)} karena memiliki skor komposit tertinggi pada titik stabil ${formatNumber(ANALYSIS_VU)} VU.</p>
+        </article>`).join(''));
+    }
+
+    function renderRedisModeInsights(insights) {
+        html('[data-redis-mode-insights]', insights.map((insight) => {
+            const fasterMode = insight.faster_mode;
+            const stableMode = insight.stable_mode;
+            const modeRows = insight.mode_summaries.map((summary) => `<li>
+                <span>${escapeHtml(summary.redis_label)}</span>
+                <strong>${escapeHtml(formatMetric(summary.avg_latency_ms, 'avg_ms'))}</strong>
+                <small>${escapeHtml(formatMetric(summary.avg_error_rate_pct, 'error_rate_pct'))} error · ${escapeHtml(formatNumber(summary.saturated_iterations))}/${escapeHtml(formatNumber(summary.total_iterations))} jenuh</small>
+            </li>`).join('');
+
+            return `<article class="score-card">
+                <div class="score-card-header">
+                    <span>${escapeHtml(insight.scenario_label)}</span>
+                    <strong>${escapeHtml(fasterMode?.redis_label ?? '-')} lebih cepat</strong>
+                    <small>${escapeHtml(stableMode?.redis_label ?? '-')} paling stabil menurut error dan saturasi.</small>
+                </div>
+                <ul class="mode-insight-list">${modeRows}</ul>
+            </article>`;
+        }).join(''));
+    }
+
+    function renderTradeOffs(tradeOffs) {
+        html('[data-trade-off-analysis]', tradeOffs.map((tradeOff) => `<article class="score-card">
+            <div class="score-card-header">
+                <span>Strategi</span>
+                <strong data-strategy="${escapeHtml(tradeOff.strategy)}">${escapeHtml(tradeOff.label)}</strong>
+            </div>
+            <dl class="trade-off-copy">
+                <div>
+                    <dt>Kekuatan</dt>
+                    <dd>${escapeHtml(tradeOff.strength)}</dd>
+                </div>
+                <div>
+                    <dt>Trade-off</dt>
+                    <dd>${escapeHtml(tradeOff.trade_off)}</dd>
+                </div>
+            </dl>
+        </article>`).join(''));
+    }
+
+    function renderRecommendation(recommendation) {
+        const notes = recommendation.notes ?? [];
+
+        html('[data-final-recommendation]', `<article class="recommendation-panel">
+            <span>${escapeHtml(recommendation.title ?? 'Rekomendasi implementasi')}</span>
+            <strong data-strategy="${escapeHtml(recommendation.primary_strategy ?? '')}">${escapeHtml(recommendation.primary_label ?? '-')}</strong>
+            <p>${escapeHtml(recommendation.body ?? 'Tidak ada rekomendasi untuk data ini.')}</p>
+            <ul>${notes.map((note) => `<li>${escapeHtml(note)}</li>`).join('')}</ul>
+        </article>`);
+    }
+
+    function renderThreats(threats) {
+        html('[data-threats-to-validity]', `<ul class="threat-list">
+            ${threats.map((threat) => `<li>${escapeHtml(threat)}</li>`).join('')}
+        </ul>`);
+    }
+
+    function renderStatistics() {
+        renderSummaries();
         renderAnovaTable();
         renderTukeyTable();
-
-        text('[data-line-title]', `Tren ${data.metricOptions[state.metric].toLowerCase()} lintas VU`);
-        text('[data-bar-title]', `Perbandingan ${formatNumber(ANALYSIS_VU)} VU`);
+        renderSignificanceMatrix();
     }
 
     function filterRowsAtVu(rows, redisMode, concurrentUsers) {
@@ -259,7 +384,7 @@ if (dashboard && window.benchmarkData) {
         ));
     }
 
-    function renderSummaries(rows) {
+    function renderSummaries() {
         const validityRows = validityRowsAtVu(ANALYSIS_VU);
         const saturationRows = validityRowsAtVu(SATURATION_VU);
         const validStrategies = validityRows.filter((row) => Number(row.valid) >= 3).length;
@@ -281,61 +406,15 @@ if (dashboard && window.benchmarkData) {
         text('[data-summary="saturationValue"]', `${formatNumber(saturatedStrategies)} strategi punya iterasi jenuh`);
     }
 
-    function renderScoreSummary() {
-        const groups = data.scoreSummary?.groups ?? [];
-
-        html('[data-score-summary]', groups.map((group) => scoreSummaryCard(group)).join(''));
-    }
-
-    function scoreSummaryCard(group) {
-        const rankings = group.rankings ?? [];
-        const winner = group.winner ?? rankings[0];
-
-        if (!winner) {
-            return `<article class="score-card">
-                <h3>${escapeHtml(group.redis_label)} · ${escapeHtml(group.scenario_label)}</h3>
-                <p class="table-empty" role="status">Tidak ada data skor untuk kombinasi ini.</p>
-            </article>`;
-        }
-
-        const rankingItems = rankings.map((ranking) => `<li>
-            <span><strong data-strategy="${escapeHtml(ranking.strategy)}">#${formatNumber(ranking.rank)} ${escapeHtml(ranking.label)}</strong></span>
-            <span>${escapeHtml(formatNumber(ranking.score))}</span>
-        </li>`).join('');
-        const dimensionItems = Object.values(winner.dimensions ?? {}).map((dimension) => `<span>
-            ${escapeHtml(dimension.label)}: ${escapeHtml(formatNumber(dimension.weighted_score))}
-        </span>`).join('');
-
-        return `<article class="score-card">
-            <div class="score-card-header">
-                <span>${escapeHtml(group.redis_label)} · ${escapeHtml(group.scenario_label)}</span>
-                <strong data-strategy="${escapeHtml(winner.strategy)}">${escapeHtml(winner.label)}</strong>
-                <small>Skor ${escapeHtml(formatNumber(winner.score))} pada ${formatNumber(data.scoreSummary.analysis_vu)} VU</small>
-            </div>
-            <dl class="score-card-meta">
-                <div>
-                    <dt>Valid 1500 VU</dt>
-                    <dd>${escapeHtml(formatNumber(group.valid_iterations))}/${escapeHtml(formatNumber(group.total_iterations))}</dd>
-                </div>
-                <div>
-                    <dt>Saturasi 2000 VU</dt>
-                    <dd>${escapeHtml(formatNumber(group.saturated_iterations))}/${escapeHtml(formatNumber(group.saturation_total_iterations))}</dd>
-                </div>
-            </dl>
-            <div class="score-dimensions" aria-label="Kontribusi skor pemenang">${dimensionItems}</div>
-            <ol class="score-ranking">${rankingItems}</ol>
-        </article>`;
-    }
-
-    function renderLineChart() {
+    function renderLineChart(selector, redisMode) {
         const rows = data.metrics.filter((row) => (
             row.scenario === state.scenario
-            && row.redis_mode === state.redisMode
+            && row.redis_mode === redisMode
         ));
         const points = rows.map((row) => Number(row[state.metric])).filter(Number.isFinite);
         const maxValue = Math.max(...points, 1);
         const width = 900;
-        const height = 360;
+        const height = 320;
         const padding = { top: 28, right: 30, bottom: 48, left: 72 };
         const plotWidth = width - padding.left - padding.right;
         const plotHeight = height - padding.top - padding.bottom;
@@ -356,10 +435,12 @@ if (dashboard && window.benchmarkData) {
             const path = strategyRows.map((row, index) => `${index === 0 ? 'M' : 'L'} ${xFor(row.concurrent_users)} ${yFor(row[state.metric])}`).join(' ');
             const circles = strategyRows.map((row) => `<circle cx="${xFor(row.concurrent_users)}" cy="${yFor(row[state.metric])}" r="4" fill="${strategyColors[strategy]}" />`).join('');
 
-            return `<path d="${path}" fill="none" stroke="${strategyColors[strategy]}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />${circles}`;
+            return path === ''
+                ? ''
+                : `<path d="${path}" fill="none" stroke="${strategyColors[strategy]}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />${circles}`;
         }).join('');
 
-        html('[data-chart="line"]', `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(data.metricOptions[state.metric])} berdasarkan virtual user">
+        html(selector, `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(data.metricOptions[state.metric])} berdasarkan virtual user">
             ${grid}
             <line class="chart-axis" x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}" />
             <line class="chart-axis" x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${height - padding.bottom}" />
@@ -399,40 +480,6 @@ if (dashboard && window.benchmarkData) {
         </svg>`);
     }
 
-    function renderReliabilityTable(rows) {
-        html('[data-reliability-table]', table(
-            ['Strategi', 'Cache hit', 'Tingkat error', 'Jumlah request', 'Iterasi valid', 'Validitas'],
-            rows.map((row) => {
-                const validity = validityRow(row.strategy, ANALYSIS_VU);
-
-                return [
-                    strategyLabel(row.strategy),
-                    formatMetric(row.cache_hit_ratio_pct, 'cache_hit_ratio_pct'),
-                    formatMetric(row.error_rate_pct, 'error_rate_pct'),
-                    formatNumber(row.http_reqs_total),
-                    validity ? `${formatNumber(validity.valid)}/${formatNumber(validity.total_iterations)}` : '-',
-                    row.validity_status === 'valid' ? 'Valid' : String(row.validity_status ?? '-'),
-                ];
-            }),
-        ));
-    }
-
-    function renderSaturationTable() {
-        const rows = validityRowsAtVu(SATURATION_VU)
-            .sort((a, b) => data.strategies.indexOf(a.strategy) - data.strategies.indexOf(b.strategy));
-
-        html('[data-saturation-table]', table(
-            ['Strategi', 'Valid', 'Jenuh', 'Total', 'Status'],
-            rows.map((row) => [
-                strategyLabel(row.strategy),
-                formatNumber(row.valid),
-                formatNumber(row.saturated),
-                formatNumber(row.total_iterations),
-                Number(row.saturated) > 0 ? 'Bukti saturasi' : 'Valid',
-            ]),
-        ));
-    }
-
     function renderAnovaTable() {
         const rows = data.anova
             .filter((row) => row.scenario === state.scenario && row.redis_mode === state.redisMode)
@@ -450,14 +497,8 @@ if (dashboard && window.benchmarkData) {
     }
 
     function renderTukeyTable() {
-        const rows = data.tukey
-            .filter((row) => (
-                row.scenario === state.scenario
-                && row.redis_mode === state.redisMode
-                && row.metric === state.metric
-            ))
-            .sort((a, b) => Number(a['p-adj']) - Number(b['p-adj']))
-            .slice(0, 8);
+        const rows = tukeyRowsForCurrentMetric()
+            .sort((a, b) => Number(a['p-adj']) - Number(b['p-adj']));
 
         html('[data-tukey-table]', table(
             ['Pasangan', 'Selisih rata-rata', 'p disesuaikan', 'Tolak H0'],
@@ -468,6 +509,66 @@ if (dashboard && window.benchmarkData) {
                 row.reject ? 'Ya' : 'Tidak',
             ]),
         ));
+    }
+
+    function renderSignificanceMatrix() {
+        const rows = tukeyRowsForCurrentMetric();
+
+        if (rows.length === 0) {
+            html('[data-significance-matrix]', '<p class="table-empty" role="status">Tidak ada data Tukey untuk metrik ini.</p>');
+
+            return;
+        }
+
+        const lookup = new Map();
+
+        rows.forEach((row) => {
+            lookup.set(pairKey(row.group1, row.group2), row.reject === true);
+            lookup.set(pairKey(row.group2, row.group1), row.reject === true);
+        });
+
+        const headerCells = data.strategies.map((strategy) => `<th scope="col">${escapeHtml(shortStrategyLabel(strategy))}</th>`).join('');
+        const bodyRows = data.strategies.map((rowStrategy) => {
+            const cells = data.strategies.map((columnStrategy) => {
+                if (rowStrategy === columnStrategy) {
+                    return '<td><span aria-label="Strategi yang sama">-</span></td>';
+                }
+
+                const isSignificant = lookup.get(pairKey(rowStrategy, columnStrategy));
+                const mark = isSignificant ? '✓' : '✗';
+                const label = isSignificant ? 'Signifikan' : 'Tidak signifikan';
+
+                return `<td class="${isSignificant ? 'is-significant' : 'is-not-significant'}"><span aria-label="${label}">${mark}</span></td>`;
+            }).join('');
+
+            return `<tr>
+                <th scope="row">${escapeHtml(shortStrategyLabel(rowStrategy))}</th>
+                ${cells}
+            </tr>`;
+        }).join('');
+
+        html('[data-significance-matrix]', `<table class="significance-matrix">
+            <caption>${escapeHtml(metricLabel(state.metric))} · ${escapeHtml(scenarioLabel(state.scenario))} · ${escapeHtml(redisModeLabel(state.redisMode))}</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Strategi</th>
+                    ${headerCells}
+                </tr>
+            </thead>
+            <tbody>${bodyRows}</tbody>
+        </table>`);
+    }
+
+    function tukeyRowsForCurrentMetric() {
+        return data.tukey.filter((row) => (
+            row.scenario === state.scenario
+            && row.redis_mode === state.redisMode
+            && row.metric === state.metric
+        ));
+    }
+
+    function pairKey(left, right) {
+        return `${left}::${right}`;
     }
 
     function table(headers, rows) {
@@ -481,31 +582,10 @@ if (dashboard && window.benchmarkData) {
         </table>`;
     }
 
-    function bestRow(rows, metric, lowerIsBetter) {
-        return rows.reduce((best, row) => {
-            if (!best) {
-                return row;
-            }
-
-            return lowerIsBetter
-                ? Number(row[metric]) < Number(best[metric]) ? row : best
-                : Number(row[metric]) > Number(best[metric]) ? row : best;
-        }, null);
-    }
-
     function validityRowsAtVu(concurrentUsers) {
         return data.validity.filter((row) => (
             row.scenario === state.scenario
             && row.redis_mode === state.redisMode
-            && Number(row.concurrent_users) === concurrentUsers
-        ));
-    }
-
-    function validityRow(strategy, concurrentUsers) {
-        return data.validity.find((row) => (
-            row.scenario === state.scenario
-            && row.redis_mode === state.redisMode
-            && row.strategy === strategy
             && Number(row.concurrent_users) === concurrentUsers
         ));
     }
@@ -515,7 +595,15 @@ if (dashboard && window.benchmarkData) {
     }
 
     function shortStrategyLabel(strategy) {
-        return strategyLabel(strategy).replace(' Through', '').replace(' Aside', '');
+        return strategyLabel(strategy).replace(' Through', '').replace(' Aside', '').replace('Tanpa Cache', 'NC');
+    }
+
+    function scenarioLabel(scenario) {
+        return scenario === 'read-heavy' ? 'Read Heavy' : 'Write Heavy';
+    }
+
+    function redisModeLabel(redisMode) {
+        return redisMode === 'single' ? 'Node Tunggal' : 'Cluster';
     }
 
     function metricLabel(metric) {
@@ -527,6 +615,24 @@ if (dashboard && window.benchmarkData) {
         const suffix = metricUnits[metric] ? ` ${metricUnits[metric]}` : '';
 
         return `${formatNumber(number)}${suffix}`;
+    }
+
+    function formatDirectionalPercent(value, direction) {
+        const number = Number(value);
+
+        if (!Number.isFinite(number)) {
+            return '-';
+        }
+
+        if (number === 0) {
+            return '0%';
+        }
+
+        if (direction === 'lower') {
+            return `${number > 0 ? '-' : '+'}${formatNumber(Math.abs(number))}%`;
+        }
+
+        return `${number > 0 ? '+' : '-'}${formatNumber(Math.abs(number))}%`;
     }
 
     function formatNumber(value) {
@@ -568,6 +674,14 @@ if (dashboard && window.benchmarkData) {
 
         if (element) {
             element.innerHTML = value;
+        }
+    }
+
+    function toggle(selector, isVisible) {
+        const element = dashboard.querySelector(selector);
+
+        if (element) {
+            element.hidden = !isVisible;
         }
     }
 

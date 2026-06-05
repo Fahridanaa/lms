@@ -5,7 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
 
         <title>Hasil Benchmark | {{ config('app.name', 'Laravel') }}</title>
-        <meta name="theme-color" content="#08090b">
+        <meta name="theme-color" content="#f8f9fa">
 
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=outfit:400,500,600,700|space-grotesk:500,600,700|jetbrains-mono:400,500,700" rel="stylesheet" />
@@ -40,12 +40,13 @@
 
                     <div class="benchmark-tabs" role="tablist" aria-label="Tampilan benchmark">
                         <button id="benchmark-tab" type="button" role="tab" aria-controls="benchmark-panel" data-tab-option="benchmark">Benchmark</button>
-                        <button id="analysis-tab" type="button" role="tab" aria-controls="analysis-panel" data-tab-option="analysis">Analisis</button>
+                        <button id="result-tab" type="button" role="tab" aria-controls="result-panel" data-tab-option="result">Hasil</button>
+                        <button id="statistics-tab" type="button" role="tab" aria-controls="statistics-panel" data-tab-option="statistics">Statistik</button>
                     </div>
                 </div>
 
                 <form class="benchmark-controls" aria-label="Kontrol benchmark">
-                    <fieldset class="segmented-field">
+                    <fieldset class="segmented-field" data-scenario-controls>
                         <legend>Skenario</legend>
                         @foreach ($benchmarkData['scenarios'] as $scenario)
                             <button type="button" data-scenario-option="{{ $scenario }}">
@@ -65,8 +66,8 @@
                         </div>
                     </fieldset>
 
-                    <div class="analysis-controls" data-analysis-controls>
-                        <label>
+                    <div class="analysis-controls" data-filter-controls>
+                        <label data-redis-controls>
                             <span>Mode Redis</span>
                             <select name="redis_mode" autocomplete="off" data-benchmark-control="redisMode">
                                 @foreach ($benchmarkData['redisModes'] as $redisMode)
@@ -77,7 +78,7 @@
                             </select>
                         </label>
 
-                        <label>
+                        <label data-metric-controls>
                             <span>Metrik</span>
                             <select name="metric" autocomplete="off" data-benchmark-control="metric">
                                 @foreach ($benchmarkData['metricOptions'] as $metric => $label)
@@ -95,8 +96,54 @@
                 <div class="section-heading">
                     <p>Perbandingan benchmark</p>
                     <h1 id="benchmark-tab-title">Perbandingan strategi cache berdasarkan VU terpilih.</h1>
-                    <span>Tabel membandingkan latensi rata-rata, P95, P99, throughput, cache hit, tingkat error, CPU, dan memori.</span>
+                    <span>Eksplorasi data mentah untuk workload, virtual user, mode Redis, dan metrik benchmark.</span>
                 </div>
+
+                <section class="analysis-grid benchmark-chart-grid" aria-label="Grafik benchmark mentah">
+                    <article class="benchmark-panel benchmark-panel-full">
+                        <div class="panel-header">
+                            <div>
+                                <span>Tren 100-2000 VU</span>
+                                <h2 data-benchmark-line-title>Tren latensi rata-rata lintas mode Redis</h2>
+                            </div>
+                            <div class="strategy-legend" aria-label="Legenda strategi">
+                                @foreach ($benchmarkData['strategyLabels'] as $strategy => $label)
+                                    <span data-strategy="{{ $strategy }}">{{ $label }}</span>
+                                @endforeach
+                            </div>
+                        </div>
+                        <div class="mode-chart-grid">
+                            <div>
+                                <h3>Node Tunggal</h3>
+                                <div class="chart-frame compact" aria-live="polite" data-chart="benchmark-line-single"></div>
+                            </div>
+                            <div>
+                                <h3>Cluster</h3>
+                                <div class="chart-frame compact" aria-live="polite" data-chart="benchmark-line-cluster"></div>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="benchmark-panel">
+                        <div class="panel-header">
+                            <div>
+                                <span>VU terpilih</span>
+                                <h2 data-benchmark-bar-single-title>Node Tunggal</h2>
+                            </div>
+                        </div>
+                        <div class="chart-frame compact" aria-live="polite" data-chart="benchmark-bar-single"></div>
+                    </article>
+
+                    <article class="benchmark-panel">
+                        <div class="panel-header">
+                            <div>
+                                <span>VU terpilih</span>
+                                <h2 data-benchmark-bar-cluster-title>Cluster</h2>
+                            </div>
+                        </div>
+                        <div class="chart-frame compact" aria-live="polite" data-chart="benchmark-bar-cluster"></div>
+                    </article>
+                </section>
 
                 <section class="comparison-block" aria-labelledby="single-comparison-title">
                     <h2 id="single-comparison-title">Perbandingan Mode Node Tunggal</h2>
@@ -109,11 +156,102 @@
                 </section>
             </section>
 
-            <section id="analysis-panel" class="benchmark-tab-panel" role="tabpanel" aria-labelledby="analysis-tab" data-tab-panel="analysis" hidden>
+            <section id="result-panel" class="benchmark-tab-panel" role="tabpanel" aria-labelledby="result-tab" data-tab-panel="result" hidden>
+                <div class="section-heading">
+                    <p>Hasil penelitian</p>
+                    <h1 id="result-tab-title">Kesimpulan performa strategi cache pada LMS Mini.</h1>
+                    <span>Bagian ini membaca data benchmark sebagai laporan penelitian: temuan utama, rekomendasi, dan keterbatasan.</span>
+                </div>
+
+                <div class="result-report-layout">
+                    <nav class="result-toc" aria-label="Daftar isi hasil penelitian">
+                        <span>Results</span>
+                        <a href="#ringkasan-eksekutif">1. Executive Summary</a>
+                        <a href="#peningkatan-baseline">2. Improvement vs Baseline</a>
+                        <a href="#pemenang-workload">3. Best Strategy per Workload</a>
+                        <a href="#insight-redis">4. Redis Single vs Cluster</a>
+                        <a href="#analisis-trade-off">5. Trade-Off Analysis</a>
+                        <a href="#rekomendasi-akhir">6. Final Recommendation</a>
+                        <a href="#threats-validity">7. Threats to Validity</a>
+                    </nav>
+
+                    <div class="result-report">
+                        <section id="ringkasan-eksekutif" class="report-section" aria-labelledby="ringkasan-eksekutif-title">
+                            <div class="report-section-heading">
+                                <span>Executive Summary</span>
+                                <h2 id="ringkasan-eksekutif-title">Strategi terbaik dan konteks pengujiannya.</h2>
+                            </div>
+                            <div class="research-hero" aria-live="polite" data-research-overall-winner></div>
+                            <div class="benchmark-overview result-overview" aria-label="Ringkasan titik penelitian">
+                                <article>
+                                    <span>Titik analisis utama</span>
+                                    <strong>{{ number_format($benchmarkData['researchSummary']['analysis_vu'], 0, ',', '.') }} VU</strong>
+                                    <small>Dasar pemeringkatan dan inferensi utama</small>
+                                </article>
+                                <article>
+                                    <span>Bukti saturasi</span>
+                                    <strong>{{ number_format($benchmarkData['researchSummary']['saturation_vu'], 0, ',', '.') }} VU</strong>
+                                    <small>Konteks skalabilitas, bukan dasar ANOVA</small>
+                                </article>
+                            </div>
+                        </section>
+
+                        <section id="peningkatan-baseline" class="report-section" aria-labelledby="peningkatan-baseline-title">
+                            <div class="report-section-heading">
+                                <span>Improvement vs Baseline</span>
+                                <h2 id="peningkatan-baseline-title">Dampak strategi terbaik dibanding Tanpa Cache.</h2>
+                            </div>
+                            <div class="score-summary-grid" aria-live="polite" data-baseline-improvements></div>
+                        </section>
+
+                        <section id="pemenang-workload" class="report-section" aria-labelledby="pemenang-workload-title">
+                            <div class="report-section-heading">
+                                <span>Best Strategy per Workload</span>
+                                <h2 id="pemenang-workload-title">Strategi terbaik untuk Read Heavy dan Write Heavy.</h2>
+                            </div>
+                            <div class="score-summary-grid" aria-live="polite" data-workload-winners></div>
+                        </section>
+
+                        <section id="insight-redis" class="report-section" aria-labelledby="insight-redis-title">
+                            <div class="report-section-heading">
+                                <span>Single vs Cluster Insight</span>
+                                <h2 id="insight-redis-title">Perbandingan mode Redis pada titik stabil dan saturasi.</h2>
+                            </div>
+                            <div class="score-summary-grid" aria-live="polite" data-redis-mode-insights></div>
+                        </section>
+
+                        <section id="analisis-trade-off" class="report-section" aria-labelledby="analisis-trade-off-title">
+                            <div class="report-section-heading">
+                                <span>Trade-Off Analysis</span>
+                                <h2 id="analisis-trade-off-title">Kekuatan dan konsekuensi tiap strategi.</h2>
+                            </div>
+                            <div class="score-summary-grid" aria-live="polite" data-trade-off-analysis></div>
+                        </section>
+
+                        <section id="rekomendasi-akhir" class="report-section" aria-labelledby="rekomendasi-akhir-title">
+                            <div class="report-section-heading">
+                                <span>Research Conclusion</span>
+                                <h2 id="rekomendasi-akhir-title">Rekomendasi implementasi.</h2>
+                            </div>
+                            <div aria-live="polite" data-final-recommendation></div>
+                        </section>
+
+                        <section id="threats-validity" class="report-section" aria-labelledby="threats-validity-title">
+                            <div class="report-section-heading">
+                                <span>Threats to Validity</span>
+                                <h2 id="threats-validity-title">Keterbatasan penelitian.</h2>
+                            </div>
+                            <div aria-live="polite" data-threats-to-validity></div>
+                        </section>
+                    </div>
+                </div>
+            </section>
+
+            <section id="statistics-panel" class="benchmark-tab-panel" role="tabpanel" aria-labelledby="statistics-tab" data-tab-panel="statistics" hidden>
                 <div class="section-heading">
                     <p>Lapisan bukti</p>
-                    <h1 id="analysis-tab-title">Analisis statistik pada 1500 VU dengan data valid.</h1>
-                    <span>ANOVA dan Tukey memakai 1500 VU sebagai pembanding utama; 2000 VU dipakai untuk diskusi saturasi dan skalabilitas.</span>
+                    <h1 id="statistics-tab-title">Analisis statistik pada 1500 VU dengan data valid.</h1>
+                    <span>ANOVA dan Tukey menjawab apakah perbedaan strategi signifikan pada workload dan mode Redis yang sama.</span>
                 </div>
 
                 <section class="analysis-brief" aria-label="Ringkasan metodologi analisis">
@@ -123,16 +261,11 @@
                     </p>
                     <p>
                         <strong>2000 VU</strong>
-                        ditampilkan sebagai bukti saturasi, bukan dasar ANOVA, karena beberapa kondisi melewati batas tingkat error 5%.
+                        tetap ditampilkan sebagai konteks saturasi, tetapi tidak digunakan sebagai dasar ANOVA.
                     </p>
                 </section>
 
-                <section class="benchmark-overview" aria-label="Ringkasan temuan benchmark">
-                    <article>
-                        <span>Titik analisis utama</span>
-                        <strong>1500 VU</strong>
-                        <small>Hanya baris valid, tingkat error <= 5%</small>
-                    </article>
+                <section class="benchmark-overview" aria-label="Ringkasan statistik">
                     <article>
                         <span>Strategi valid</span>
                         <strong aria-live="polite" data-summary="validStrategies">-</strong>
@@ -147,84 +280,6 @@
                         <span>Saturasi 2000 VU</span>
                         <strong aria-live="polite" data-summary="saturation">-</strong>
                         <small aria-live="polite" data-summary="saturationValue">Hanya deskriptif</small>
-                    </article>
-                </section>
-
-                <section class="score-summary" aria-labelledby="score-summary-title">
-                    <div class="score-summary-heading">
-                        <div>
-                            <p>Ringkasan Hasil</p>
-                            <h2 id="score-summary-title">Strategi paling optimal pada titik stabil 1500 VU.</h2>
-                        </div>
-                        <span>Skor memakai bobot proposal; 2000 VU tetap dipakai sebagai bukti saturasi, bukan dasar pemeringkatan.</span>
-                    </div>
-                    <div class="score-summary-grid" aria-live="polite" data-score-summary></div>
-                </section>
-
-                <section class="analysis-grid" aria-label="Grafik analisis benchmark">
-                    <article class="benchmark-panel benchmark-panel-full">
-                        <div class="panel-header">
-                            <div>
-                                <span>Tren skalabilitas</span>
-                                <h2 data-line-title>Tren latensi rata-rata</h2>
-                            </div>
-                            <div class="strategy-legend" aria-label="Legenda strategi">
-                                @foreach ($benchmarkData['strategyLabels'] as $strategy => $label)
-                                    <span data-strategy="{{ $strategy }}">{{ $label }}</span>
-                                @endforeach
-                            </div>
-                        </div>
-                        <div class="chart-frame" aria-live="polite" data-chart="line"></div>
-                    </article>
-
-                    <article class="benchmark-panel">
-                        <div class="panel-header">
-                            <div>
-                                <span>Perbandingan 1500 VU</span>
-                                <h2 data-bar-title>Perbandingan 1500 VU</h2>
-                            </div>
-                        </div>
-                        <div class="chart-frame compact" aria-live="polite" data-chart="bar"></div>
-                    </article>
-
-                    <article class="benchmark-panel benchmark-panel-dark">
-                        <div class="panel-header">
-                            <div>
-                                <span>Validitas 1500 VU</span>
-                                <h2>Tingkat error dan cache hit</h2>
-                            </div>
-                        </div>
-                        <div class="metric-table" aria-live="polite" data-reliability-table></div>
-                    </article>
-
-                    <article class="benchmark-panel">
-                        <div class="panel-header">
-                            <div>
-                                <span>Resource 1500 VU</span>
-                                <h2>Tekanan CPU</h2>
-                            </div>
-                        </div>
-                        <div class="chart-frame compact" aria-live="polite" data-chart="cpu"></div>
-                    </article>
-
-                    <article class="benchmark-panel">
-                        <div class="panel-header">
-                            <div>
-                                <span>Resource 1500 VU</span>
-                                <h2>Jejak memori</h2>
-                            </div>
-                        </div>
-                        <div class="chart-frame compact" aria-live="polite" data-chart="memory"></div>
-                    </article>
-
-                    <article class="benchmark-panel benchmark-panel-wide">
-                        <div class="panel-header">
-                            <div>
-                                <span>Saturasi 2000 VU</span>
-                                <h2>Iterasi valid vs saturasi</h2>
-                            </div>
-                        </div>
-                        <div class="metric-table" aria-live="polite" data-saturation-table></div>
                     </article>
                 </section>
 
@@ -247,6 +302,16 @@
                             </div>
                         </div>
                         <div class="metric-table" aria-live="polite" data-tukey-table></div>
+                    </article>
+
+                    <article class="benchmark-panel benchmark-panel-full">
+                        <div class="panel-header">
+                            <div>
+                                <span>Significant Difference Matrix</span>
+                                <h2>Ringkasan keputusan Tukey untuk metrik terpilih</h2>
+                            </div>
+                        </div>
+                        <div class="significance-matrix-wrap" aria-live="polite" data-significance-matrix></div>
                     </article>
                 </section>
             </section>
