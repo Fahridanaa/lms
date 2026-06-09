@@ -23,10 +23,29 @@ if (dashboard && window.benchmarkData) {
         'read-through': '#0b1b43',
         'write-through': '#9a3733',
     };
+    const scenarioEndpointKeys = {
+        'read-heavy': [
+            'quiz_detail_duration',
+            'materials_list_duration',
+            'material_detail_duration',
+            'gradebook_duration',
+            'start_attempt_duration',
+            'submit_assignment_duration',
+        ],
+        'write-heavy': [
+            'assignment_detail_duration',
+            'gradebook_duration',
+            'submit_assignment_duration',
+            'submit_quiz_duration',
+            'grade_submission_duration',
+        ],
+    };
     const metricUnits = {
         avg_ms: 'ms',
+        p90_ms: 'ms',
         p95_ms: 'ms',
         p99_ms: 'ms',
+        max_ms: 'ms',
         throughput_rps: 'rps',
         cache_hit_ratio_pct: '%',
         error_rate_pct: '%',
@@ -165,6 +184,7 @@ if (dashboard && window.benchmarkData) {
         renderSimulationMode('cluster');
         renderLineChart('[data-chart="benchmark-line-single"]', 'single');
         renderLineChart('[data-chart="benchmark-line-cluster"]', 'cluster');
+        renderEndpointAnalysis();
         renderBarChart(
             '[data-chart="benchmark-bar-single"]',
             filterRowsAtVu(data.metrics, 'single', state.concurrentUsers),
@@ -181,6 +201,7 @@ if (dashboard && window.benchmarkData) {
         text('[data-benchmark-line-title]', `Tren ${data.metricOptions[state.metric].toLowerCase()} lintas mode Redis`);
         text('[data-benchmark-bar-single-title]', `Node Tunggal ${formatNumber(state.concurrentUsers)} VU`);
         text('[data-benchmark-bar-cluster-title]', `Cluster ${formatNumber(state.concurrentUsers)} VU`);
+        text('[data-endpoint-title]', `${endpointMetricLabel()} endpoint API pada ${formatNumber(state.concurrentUsers)} VU`);
     }
 
     function renderSimulationMode(redisMode) {
@@ -381,6 +402,158 @@ if (dashboard && window.benchmarkData) {
             && row.redis_mode === redisMode
             && row.strategy === strategy
             && Number(row.concurrent_users) === state.concurrentUsers
+        ));
+    }
+
+    function renderEndpointAnalysis() {
+        renderEndpointCharts();
+        renderEndpointTable();
+    }
+
+    function endpointRowsAtVu(redisMode = null) {
+        return (data.endpoints ?? []).filter((row) => (
+            row.scenario === state.scenario
+            && (redisMode === null || row.redis_mode === redisMode)
+            && Number(row.concurrent_users) === state.concurrentUsers
+        ));
+    }
+
+    function endpointMetric() {
+        if (['avg_ms', 'p90_ms', 'p95_ms', 'p99_ms', 'max_ms'].includes(state.metric)) {
+            return state.metric;
+        }
+
+        return 'avg_ms';
+    }
+
+    function endpointMetricLabel() {
+        const labels = {
+            avg_ms: 'Latensi rata-rata',
+            p90_ms: 'Latensi P90',
+            p95_ms: 'Latensi P95',
+            p99_ms: 'Latensi P99',
+            max_ms: 'Latensi maksimum',
+        };
+
+        return labels[endpointMetric()];
+    }
+
+    function endpointDefinitions() {
+        const definitions = new Map();
+
+        (data.endpoints ?? []).forEach((row) => {
+            if (definitions.has(row.endpoint_key)) {
+                return;
+            }
+
+            definitions.set(row.endpoint_key, {
+                key: row.endpoint_key,
+                label: row.endpoint_label,
+                method: row.method,
+                pathPattern: row.path_pattern,
+                operationType: row.operation_type,
+            });
+        });
+
+        return (scenarioEndpointKeys[state.scenario] ?? [])
+            .map((endpointKey) => definitions.get(endpointKey))
+            .filter(Boolean);
+    }
+
+    function renderEndpointCharts() {
+        const metric = endpointMetric();
+        const endpoints = endpointDefinitions();
+
+        if (endpoints.length === 0) {
+            html('[data-endpoint-charts]', '<p class="table-empty" role="status">Tidak ada data endpoint untuk filter ini.</p>');
+
+            return;
+        }
+
+        html('[data-endpoint-charts]', endpoints.map((endpoint) => {
+            const rows = endpointRowsAtVu()
+                .filter((row) => row.endpoint_key === endpoint.key);
+            const maxValue = Math.max(...rows.map((row) => Number(row[metric])).filter(Number.isFinite), 1);
+
+            return `<article class="endpoint-chart-card">
+                <div class="endpoint-card-header">
+                    <div>
+                        <span>${escapeHtml(endpoint.method)} · ${escapeHtml(endpoint.operationType === 'read' ? 'Read' : 'Write')}</span>
+                        <h3>${escapeHtml(endpoint.label)}</h3>
+                        <p>${escapeHtml(endpoint.pathPattern)}</p>
+                    </div>
+                </div>
+                <div class="endpoint-mode-grid">
+                    ${data.redisModes.map((redisMode) => `<div>
+                        <h4>${escapeHtml(redisModeLabel(redisMode))}</h4>
+                        <div class="chart-frame endpoint-chart" aria-label="${escapeHtml(endpoint.label)} ${escapeHtml(redisModeLabel(redisMode))}">
+                            ${endpointStrategyBarChart(endpoint.key, redisMode, metric, maxValue)}
+                        </div>
+                    </div>`).join('')}
+                </div>
+            </article>`;
+        }).join(''));
+    }
+
+    function endpointStrategyBarChart(endpointKey, redisMode, metric, maxValue) {
+        const rows = data.strategies.map((strategy) => endpointRowsAtVu(redisMode).find((row) => (
+            row.endpoint_key === endpointKey
+            && row.strategy === strategy
+        )) ?? {
+            strategy,
+            [metric]: null,
+        });
+        const width = 420;
+        const height = 250;
+        const padding = { top: 24, right: 18, bottom: 62, left: 48 };
+        const plotWidth = width - padding.left - padding.right;
+        const plotHeight = height - padding.top - padding.bottom;
+        const gap = 14;
+        const barWidth = (plotWidth - gap * (rows.length - 1)) / Math.max(rows.length, 1);
+
+        const bars = rows.map((row, index) => {
+            const value = Number(row[metric]);
+            const hasValue = Number.isFinite(value);
+            const barHeight = hasValue ? (value / maxValue) * plotHeight : 0;
+            const x = padding.left + index * (barWidth + gap);
+            const y = padding.top + plotHeight - barHeight;
+
+            return `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="5" fill="${strategyColors[row.strategy]}" />
+                <text class="chart-value" x="${x + barWidth / 2}" y="${Math.max(16, y - 8)}" text-anchor="middle">${escapeHtml(hasValue ? formatMetric(value, metric) : '-')}</text>
+                <text class="chart-label" x="${x + barWidth / 2}" y="${height - 30}" text-anchor="middle">${escapeHtml(shortStrategyLabel(row.strategy))}</text>`;
+        }).join('');
+
+        return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(endpointMetricLabel())} berdasarkan strategi">
+            <line class="chart-axis" x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}" />
+            <line class="chart-axis" x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${height - padding.bottom}" />
+            <text class="chart-label" x="8" y="${padding.top + 4}">${escapeHtml(formatMetric(maxValue, metric))}</text>
+            ${bars}
+        </svg>`;
+    }
+
+    function renderEndpointTable() {
+        const metric = endpointMetric();
+        const rows = endpointRowsAtVu()
+            .sort((left, right) => {
+                if (left.redis_mode === right.redis_mode) {
+                    return Number(right[metric]) - Number(left[metric]);
+                }
+
+                return data.redisModes.indexOf(left.redis_mode) - data.redisModes.indexOf(right.redis_mode);
+            });
+
+        html('[data-endpoint-table]', table(
+            ['Mode', 'Strategi', 'Endpoint', 'Operasi', 'Avg', 'P95', 'P99', 'Iterasi'],
+            rows.map((row) => [
+                redisModeLabel(row.redis_mode),
+                strategyLabel(row.strategy),
+                `${row.method} ${row.path_pattern}`,
+                row.operation_type === 'read' ? 'Read' : 'Write',
+                formatMetric(row.avg_ms, 'avg_ms'),
+                formatMetric(row.p95_ms, 'p95_ms'),
+                formatMetric(row.p99_ms, 'p99_ms'),
+                formatNumber(row.iterations_averaged),
+            ]),
         ));
     }
 

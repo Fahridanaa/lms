@@ -10,6 +10,7 @@
  * Outputs:
  *   - benchmark-results-combined/metrics-summary.csv
  *   - benchmark-results-combined/resources-summary.csv
+ *   - benchmark-results-combined/endpoint-summary.csv
  *   - benchmark-results-combined/anova-input.csv
  *
  * The combined metrics file includes validity_status:
@@ -38,6 +39,62 @@ $strategies = ['no-cache', 'cache-aside', 'read-through', 'write-through'];
 $scenarios = ['read-heavy', 'write-heavy'];
 $vuLevels = [100, 250, 500, 750, 1000, 1500, 2000];
 $iterations = [1, 2, 3, 4, 5];
+$endpointDefinitions = [
+    'assignment_detail_duration' => [
+        'label' => 'Detail tugas',
+        'method' => 'GET',
+        'path_pattern' => '/api/assignments/{id}',
+        'operation_type' => 'read',
+    ],
+    'grade_submission_duration' => [
+        'label' => 'Penilaian tugas',
+        'method' => 'PUT',
+        'path_pattern' => '/api/submissions/{id}/grade',
+        'operation_type' => 'write',
+    ],
+    'gradebook_duration' => [
+        'label' => 'Gradebook course',
+        'method' => 'GET',
+        'path_pattern' => '/api/courses/{courseId}/gradebook',
+        'operation_type' => 'read',
+    ],
+    'material_detail_duration' => [
+        'label' => 'Detail materi',
+        'method' => 'GET',
+        'path_pattern' => '/api/materials/{id}',
+        'operation_type' => 'read',
+    ],
+    'materials_list_duration' => [
+        'label' => 'Daftar materi course',
+        'method' => 'GET',
+        'path_pattern' => '/api/courses/{courseId}/materials',
+        'operation_type' => 'read',
+    ],
+    'quiz_detail_duration' => [
+        'label' => 'Detail kuis',
+        'method' => 'GET',
+        'path_pattern' => '/api/quizzes/{id}',
+        'operation_type' => 'read',
+    ],
+    'start_attempt_duration' => [
+        'label' => 'Mulai attempt kuis',
+        'method' => 'POST',
+        'path_pattern' => '/api/quizzes/{id}/attempts',
+        'operation_type' => 'write',
+    ],
+    'submit_assignment_duration' => [
+        'label' => 'Submit tugas',
+        'method' => 'POST',
+        'path_pattern' => '/api/assignments/{id}/submissions',
+        'operation_type' => 'write',
+    ],
+    'submit_quiz_duration' => [
+        'label' => 'Submit kuis',
+        'method' => 'PUT',
+        'path_pattern' => '/api/quizzes/{quizId}/attempts/{attemptId}',
+        'operation_type' => 'write',
+    ],
+];
 
 function readCsvRows(string $path): array
 {
@@ -138,6 +195,119 @@ function metricValue(array $json, string $metric, string $value): float|string
     return is_numeric($raw) ? round((float) $raw, 2) : '';
 }
 
+function endpointMetricValue(array $metric, string $value): float|string
+{
+    $raw = $metric['values'][$value] ?? null;
+
+    return is_numeric($raw) ? round((float) $raw, 2) : '';
+}
+
+function endpointSummaryRows(array $json, array $definitions, array $context): array
+{
+    $rows = [];
+
+    foreach ($definitions as $metricKey => $definition) {
+        $metric = $json['metrics'][$metricKey] ?? null;
+
+        if (! is_array($metric)) {
+            continue;
+        }
+
+        $rows[] = array_merge($context, [
+            'endpoint_key' => $metricKey,
+            'endpoint_label' => $definition['label'],
+            'method' => $definition['method'],
+            'path_pattern' => $definition['path_pattern'],
+            'operation_type' => $definition['operation_type'],
+            'avg_ms' => endpointMetricValue($metric, 'avg'),
+            'p90_ms' => endpointMetricValue($metric, 'p(90)'),
+            'p95_ms' => endpointMetricValue($metric, 'p(95)'),
+            'p99_ms' => endpointMetricValue($metric, 'p(99)'),
+            'max_ms' => endpointMetricValue($metric, 'max'),
+        ]);
+    }
+
+    return $rows;
+}
+
+function summarizeEndpointRows(array $rows): array
+{
+    $groups = [];
+    $metrics = ['avg_ms', 'p90_ms', 'p95_ms', 'p99_ms', 'max_ms'];
+
+    foreach ($rows as $row) {
+        $key = implode('|', [
+            $row['redis_mode'],
+            $row['strategy'],
+            $row['scenario'],
+            $row['concurrent_users'],
+            $row['endpoint_key'],
+        ]);
+
+        if (! isset($groups[$key])) {
+            $groups[$key] = [
+                'row' => [
+                    'redis_mode' => $row['redis_mode'],
+                    'strategy' => $row['strategy'],
+                    'scenario' => $row['scenario'],
+                    'concurrent_users' => $row['concurrent_users'],
+                    'endpoint_key' => $row['endpoint_key'],
+                    'endpoint_label' => $row['endpoint_label'],
+                    'method' => $row['method'],
+                    'path_pattern' => $row['path_pattern'],
+                    'operation_type' => $row['operation_type'],
+                ],
+                'metric_totals' => array_fill_keys($metrics, 0.0),
+                'metric_counts' => array_fill_keys($metrics, 0),
+                'iterations' => [],
+            ];
+        }
+
+        $groups[$key]['iterations'][(int) $row['iteration']] = true;
+
+        foreach ($metrics as $metric) {
+            if (! is_numeric($row[$metric])) {
+                continue;
+            }
+
+            $groups[$key]['metric_totals'][$metric] += (float) $row[$metric];
+            $groups[$key]['metric_counts'][$metric]++;
+        }
+    }
+
+    $summaries = [];
+
+    foreach ($groups as $group) {
+        $summary = $group['row'];
+
+        foreach ($metrics as $metric) {
+            $count = $group['metric_counts'][$metric];
+            $summary[$metric] = $count > 0 ? round($group['metric_totals'][$metric] / $count, 2) : '';
+        }
+
+        $summary['iterations_averaged'] = count($group['iterations']);
+        $summaries[] = $summary;
+    }
+
+    usort($summaries, function (array $left, array $right): int {
+        return [
+            $left['redis_mode'],
+            $left['strategy'],
+            $left['scenario'],
+            (int) $left['concurrent_users'],
+            $left['endpoint_key'],
+        ] <=> [
+            $right['redis_mode'],
+            $right['strategy'],
+            $right['scenario'],
+            (int) $right['concurrent_users'],
+            $right['endpoint_key'],
+        ];
+    });
+
+    return $summaries;
+}
+
 function cacheHitRatioForSummary(string $summaryPath, string $strategy): float|string
 {
     $hitRatioPath = str_replace('-summary.json', '-cache-hit-ratio.txt', $summaryPath);
@@ -228,6 +398,7 @@ writeCsvRows("{$outputDir}/resources-summary.csv", $resourceHeaders, $combinedRe
 
 // Extract per-iteration k6 summary rows for ANOVA/Tukey
 $anovaRows = [];
+$endpointRows = [];
 $anovaHeaders = [
     'redis_mode',
     'strategy',
@@ -297,15 +468,45 @@ foreach ($inputDirs as $inputDir) {
                         'cache_hit_ratio_pct' => cacheHitRatioForSummary($summaryPath, $strategy),
                         'validity_status' => validityStatus($errorRate),
                     ];
+
+                    array_push($endpointRows, ...endpointSummaryRows($json, $endpointDefinitions, [
+                        'redis_mode' => $redisMode,
+                        'strategy' => $strategy,
+                        'scenario' => $scenario,
+                        'concurrent_users' => $vu,
+                        'iteration' => $iteration,
+                    ]));
                 }
             }
         }
     }
 }
 
+$endpointHeaders = [
+    'redis_mode',
+    'strategy',
+    'scenario',
+    'concurrent_users',
+    'endpoint_key',
+    'endpoint_label',
+    'method',
+    'path_pattern',
+    'operation_type',
+    'avg_ms',
+    'p90_ms',
+    'p95_ms',
+    'p99_ms',
+    'max_ms',
+    'iterations_averaged',
+];
+
+$endpointSummaries = summarizeEndpointRows($endpointRows);
+
+writeCsvRows("{$outputDir}/endpoint-summary.csv", $endpointHeaders, $endpointSummaries);
 writeCsvRows("{$outputDir}/anova-input.csv", $anovaHeaders, $anovaRows);
 
 echo "Combined benchmark results written to {$outputDir}\n";
 echo 'metrics-summary.csv rows  : ' . count($combinedMetrics) . "\n";
 echo 'resources-summary.csv rows: ' . count($combinedResources) . "\n";
+echo 'endpoint-summary.csv rows : ' . count($endpointSummaries) . "\n";
 echo 'anova-input.csv rows      : ' . count($anovaRows) . "\n";

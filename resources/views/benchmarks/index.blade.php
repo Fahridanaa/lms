@@ -154,6 +154,31 @@
                     <h2 id="cluster-comparison-title">Perbandingan Mode Cluster</h2>
                     <div class="simulation-grid" aria-live="polite" data-simulation-mode="cluster"></div>
                 </section>
+
+                <section class="comparison-block" aria-labelledby="endpoint-comparison-title">
+                    <h2 id="endpoint-comparison-title">Analisis Endpoint API</h2>
+                    <div class="endpoint-analysis-heading">
+                        <div>
+                            <span>Endpoint-level dari k6 summary</span>
+                            <h3 data-endpoint-title>Latensi endpoint API pada filter terpilih</h3>
+                        </div>
+                        <div class="strategy-legend" aria-label="Legenda strategi endpoint">
+                            @foreach ($benchmarkData['strategyLabels'] as $strategy => $label)
+                                <span data-strategy="{{ $strategy }}">{{ $label }}</span>
+                            @endforeach
+                        </div>
+                    </div>
+                    <div class="endpoint-chart-grid" aria-live="polite" data-endpoint-charts></div>
+                    <article class="benchmark-panel benchmark-panel-full endpoint-table-panel">
+                        <div class="panel-header">
+                            <div>
+                                <span>Data endpoint</span>
+                                <h2>Tabel latensi endpoint berdasarkan mode Redis dan strategi</h2>
+                            </div>
+                        </div>
+                        <div class="metric-table" aria-live="polite" data-endpoint-table></div>
+                    </article>
+                </section>
             </section>
 
             <section id="result-panel" class="benchmark-tab-panel" role="tabpanel" aria-labelledby="result-tab" data-tab-panel="result" hidden>

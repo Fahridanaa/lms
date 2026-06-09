@@ -29,6 +29,10 @@ class BenchmarkResultsServiceTest extends TestCase
             'read-through,read-heavy,1500,31,41,1050,1250,21,26,0.1,0.2,0.3,0.4,5,single',
             'write-through,read-heavy,1500,32,42,1100,1300,22,27,0.1,0.2,0.3,0.4,5,single',
         ]));
+        file_put_contents($path.'/endpoint-summary.csv', implode(PHP_EOL, [
+            'redis_mode,strategy,scenario,concurrent_users,endpoint_key,endpoint_label,method,path_pattern,operation_type,avg_ms,p90_ms,p95_ms,p99_ms,max_ms,iterations_averaged',
+            'single,cache-aside,read-heavy,1500,gradebook_duration,Gradebook course,GET,/api/courses/{courseId}/gradebook,read,95.5,130.2,150.7,190.3,260.1,5',
+        ]));
         file_put_contents($path.'/validity-summary.csv', implode(PHP_EOL, [
             'redis_mode,scenario,concurrent_users,strategy,valid,saturated,total_iterations',
             'single,read-heavy,1500,no-cache,5,0,5',
@@ -55,6 +59,9 @@ class BenchmarkResultsServiceTest extends TestCase
         $this->assertSame(1500, $data['metrics'][0]['concurrent_users']);
         $this->assertSame(300, $data['metrics'][0]['avg_ms']);
         $this->assertSame(0, $data['metrics'][0]['cache_hit_ratio_pct']);
+        $this->assertSame('gradebook_duration', $data['endpoints'][0]['endpoint_key']);
+        $this->assertSame('/api/courses/{courseId}/gradebook', $data['endpoints'][0]['path_pattern']);
+        $this->assertSame(95.5, $data['endpoints'][0]['avg_ms']);
         $this->assertTrue($data['anova'][0]['is_significant']);
         $this->assertTrue($data['tukey'][0]['reject']);
         $this->assertSame(['no-cache', 'cache-aside', 'read-through', 'write-through'], $data['strategies']);

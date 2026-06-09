@@ -83,6 +83,7 @@ class BenchmarkResultsService
      * @return array{
      *     metrics: list<array<string, bool|float|int|string|null>>,
      *     resources: list<array<string, bool|float|int|string|null>>,
+     *     endpoints: list<array<string, bool|float|int|string|null>>,
      *     validity: list<array<string, bool|float|int|string|null>>,
      *     anova: list<array<string, bool|float|int|string|null>>,
      *     tukey: list<array<string, bool|float|int|string|null>>,
@@ -107,6 +108,7 @@ class BenchmarkResultsService
         return [
             'metrics' => $metrics,
             'resources' => $resources,
+            'endpoints' => $this->readCsv('endpoint-summary.csv'),
             'validity' => $validity,
             'anova' => $this->readCsv('anova-results-1500vu.csv'),
             'tukey' => $this->readCsv('tukey-results-1500vu.csv'),

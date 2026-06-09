@@ -857,6 +857,86 @@
         min-height: 16rem;
     }
 
+    .endpoint-analysis-heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-block: 1.5rem 1rem;
+    }
+
+    .endpoint-analysis-heading h3 {
+        margin: 0.35rem 0 0;
+        color: var(--bench-text);
+        font-family: 'Space Grotesk', Outfit, sans-serif;
+        font-size: clamp(1.05rem, 1.7vw, 1.45rem);
+        line-height: 1.1;
+    }
+
+    .endpoint-chart-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .endpoint-chart-card,
+    .endpoint-table-panel {
+        border: 1px solid var(--bench-line);
+        border-radius: 8px;
+        background: var(--bench-panel);
+        box-shadow: 0 18px 44px rgba(11, 27, 67, 0.06);
+    }
+
+    .endpoint-chart-card {
+        padding: 1rem;
+    }
+
+    .endpoint-card-header span,
+    .endpoint-analysis-heading span {
+        color: var(--bench-accent);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .endpoint-card-header h3 {
+        margin: 0.3rem 0 0;
+        color: var(--bench-text);
+        font-family: 'Space Grotesk', Outfit, sans-serif;
+        font-size: 1.05rem;
+        line-height: 1.1;
+    }
+
+    .endpoint-card-header p {
+        margin: 0.4rem 0 0;
+        color: var(--bench-muted);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem;
+        overflow-wrap: anywhere;
+    }
+
+    .endpoint-mode-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+        margin-top: 0.85rem;
+    }
+
+    .endpoint-mode-grid h4 {
+        margin: 0;
+        color: var(--bench-soft);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+    }
+
+    .chart-frame.endpoint-chart {
+        min-height: 13.5rem;
+        margin-top: 0.35rem;
+    }
+
     .chart-frame svg {
         width: 100%;
         height: auto;
@@ -1063,6 +1143,7 @@
         .simulation-grid,
         .analysis-brief,
         .benchmark-overview,
+        .endpoint-chart-grid,
         .mode-chart-grid,
         .result-report-layout,
         .score-summary-grid,
@@ -1082,6 +1163,10 @@
         }
 
         .score-summary-heading {
+            display: grid;
+        }
+
+        .endpoint-analysis-heading {
             display: grid;
         }
 
@@ -1109,6 +1194,7 @@
 
         .result-overview,
         #statistics-panel .benchmark-overview,
+        .endpoint-mode-grid,
         .metric-delta-list {
             grid-template-columns: 1fr;
         }

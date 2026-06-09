@@ -1,0 +1,617 @@
+redis_mode,strategy,scenario,concurrent_users,endpoint_key,endpoint_label,method,path_pattern,operation_type,avg_ms,p90_ms,p95_ms,p99_ms,max_ms,iterations_averaged
+cluster,cache-aside,read-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,123.78,257.79,321.22,462.28,716.13,5
+cluster,cache-aside,read-heavy,100,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,140,291.46,359.28,500.01,889.79,5
+cluster,cache-aside,read-heavy,100,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,145.31,303.59,371.6,514.81,1028.32,5
+cluster,cache-aside,read-heavy,100,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,178.92,372.21,446.12,607.71,1178.37,5
+cluster,cache-aside,read-heavy,100,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,179.9,358.16,433.31,586.48,890.56,5
+cluster,cache-aside,read-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,211.99,413.1,493.7,651.79,975.4,5
+cluster,cache-aside,read-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,1580.34,2005.26,2127.33,2481.61,7708.73,5
+cluster,cache-aside,read-heavy,250,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,1637.93,2081.24,2217.13,2646.3,7852.05,5
+cluster,cache-aside,read-heavy,250,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,1651.37,2099.83,2216.59,2607.59,8029.99,5
+cluster,cache-aside,read-heavy,250,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,1806.94,2282.18,2419.37,2827.37,8217.56,5
+cluster,cache-aside,read-heavy,250,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,1802.92,2235.73,2385.23,6924.21,8813.43,5
+cluster,cache-aside,read-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,1933.97,2404.33,2559.78,7096.19,8878.29,5
+cluster,cache-aside,read-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,4261.64,5056.23,5167.29,5405.66,6479.42,5
+cluster,cache-aside,read-heavy,500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,4322.59,5116.23,5233.99,5493.84,6468.96,5
+cluster,cache-aside,read-heavy,500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,4339.58,5144.11,5264.86,5502.9,6903.91,5
+cluster,cache-aside,read-heavy,500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,4496.09,5317.92,5444.05,5717.03,6735.39,5
+cluster,cache-aside,read-heavy,500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,4421.25,5260.5,5385.57,5645.52,6504.35,5
+cluster,cache-aside,read-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,4591.07,5428.82,5560.95,5858.95,6694.47,5
+cluster,cache-aside,read-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,7108.17,8203.19,8357.55,8676.34,9716,5
+cluster,cache-aside,read-heavy,750,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,7156.99,8260.77,8411.79,8756.18,9791.54,5
+cluster,cache-aside,read-heavy,750,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,7167.39,8283.6,8439.33,8767.76,9909.13,5
+cluster,cache-aside,read-heavy,750,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,7318.84,8464.35,8631.68,8964.23,9986.33,5
+cluster,cache-aside,read-heavy,750,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,7288.38,8420.28,8581.43,8894.43,9595.81,5
+cluster,cache-aside,read-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,7411.42,8571.02,8750.93,9086.65,10076.23,5
+cluster,cache-aside,read-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,10106.76,11491.08,11690.15,15817.56,16526.55,5
+cluster,cache-aside,read-heavy,1000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,10160.73,11540.36,11741.95,15869.85,16459.62,5
+cluster,cache-aside,read-heavy,1000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,10165.41,11579.32,11782.48,15901.74,17167.53,5
+cluster,cache-aside,read-heavy,1000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,10325.53,11743.69,11954.39,16052.36,17067.86,5
+cluster,cache-aside,read-heavy,1000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,10300.78,11702.07,11915.9,16014.64,16818.62,5
+cluster,cache-aside,read-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,10413.46,11845.62,12073.35,16151.64,17311.65,5
+cluster,cache-aside,read-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,16405.04,18744.23,18995.86,19394.03,20487.64,5
+cluster,cache-aside,read-heavy,1500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,16458.19,18789.28,19045.26,19486.87,20703.5,5
+cluster,cache-aside,read-heavy,1500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,16459.99,18813.19,19064.54,19497.08,20621.41,5
+cluster,cache-aside,read-heavy,1500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,16628.29,18994.13,19249.86,19690.98,20757.96,5
+cluster,cache-aside,read-heavy,1500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,16510.34,18938.02,19167.7,19632.01,20396.77,5
+cluster,cache-aside,read-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,16769.43,19114.84,19361.49,19826.95,20862.79,5
+cluster,cache-aside,read-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,22334.92,25961.87,26122.45,26443.08,27339.29,5
+cluster,cache-aside,read-heavy,2000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,22406.7,26006.81,26160.97,26517.9,27556.03,5
+cluster,cache-aside,read-heavy,2000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,22443.74,26041.15,26193.21,26510.71,27372.49,5
+cluster,cache-aside,read-heavy,2000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,22557.1,26176.32,26335.82,26691.41,27768.45,5
+cluster,cache-aside,read-heavy,2000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,22538.46,26130.1,26290.33,26638.61,27381.27,5
+cluster,cache-aside,read-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,22645.31,26262.66,26438.45,26823.14,27664.47,5
+cluster,cache-aside,write-heavy,100,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,526.38,839.97,939.27,1174.11,2542.77,5
+cluster,cache-aside,write-heavy,100,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,818.19,1266.16,1399.32,1687.38,2746.91,5
+cluster,cache-aside,write-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,460.67,755.23,846.35,1073.91,2368.62,5
+cluster,cache-aside,write-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,749.92,1162.04,1282.39,1561.99,2728.13,5
+cluster,cache-aside,write-heavy,100,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,854.01,1312.93,1440.34,1717.36,2938.01,5
+cluster,cache-aside,write-heavy,250,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,2508.06,3112.1,3223.71,3478.3,4364.66,5
+cluster,cache-aside,write-heavy,250,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,2811.59,3517.73,3664.72,3942.12,4856.62,5
+cluster,cache-aside,write-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,2431.2,3029.13,3137.86,3385.67,4228.45,5
+cluster,cache-aside,write-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,2742.16,3423.93,3551.67,3821.54,5135.78,5
+cluster,cache-aside,write-heavy,250,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,2865.84,3578.17,3711.11,4000.44,5371.05,5
+cluster,cache-aside,write-heavy,500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,5844.21,6848.42,6982.32,7233.71,8203.51,5
+cluster,cache-aside,write-heavy,500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,6164.95,7239.46,7397.63,7720.27,8914.12,5
+cluster,cache-aside,write-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,5750.18,6759.72,6890.51,7137.23,7941.45,5
+cluster,cache-aside,write-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,6071.97,7145.57,7291.16,7586.93,8541.03,5
+cluster,cache-aside,write-heavy,500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,6200.58,7287.68,7430.52,7740.01,8581.18,5
+cluster,cache-aside,write-heavy,750,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,9241.17,10641.08,10813.65,11132.58,11981.25,5
+cluster,cache-aside,write-heavy,750,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,9586.74,11021.59,11216.81,11603.48,12342.16,5
+cluster,cache-aside,write-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,9163.69,10560.58,10728.62,11055.06,11846.33,5
+cluster,cache-aside,write-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,9464.48,10936.72,11120.45,11471.04,12408.81,5
+cluster,cache-aside,write-heavy,750,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,9605.15,11076.83,11272.65,11630.94,12961.53,5
+cluster,cache-aside,write-heavy,1000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,12448.25,14314.57,14487.59,14789.62,15679.53,5
+cluster,cache-aside,write-heavy,1000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,12778.52,14691.52,14867.86,15246.97,16089.8,5
+cluster,cache-aside,write-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,12384.54,14236.34,14393.56,14712.11,15721.3,5
+cluster,cache-aside,write-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,12734.07,14605.62,14788.66,15132.8,16453.73,5
+cluster,cache-aside,write-heavy,1000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,12845.84,14753.06,14939.2,15289.11,16324.47,5
+cluster,cache-aside,write-heavy,1500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,19466.9,22679.51,22906.14,23287.5,24268.72,5
+cluster,cache-aside,write-heavy,1500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,19709.12,23059.23,23302.53,23697.33,24776.4,5
+cluster,cache-aside,write-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,19327.58,22590.08,22825.82,23178.2,23961.08,5
+cluster,cache-aside,write-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,19651.1,22964.75,23195.77,23602.75,24751.27,5
+cluster,cache-aside,write-heavy,1500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,19906.07,23117.33,23361.63,23772.23,24991.55,5
+cluster,cache-aside,write-heavy,2000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,26616.36,30000.65,30000.96,30010.38,30050.75,5
+cluster,cache-aside,write-heavy,2000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,26663,30000.82,30001.27,30010.88,30050.38,5
+cluster,cache-aside,write-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,26572.69,29996.12,30000.93,30009.17,30055.61,5
+cluster,cache-aside,write-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,26702.17,30000.78,30001.15,30011.29,30063.4,5
+cluster,cache-aside,write-heavy,2000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,20452.47,23919.21,24235.92,24712.63,30002.3,5
+cluster,no-cache,read-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,315.66,588.58,681.2,872.09,1365.88,5
+cluster,no-cache,read-heavy,100,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,220.6,434.23,514.45,683.3,1228.28,5
+cluster,no-cache,read-heavy,100,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,221.7,432.31,509.01,694.22,1310.89,5
+cluster,no-cache,read-heavy,100,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,303.97,575.1,668.99,862.53,1501.03,5
+cluster,no-cache,read-heavy,100,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,238.42,456,537.84,719.79,1293.06,5
+cluster,no-cache,read-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,280.67,528.89,617.93,814.68,1360.48,5
+cluster,no-cache,read-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,2279.07,2876.7,2997.95,3308.96,4328.1,5
+cluster,no-cache,read-heavy,250,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,2052.05,2583.07,2688.14,2961.52,3996.29,5
+cluster,no-cache,read-heavy,250,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,2058.94,2591.4,2701.93,2957.07,4383.87,5
+cluster,no-cache,read-heavy,250,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,2262.67,2850.68,2973.72,3271.41,4358.44,5
+cluster,no-cache,read-heavy,250,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,2097.23,2622.93,2738.42,3022.08,3859.99,5
+cluster,no-cache,read-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,2186.75,2754.42,2868.71,3177.17,4568.68,5
+cluster,no-cache,read-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,5588.55,6631.47,6778.22,7070.09,7925.69,5
+cluster,no-cache,read-heavy,500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,5374.51,6359.18,6483.84,6752.43,7897.02,5
+cluster,no-cache,read-heavy,500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,5372.33,6367.41,6495.2,6748.77,7863.99,5
+cluster,no-cache,read-heavy,500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,5578.75,6613.64,6756.16,7044.85,8403.28,5
+cluster,no-cache,read-heavy,500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,5401.52,6388.67,6523.84,6785.8,7817.26,5
+cluster,no-cache,read-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,5523.97,6521.2,6656.96,6952.81,7827.51,5
+cluster,no-cache,read-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,8907.18,10334.44,10480.79,10786.46,11997.25,5
+cluster,no-cache,read-heavy,750,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,8695.7,10070.51,10205.07,10453.68,11279.65,5
+cluster,no-cache,read-heavy,750,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,8719.3,10067.56,10208.15,10476.85,11463.27,5
+cluster,no-cache,read-heavy,750,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,8942.07,10319.47,10476.91,10758.71,12141.81,5
+cluster,no-cache,read-heavy,750,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,8720.87,10114.85,10245.13,10492.49,11417.4,5
+cluster,no-cache,read-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,8804.94,10222.29,10368.04,10637.2,11523.85,5
+cluster,no-cache,read-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,12170.31,13961.42,14126.6,14439.95,15470.73,5
+cluster,no-cache,read-heavy,1000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,11909.25,13681.91,13842.45,14135.89,14794.63,5
+cluster,no-cache,read-heavy,1000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,11930.16,13693.59,13859.89,14146.11,15292.99,5
+cluster,no-cache,read-heavy,1000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,12143.34,13927.43,14095.46,14405.45,15654.98,5
+cluster,no-cache,read-heavy,1000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,11926.47,13725.61,13882.63,14184.02,15451.29,5
+cluster,no-cache,read-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,12102.67,13847.15,14011.74,14337.92,14986.32,5
+cluster,no-cache,read-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,19243.32,22059.23,22242.68,22597.61,23509.72,5
+cluster,no-cache,read-heavy,1500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,18999.02,21778.75,21972.38,22290.93,23005.62,5
+cluster,no-cache,read-heavy,1500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,18990.09,21772.01,21949.17,22273.48,23196.32,5
+cluster,no-cache,read-heavy,1500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,19228.01,22029.08,22215.25,22557.03,23834.5,5
+cluster,no-cache,read-heavy,1500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,18970.09,21796.14,21979.64,22299.24,23168.11,5
+cluster,no-cache,read-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,19091.44,21937.54,22107.36,22451.42,23273.27,5
+cluster,no-cache,read-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,25864.12,29544.2,29664.02,29823.4,30033.8,5
+cluster,no-cache,read-heavy,2000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,25759.08,29315.61,29477.47,29685.7,29897.93,5
+cluster,no-cache,read-heavy,2000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,25707.06,29320.17,29482.09,29667.38,29968.18,5
+cluster,no-cache,read-heavy,2000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,25847,29523.5,29640.2,29804.35,30035.33,5
+cluster,no-cache,read-heavy,2000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,25763.83,29350.68,29512.14,29714.46,29913.88,5
+cluster,no-cache,read-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,25843.45,29454.43,29595.82,29759.04,29965.91,5
+cluster,no-cache,write-heavy,100,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,618.04,959.61,1056.26,1329.93,2719.87,5
+cluster,no-cache,write-heavy,100,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,798.03,1195.72,1326.86,1631.56,2634.19,5
+cluster,no-cache,write-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,822.31,1239.73,1356.68,1647.25,2882.12,5
+cluster,no-cache,write-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,729.3,1114.98,1224.35,1523.32,3242.38,5
+cluster,no-cache,write-heavy,100,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,844.97,1271.11,1390.75,1691.32,2941.15,5
+cluster,no-cache,write-heavy,250,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,2726.67,3374.01,3503.28,3838.46,5058.85,5
+cluster,no-cache,write-heavy,250,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,2922.92,3613.79,3763.6,4224.38,5186.8,5
+cluster,no-cache,write-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,2941.92,3638.19,3781.68,4119.07,5189.8,5
+cluster,no-cache,write-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,2847.26,3521.66,3665.01,4121.13,5427.24,5
+cluster,no-cache,write-heavy,250,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,2961.29,3689.14,3836.67,4211.05,5289.19,5
+cluster,no-cache,write-heavy,500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,6526.31,7543.65,7775.84,12413.69,13096.96,5
+cluster,no-cache,write-heavy,500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,6701.78,7792.91,9280.33,12627.49,13403.79,5
+cluster,no-cache,write-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,6750.31,7798.44,8042.19,12669.44,13493,5
+cluster,no-cache,write-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,6655.87,7702.81,9076.39,12558.23,13405.46,5
+cluster,no-cache,write-heavy,500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,6705.6,7838.78,8029.59,12712.19,13706.87,5
+cluster,no-cache,write-heavy,750,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,9851.55,11392.72,11584.74,11990.35,13113.81,5
+cluster,no-cache,write-heavy,750,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,10069.03,11636.27,11831.3,12245.31,13054.66,5
+cluster,no-cache,write-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,10090.26,11664.19,11859.01,12256.92,13500.46,5
+cluster,no-cache,write-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,9985.68,11549.68,11739.09,12168.3,13446.51,5
+cluster,no-cache,write-heavy,750,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,10103.88,11701.42,11897.33,12333.52,13569.66,5
+cluster,no-cache,write-heavy,1000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,13614.01,15610.77,15788.01,16120.17,16958.06,5
+cluster,no-cache,write-heavy,1000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,13795.58,15840.51,16029.72,16356.36,17072.16,5
+cluster,no-cache,write-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,13839.7,15873.67,16077.33,16409.63,17377.32,5
+cluster,no-cache,write-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,13753.15,15755.26,15943.96,16280.37,17491.41,5
+cluster,no-cache,write-heavy,1000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,13865.99,15914.75,16109.91,16455.78,17771.04,5
+cluster,no-cache,write-heavy,1500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,20762.67,24414.55,24643.84,25267.12,26148.01,5
+cluster,no-cache,write-heavy,1500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,20884.88,24629.55,24896.8,25512.97,26226.64,5
+cluster,no-cache,write-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,20942.23,24633.32,24883.4,25568.2,26671.22,5
+cluster,no-cache,write-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,20797.68,24518.98,24773.3,25436.07,26444.13,5
+cluster,no-cache,write-heavy,1500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,21309.79,24711.25,24988.13,25656.45,26476.25,5
+cluster,no-cache,write-heavy,2000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,27106.24,30000.94,30002.89,30014.44,30063.94,5
+cluster,no-cache,write-heavy,2000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,27256.63,30000.99,30003.17,30016.74,30059.41,5
+cluster,no-cache,write-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,27195.86,30000.96,30002.82,30015.21,30066.28,5
+cluster,no-cache,write-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,27089.06,30000.96,30002.77,30015.7,30062.6,5
+cluster,no-cache,write-heavy,2000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,19447.87,25587.71,25843.51,26284.8,29487.79,5
+cluster,read-through,read-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,155.46,310.87,382.93,533.76,1169.52,5
+cluster,read-through,read-heavy,100,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,170.46,345.22,420.25,586.83,1027.08,5
+cluster,read-through,read-heavy,100,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,175.01,352.09,426.4,593.28,1097.41,5
+cluster,read-through,read-heavy,100,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,210.71,418.89,498.2,665.94,1254.11,5
+cluster,read-through,read-heavy,100,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,209.07,404.62,487.24,642.98,991.19,5
+cluster,read-through,read-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,242.74,467.29,559.95,760.23,1178.52,5
+cluster,read-through,read-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,1724.74,2186.13,2288.82,2532.16,3688.66,5
+cluster,read-through,read-heavy,250,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,1762.05,2247.39,2349.72,2615.08,3619.26,5
+cluster,read-through,read-heavy,250,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,1785.93,2271.17,2373.58,2620.62,3639.71,5
+cluster,read-through,read-heavy,250,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,1904.03,2424.42,2539.95,2807.23,3987.59,5
+cluster,read-through,read-heavy,250,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,1861.43,2365.72,2471.95,2716.58,3882.78,5
+cluster,read-through,read-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,1976.25,2518.84,2632.99,2905.44,3951.28,5
+cluster,read-through,read-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,4679.16,5491.69,5597.94,5832.83,6731.69,5
+cluster,read-through,read-heavy,500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,4720.35,5548.85,5660.33,5898.56,7014.52,5
+cluster,read-through,read-heavy,500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,4761.58,5583.57,5698.45,5938.69,6891.02,5
+cluster,read-through,read-heavy,500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,4869.95,5723.97,5843.99,6100.31,7227.67,5
+cluster,read-through,read-heavy,500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,4846.21,5673.39,5790.1,6045.45,6917.9,5
+cluster,read-through,read-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,4949.89,5819.62,5936.15,6197.57,7138.8,5
+cluster,read-through,read-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,7718.54,8866.14,9012.12,9362.57,10516.98,5
+cluster,read-through,read-heavy,750,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,7747.85,8915.04,9081.81,9428.72,10305.4,5
+cluster,read-through,read-heavy,750,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,7800.38,8946.35,9111.34,9466.12,10704.69,5
+cluster,read-through,read-heavy,750,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,7884.84,9099.17,9265,9611.72,10721.76,5
+cluster,read-through,read-heavy,750,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,7845.22,9045.06,9225.02,9561.12,10639.48,5
+cluster,read-through,read-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,7959.77,9187.92,9377.41,9725.8,10554.89,5
+cluster,read-through,read-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,10772.1,12260.91,12539.51,12949.83,14116.55,5
+cluster,read-through,read-heavy,1000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,10809.84,12352.43,12615.72,13056.53,13808.02,5
+cluster,read-through,read-heavy,1000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,10833.73,12377.16,12643.77,13088.47,14064.03,5
+cluster,read-through,read-heavy,1000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,10984.91,12504.69,12775.71,13199.87,14351.5,5
+cluster,read-through,read-heavy,1000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,10909.47,12457.23,12737.62,13176.89,13805.64,5
+cluster,read-through,read-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,11015.98,12584.51,12869.17,13312.88,14235.94,5
+cluster,read-through,read-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,17208.05,19611.15,19810.07,20151.15,21201.6,5
+cluster,read-through,read-heavy,1500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,17270.26,19650.18,19846.98,20196.47,21019.57,5
+cluster,read-through,read-heavy,1500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,17305.76,19686.58,19901.96,20249.47,21318.14,5
+cluster,read-through,read-heavy,1500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,17448.16,19835.81,20049.33,20408.78,21237.82,5
+cluster,read-through,read-heavy,1500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,17382.49,19775.44,19987.77,20339.61,21033.6,5
+cluster,read-through,read-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,17584.02,19924.25,20139.79,20512.91,21484.17,5
+cluster,read-through,read-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,23741.8,27067.22,27322.5,27650.59,28335.63,5
+cluster,read-through,read-heavy,2000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,23791.04,27142.42,27402.33,27761.24,28459.45,5
+cluster,read-through,read-heavy,2000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,23772.36,27138.42,27403.33,27754.57,28548.34,5
+cluster,read-through,read-heavy,2000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,23904.05,27296.45,27554.1,27920.07,28577.71,5
+cluster,read-through,read-heavy,2000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,23874.01,27236.96,27502.98,27862.46,28447.6,5
+cluster,read-through,read-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,24009.37,27406.33,27672.17,28035.19,28529.38,5
+cluster,read-through,write-heavy,100,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,630.62,986.15,1091.05,1357.07,2512.72,5
+cluster,read-through,write-heavy,100,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,924.72,1391.51,1511.9,1815.79,2563.38,5
+cluster,read-through,write-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,591.76,926.09,1024.47,1290.61,2684.22,5
+cluster,read-through,write-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,861.19,1306.44,1431.83,1745.97,3036.82,5
+cluster,read-through,write-heavy,100,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,967.93,1450.35,1577.52,1871.88,2859.71,5
+cluster,read-through,write-heavy,250,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,2743.63,3402.78,3517.05,3792.98,4926.55,5
+cluster,read-through,write-heavy,250,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,3051.3,3785.24,3912.96,4187.93,5358.28,5
+cluster,read-through,write-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,2702.92,3338.19,3447.35,3690.7,4720.31,5
+cluster,read-through,write-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,2975.27,3697,3828.51,4107.85,5297.6,5
+cluster,read-through,write-heavy,250,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,3098.07,3842.68,3980.75,4257.03,5350.12,5
+cluster,read-through,write-heavy,500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,6384.94,7519.83,7649,7913.85,9075.02,5
+cluster,read-through,write-heavy,500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,6691.42,7897.23,8055.22,8383.44,9345.58,5
+cluster,read-through,write-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,6328.7,7452.49,7586.84,7840.76,8683.48,5
+cluster,read-through,write-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,6600.27,7799.69,7953.68,8260.01,9276.44,5
+cluster,read-through,write-heavy,500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,6734.52,7949.98,8124.26,8447.7,9392.06,5
+cluster,read-through,write-heavy,750,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,9855.11,11335.75,11516.06,11836.91,12758.42,5
+cluster,read-through,write-heavy,750,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,10198.26,11689.94,11881.95,12201.33,12951.58,5
+cluster,read-through,write-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,9813.39,11283.5,11455.45,11770.4,12902.41,5
+cluster,read-through,write-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,10113.7,11607.59,11789.79,12129.43,13209.87,5
+cluster,read-through,write-heavy,750,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,10230.48,11751.14,11944.61,12300.68,13500.11,5
+cluster,read-through,write-heavy,1000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,13428.59,15327.67,15483.19,15782.38,16536.64,5
+cluster,read-through,write-heavy,1000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,13729.52,15669.61,15839.42,16142.21,16915.79,5
+cluster,read-through,write-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,13329.6,15269.87,15414.93,15703.18,16829.35,5
+cluster,read-through,write-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,13637.16,15590.07,15761.49,16075.77,17014.91,5
+cluster,read-through,write-heavy,1000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,13840.39,15745.36,15920.81,16242.55,17432.47,5
+cluster,read-through,write-heavy,1500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,21180.18,25212.07,25330.09,25577.91,26392.61,5
+cluster,read-through,write-heavy,1500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,21338.34,25483.58,25632.85,25887.67,26720.24,5
+cluster,read-through,write-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,20944.64,25163.09,25287.31,25512.36,26286.88,5
+cluster,read-through,write-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,21230.7,25427.43,25570.78,25830.21,26958.99,5
+cluster,read-through,write-heavy,1500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,21284.47,24662.08,25684.61,25950.59,26609.02,5
+cluster,read-through,write-heavy,2000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,27180.96,30000.94,30001.65,30014.04,30064.66,5
+cluster,read-through,write-heavy,2000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,27354.51,30000.96,30001.44,30012.96,30059.64,5
+cluster,read-through,write-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,27191.32,30000.93,30001.41,30013.83,30069.68,5
+cluster,read-through,write-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,27314.04,30000.94,30001.45,30013.61,30077.97,5
+cluster,read-through,write-heavy,2000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,19268.43,25848.83,26095.76,26483.07,30000.78,5
+cluster,write-through,read-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,156.64,325.55,393.39,542.51,1155.92,5
+cluster,write-through,read-heavy,100,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,171.8,353.94,425.89,577.75,961.8,5
+cluster,write-through,read-heavy,100,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,177.47,368.05,439.15,599.84,1117.72,5
+cluster,write-through,read-heavy,100,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,211.46,430.16,511.49,679.33,1183.18,5
+cluster,write-through,read-heavy,100,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,206.6,412.49,489.54,655.44,1000.47,5
+cluster,write-through,read-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,242.78,478.56,561.45,742.92,1113.05,5
+cluster,write-through,read-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,1753.81,2222.13,2314.29,2520.06,3569.17,5
+cluster,write-through,read-heavy,250,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,1805.39,2288.39,2394.91,2654.32,3738.43,5
+cluster,write-through,read-heavy,250,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,1824.64,2308.12,2405.28,2641.24,3758.16,5
+cluster,write-through,read-heavy,250,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,1941.42,2457.65,2559.98,2794.58,4065.2,5
+cluster,write-through,read-heavy,250,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,1893.22,2408.82,2516.93,2777.51,3737.76,5
+cluster,write-through,read-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,2024.89,2565.34,2686.09,2941.96,3820.24,5
+cluster,write-through,read-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,4891.79,5680.24,5902.75,11105.84,11734.24,5
+cluster,write-through,read-heavy,500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,4923.65,5740.28,6071.72,11179.09,12330.26,5
+cluster,write-through,read-heavy,500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,4966.08,5775.94,6080.86,11202.94,13192.6,5
+cluster,write-through,read-heavy,500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,5111.14,5932.66,6270,11324.26,12153.24,5
+cluster,write-through,read-heavy,500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,5106.36,5882.45,6228.11,11274.09,12048.75,5
+cluster,write-through,read-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,5204.85,6024.72,6356.01,11431.03,12259.83,5
+cluster,write-through,read-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,7647.52,8805.64,8941.94,9188.72,10118.92,5
+cluster,write-through,read-heavy,750,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,7685.54,8868.44,9006.31,9286.21,10465.79,5
+cluster,write-through,read-heavy,750,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,7704.66,8888.15,9023.1,9274.22,10388.57,5
+cluster,write-through,read-heavy,750,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,7855.93,9032.98,9176.62,9445.05,10577.26,5
+cluster,write-through,read-heavy,750,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,7749.82,8977.62,9111.99,9394.09,10411.84,5
+cluster,write-through,read-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,7894.89,9129.23,9275.57,9553.38,10252.4,5
+cluster,write-through,read-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,10813.97,12365.36,12555.93,12895.87,13587.56,5
+cluster,write-through,read-heavy,1000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,10887.32,12412.31,12615.15,12957.61,13873.83,5
+cluster,write-through,read-heavy,1000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,10893.08,12448.16,12647.39,12985.34,13883.42,5
+cluster,write-through,read-heavy,1000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,11000.75,12597.42,12801.65,13129.76,14148.84,5
+cluster,write-through,read-heavy,1000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,10942.49,12535.19,12734.72,13058.96,13983.32,5
+cluster,write-through,read-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,11078.8,12695.48,12902.67,13236.74,13816.29,5
+cluster,write-through,read-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,17591.67,20152.09,20390.94,20754.2,21797.57,5
+cluster,write-through,read-heavy,1500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,17623.23,20205.17,20420.74,20844.97,22063.58,5
+cluster,write-through,read-heavy,1500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,17738.27,20249.37,20502.4,20878.67,22048.32,5
+cluster,write-through,read-heavy,1500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,17799.31,20394.64,20652.5,21063.24,22560.01,5
+cluster,write-through,read-heavy,1500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,17667.88,20332.2,20577.21,20983.06,21880.86,5
+cluster,write-through,read-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,17848.24,20468.21,20728.39,21140.69,22134.83,5
+cluster,write-through,read-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,23679.28,27042.09,27269.09,27583.38,28394.93,5
+cluster,write-through,read-heavy,2000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,23814.61,27098.69,27321.24,27668.56,28394.85,5
+cluster,write-through,read-heavy,2000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,23797.21,27119.06,27353.87,27671.16,28784.15,5
+cluster,write-through,read-heavy,2000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,23980.96,27270.71,27503.12,27859.51,28579.77,5
+cluster,write-through,read-heavy,2000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,23942.51,27228.89,27440.86,27779.01,28727.57,5
+cluster,write-through,read-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,24058.76,27360.83,27602.07,27976.45,28848.08,5
+cluster,write-through,write-heavy,100,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,624.52,970.31,1060.8,1315.06,2339.51,5
+cluster,write-through,write-heavy,100,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,914.69,1371.16,1503.71,1776.82,2614.58,5
+cluster,write-through,write-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,575.98,904.77,999.94,1273.04,2550.29,5
+cluster,write-through,write-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,844.44,1281.12,1392.99,1681.1,3243.73,5
+cluster,write-through,write-heavy,100,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,948.8,1423.79,1540.61,1841.21,2995.18,5
+cluster,write-through,write-heavy,250,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,2777.92,3428.08,3560.75,3828.69,4650.52,5
+cluster,write-through,write-heavy,250,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,3076.9,3826.79,3971.58,4312.04,5233.15,5
+cluster,write-through,write-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,2727.93,3366.87,3487.42,3743,4997.23,5
+cluster,write-through,write-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,3013.43,3735.29,3882.28,4194.8,5224.68,5
+cluster,write-through,write-heavy,250,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,3138.05,3884.45,4037.22,4379.98,5338.57,5
+cluster,write-through,write-heavy,500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,6460.04,7638.19,7788.98,8082.89,9136.79,5
+cluster,write-through,write-heavy,500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,6811.24,8050.93,8217.8,8519.7,9452.25,5
+cluster,write-through,write-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,6414.28,7587.32,7740.2,8044.31,9117.29,5
+cluster,write-through,write-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,6710.54,7940.05,8100.1,8437.7,9361.09,5
+cluster,write-through,write-heavy,500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,6855.93,8094.48,8267.09,8589.07,9808.9,5
+cluster,write-through,write-heavy,750,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,10211.18,11788.89,11959.81,12287.4,13405.86,5
+cluster,write-through,write-heavy,750,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,10560.31,12168.43,12360.01,12722.62,13463.61,5
+cluster,write-through,write-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,10157.35,11727.2,11896.74,12207.77,13213.47,5
+cluster,write-through,write-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,10462.96,12070.89,12261.21,12597.46,13445.7,5
+cluster,write-through,write-heavy,750,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,10591.77,12217.63,12407.69,12752.34,13912.8,5
+cluster,write-through,write-heavy,1000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,13807.31,15826.01,16006.64,16335.93,17504.57,5
+cluster,write-through,write-heavy,1000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,14145.08,16207.04,16411.21,16768.83,17511.83,5
+cluster,write-through,write-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,13750.31,15766.31,15957.08,16283.31,17498.69,5
+cluster,write-through,write-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,14061.91,16112.84,16304.29,16661.37,17560.45,5
+cluster,write-through,write-heavy,1000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,14186.82,16241.6,16435.89,16815.12,17832.67,5
+cluster,write-through,write-heavy,1500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,21296.88,24976.04,25226.33,25726.25,26422.51,5
+cluster,write-through,write-heavy,1500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,21716.63,25340.93,25631.44,26158.06,27262.65,5
+cluster,write-through,write-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,21192.46,24906.06,25174.37,25694.74,26395.16,5
+cluster,write-through,write-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,21521.67,25269.52,25572.06,26098.3,26981.6,5
+cluster,write-through,write-heavy,1500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,21922.19,25402.54,25695.49,26210.76,27006.72,5
+cluster,write-through,write-heavy,2000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,27368.29,30000.98,30002.16,30016.02,30074.99,5
+cluster,write-through,write-heavy,2000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,27335.25,30000.99,30002.58,30016.16,30066.01,5
+cluster,write-through,write-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,27308.91,30000.97,30002.07,30015.27,30076.76,5
+cluster,write-through,write-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,27310.52,30000.98,30002.38,30016.14,30085.19,5
+cluster,write-through,write-heavy,2000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,19048.02,25734.92,25934.19,26312.49,29049.91,5
+single,cache-aside,read-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,56.81,110.17,137.01,198.84,468.92,5
+single,cache-aside,read-heavy,100,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,63.37,122.73,154.02,216.59,408.23,5
+single,cache-aside,read-heavy,100,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,64.66,125.76,157.01,229.17,452.06,5
+single,cache-aside,read-heavy,100,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,81.45,158.05,194.81,275.78,483.96,5
+single,cache-aside,read-heavy,100,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,90.07,161.25,195.56,272.43,442.96,5
+single,cache-aside,read-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,104.95,187.3,225.49,309.9,497.42,5
+single,cache-aside,read-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,1019.49,1346.39,1427.42,1603.29,2938.23,5
+single,cache-aside,read-heavy,250,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,1054.15,1390.45,1476.21,1650.94,2533.19,5
+single,cache-aside,read-heavy,250,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,1075.47,1423.64,1507.26,1695.23,2706.35,5
+single,cache-aside,read-heavy,250,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,1195.95,1573.9,1668.78,1888.29,2967.62,5
+single,cache-aside,read-heavy,250,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,1150.65,1519.88,1614.18,1814.79,2644.76,5
+single,cache-aside,read-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,1245.95,1641.87,1740.53,1965.1,2825.42,5
+single,cache-aside,read-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,3235.48,3860.11,3949.92,4133.77,5175.42,5
+single,cache-aside,read-heavy,500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,3270.63,3901.15,3992.97,4189.25,5540.23,5
+single,cache-aside,read-heavy,500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,3289.08,3931.69,4027.08,4228.81,5627.91,5
+single,cache-aside,read-heavy,500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,3418.2,4080.64,4181.5,4403.34,5358.66,5
+single,cache-aside,read-heavy,500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,3364.61,4023.49,4122.64,4324.59,5265.82,5
+single,cache-aside,read-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,3464.6,4150.42,4255.07,4479.59,5365.17,5
+single,cache-aside,read-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,5475.16,6366.13,6490.01,6725.11,7771.15,5
+single,cache-aside,read-heavy,750,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,5528.16,6408.91,6538.34,6778.92,7706.19,5
+single,cache-aside,read-heavy,750,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,5543.23,6445.73,6575.02,6818.84,7886.65,5
+single,cache-aside,read-heavy,750,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,5665.88,6585.21,6715.1,6970.23,8249.13,5
+single,cache-aside,read-heavy,750,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,5621.23,6534.35,6659.78,6905.98,7828.47,5
+single,cache-aside,read-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,5727,6651.45,6784.13,7054.51,7931.71,5
+single,cache-aside,read-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,7701.3,8864.06,8977.8,9185.94,10248.42,5
+single,cache-aside,read-heavy,1000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,7734.44,8903.67,9016.01,9243.33,9992.28,5
+single,cache-aside,read-heavy,1000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,7762.27,8938.65,9053.84,9264.6,10237.05,5
+single,cache-aside,read-heavy,1000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,7884.08,9082.26,9203.49,9432.11,10445.57,5
+single,cache-aside,read-heavy,1000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,7834.76,9022.85,9139.6,9374.51,10340.95,5
+single,cache-aside,read-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,7938.35,9141.76,9266.87,9495.27,10299.63,5
+single,cache-aside,read-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,12281.31,14013.59,14140.04,14399.81,15272.17,5
+single,cache-aside,read-heavy,1500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,12300.57,14048.46,14174.73,14436.13,15069.28,5
+single,cache-aside,read-heavy,1500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,12350.91,14082.36,14207.49,14470.72,15922.11,5
+single,cache-aside,read-heavy,1500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,12486.11,14223.49,14355.95,14612.99,15534.88,5
+single,cache-aside,read-heavy,1500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,12386.01,14172.63,14298.61,14560.75,15378.31,5
+single,cache-aside,read-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,12538.74,14286.21,14420.05,14703.48,15518.66,5
+single,cache-aside,read-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,17176.32,19552.04,19778.26,20062.32,20769.67,5
+single,cache-aside,read-heavy,2000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,17256.8,19593.9,19811.03,20110.36,20887.01,5
+single,cache-aside,read-heavy,2000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,17268.33,19625.88,19850.34,20143.38,20977.88,5
+single,cache-aside,read-heavy,2000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,17396.44,19769.1,19999.27,20317.3,21404.99,5
+single,cache-aside,read-heavy,2000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,17354.93,19705.4,19933.65,20229.27,21126.62,5
+single,cache-aside,read-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,17461.68,19834.66,20055.45,20372.58,21289.73,5
+single,cache-aside,write-heavy,100,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,290.4,493.55,566.49,743.32,1740.68,5
+single,cache-aside,write-heavy,100,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,483.13,776.57,865.62,1065.1,2021.67,5
+single,cache-aside,write-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,248.04,431.04,499.56,681.26,1428.52,5
+single,cache-aside,write-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,436.48,710.63,796.53,990.54,1809.41,5
+single,cache-aside,write-heavy,100,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,507.84,815.49,911.9,1137.13,1899.89,5
+single,cache-aside,write-heavy,250,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,1835.16,2291.06,2375.93,2566.97,3360.52,5
+single,cache-aside,write-heavy,250,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,2069.94,2592.77,2694.17,2917.3,3783.39,5
+single,cache-aside,write-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,1779.92,2218.9,2299.68,2482.52,3536.24,5
+single,cache-aside,write-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,2016.78,2519.27,2610.11,2825,3858.45,5
+single,cache-aside,write-heavy,250,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,2107.46,2637.14,2741.49,2964.37,4001.48,5
+single,cache-aside,write-heavy,500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,4450.19,5233.44,5340.41,5578.43,6424.54,5
+single,cache-aside,write-heavy,500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,4675.31,5524.99,5642.44,5911.45,6443.87,5
+single,cache-aside,write-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,4391.56,5171.25,5278.56,5527.29,6322.57,5
+single,cache-aside,write-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,4618.75,5457.16,5573.47,5846.44,6781.12,5
+single,cache-aside,write-heavy,500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,4731.6,5582.75,5705.6,5979.78,6908.82,5
+single,cache-aside,write-heavy,750,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,7069.32,8204.51,8317.64,8547.81,9454.1,5
+single,cache-aside,write-heavy,750,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,7346.24,8503.39,8632.5,8890.83,9765.02,5
+single,cache-aside,write-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,7013.32,8146.36,8250,8474.05,9489.29,5
+single,cache-aside,write-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,7276.29,8422.28,8543.95,8789.2,9754.91,5
+single,cache-aside,write-heavy,750,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,7366.99,8547.13,8677.37,8931.11,10091.55,5
+single,cache-aside,write-heavy,1000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,9791.67,11243.86,11366.22,11609.14,12480.62,5
+single,cache-aside,write-heavy,1000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,10106.34,11536.46,11671.44,11923.79,12810.39,5
+single,cache-aside,write-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,9765.93,11188.02,11302.6,11521.42,12522.86,5
+single,cache-aside,write-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,10002.91,11454.5,11594.87,11845.4,12600.18,5
+single,cache-aside,write-heavy,1000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,10123.74,11588.59,11724.06,11987.64,12947.76,5
+single,cache-aside,write-heavy,1500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,15308.96,17690.06,17829.61,18079.65,19015.49,5
+single,cache-aside,write-heavy,1500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,15488.68,17983.81,18130.06,18384.54,19350.15,5
+single,cache-aside,write-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,15263.12,17627.36,17767.54,17996.08,18698.26,5
+single,cache-aside,write-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,15430.41,17910.67,18054.51,18318.75,19361.84,5
+single,cache-aside,write-heavy,1500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,15617.6,18037.64,18188.88,18462.34,19840.15,5
+single,cache-aside,write-heavy,2000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,21671.97,24969.83,25116.79,25381.08,26125.13,5
+single,cache-aside,write-heavy,2000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,21817.9,25260.69,25422.99,25702.47,26301.78,5
+single,cache-aside,write-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,21534.54,24903.15,25044.86,25297.64,26302.26,5
+single,cache-aside,write-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,21821.05,25189,25340.46,25623.26,26611.86,5
+single,cache-aside,write-heavy,2000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,16910.84,18860.85,19007.58,19290.46,25422.22,5
+single,no-cache,read-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,151.52,283.9,337.22,438.98,843.24,5
+single,no-cache,read-heavy,100,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,101.89,196.51,236.88,332.49,656.42,5
+single,no-cache,read-heavy,100,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,100.76,197.05,236.15,330.87,603.9,5
+single,no-cache,read-heavy,100,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,138.09,268.23,317.79,415.92,802.64,5
+single,no-cache,read-heavy,100,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,115.26,213.06,252.4,347.74,638.87,5
+single,no-cache,read-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,134.8,248.53,296.19,395.48,687,5
+single,no-cache,read-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,1700.78,2149.19,2242.93,2467.93,3484.24,5
+single,no-cache,read-heavy,250,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,1498.81,1898.4,1973.91,2172.28,3365.23,5
+single,no-cache,read-heavy,250,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,1505.04,1904.2,1983.18,2201.82,3432.55,5
+single,no-cache,read-heavy,250,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,1670.86,2116.07,2207.27,2420.21,3877.94,5
+single,no-cache,read-heavy,250,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,1524.62,1923.75,1996.97,2181.31,3159.6,5
+single,no-cache,read-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,1602.48,2034.96,2126.06,2335.19,3500.55,5
+single,no-cache,read-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,4366.56,5157.54,5266.07,5500.82,6523.18,5
+single,no-cache,read-heavy,500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,4165.7,4914.89,5011.66,5221.21,6278.32,5
+single,no-cache,read-heavy,500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,4161.78,4914.38,5003.27,5226.81,6259.84,5
+single,no-cache,read-heavy,500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,4330.99,5121.77,5226.62,5456.64,6631.47,5
+single,no-cache,read-heavy,500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,4194.12,4937.03,5036.89,5251.66,6050.26,5
+single,no-cache,read-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,4255.93,5046.25,5152.38,5384.22,6278.11,5
+single,no-cache,read-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,7108.3,8235.38,8344.57,8573.88,9906.97,5
+single,no-cache,read-heavy,750,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,6898.49,7983.55,8083.15,8281.47,9339.87,5
+single,no-cache,read-heavy,750,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,6887.99,7992.14,8095.65,8302.21,9331.99,5
+single,no-cache,read-heavy,750,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,7076.37,8194.13,8305.79,8532.78,9581.37,5
+single,no-cache,read-heavy,750,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,6906.61,8015.33,8112.23,8315.28,9095.4,5
+single,no-cache,read-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,6997.91,8113.69,8221.65,8447.43,9514.3,5
+single,no-cache,read-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,9761.98,11240.09,11385.32,11615.51,12915.34,5
+single,no-cache,read-heavy,1000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,9538.84,11011.31,11145.04,11341.37,12257.79,5
+single,no-cache,read-heavy,1000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,9589.49,11012.02,11143.14,11358.74,12273.79,5
+single,no-cache,read-heavy,1000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,9727.94,11208.31,11345.18,11565.1,12545.06,5
+single,no-cache,read-heavy,1000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,9583.8,11041.14,11171.14,11383.75,12461.76,5
+single,no-cache,read-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,9655.33,11136.85,11262.57,11487.9,12378.87,5
+single,no-cache,read-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,15644.36,17904.73,18359.18,18760.97,19763.38,5
+single,no-cache,read-heavy,1500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,15435.92,17640.01,18064.9,18494.36,19204.86,5
+single,no-cache,read-heavy,1500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,15430.41,17664.06,18090.42,18493.42,19285.56,5
+single,no-cache,read-heavy,1500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,15620.88,17862.77,18306.47,18713.91,19571.08,5
+single,no-cache,read-heavy,1500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,15436.97,17696.64,18101.95,18511.18,19356.58,5
+single,no-cache,read-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,15579.69,17809.9,18252.99,18645.13,19520.97,5
+single,no-cache,read-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,21083.09,24003.56,24277.94,24587.22,25574.44,5
+single,no-cache,read-heavy,2000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,20861.88,23759.49,24040.12,24317.02,25098.25,5
+single,no-cache,read-heavy,2000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,20882.73,23766.69,24036.62,24347.48,25287.53,5
+single,no-cache,read-heavy,2000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,21036.45,23972.45,24237.81,24562.48,25514.37,5
+single,no-cache,read-heavy,2000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,20908.05,23795.58,24046.05,24342.46,24951.28,5
+single,no-cache,read-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,21004.85,23886.17,24151.49,24464.2,25065.44,5
+single,no-cache,write-heavy,100,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,365.17,591.28,670.12,882.81,1854.38,5
+single,no-cache,write-heavy,100,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,498.7,766.51,854.38,1036.93,1794.8,5
+single,no-cache,write-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,531.24,817.77,914.5,1141.52,1902.25,5
+single,no-cache,write-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,449.09,705.14,791.26,1020.18,1994.03,5
+single,no-cache,write-heavy,100,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,539.4,827.08,924.45,1150.43,2425.25,5
+single,no-cache,write-heavy,250,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,2019.81,2490.9,2571.96,2778.01,3844.29,5
+single,no-cache,write-heavy,250,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,2160.57,2668.96,2761.71,3002.14,3887.65,5
+single,no-cache,write-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,2209.76,2723.18,2814.29,3043.04,4245.15,5
+single,no-cache,write-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,2111.84,2603.7,2690.36,2887.28,3966.8,5
+single,no-cache,write-heavy,250,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,2218.16,2732.51,2822.48,3022.14,4063.87,5
+single,no-cache,write-heavy,500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,4892.13,5767.13,5884.75,6120.11,7181.37,5
+single,no-cache,write-heavy,500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,5047.56,5952.03,6075.15,6334.19,7213.74,5
+single,no-cache,write-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,5107.08,5998.24,6125.9,6389.91,7464.52,5
+single,no-cache,write-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,4993.07,5881.46,6004.02,6265.17,7553.75,5
+single,no-cache,write-heavy,500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,5102.95,6006.71,6128.85,6393.53,7469.32,5
+single,no-cache,write-heavy,750,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,7682.57,8874.52,9009.98,9310.66,10097.94,5
+single,no-cache,write-heavy,750,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,7862.42,9056.96,9199.32,9517.68,10316.27,5
+single,no-cache,write-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,7898.73,9105.15,9240.46,9555.7,10648.15,5
+single,no-cache,write-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,7822.44,8993.38,9129.4,9447.16,10316.42,5
+single,no-cache,write-heavy,750,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,7923.23,9110.19,9253.06,9577.62,10392.27,5
+single,no-cache,write-heavy,1000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,10590.37,12188.76,12361.73,12704.84,13319.15,5
+single,no-cache,write-heavy,1000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,10760.69,12372.6,12552.46,12892.8,13620.2,5
+single,no-cache,write-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,10776.97,12414.47,12599.01,12953.79,13732.76,5
+single,no-cache,write-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,10654.9,12297.35,12482.39,12837.9,13936.68,5
+single,no-cache,write-heavy,1000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,10809.62,12436.75,12616.58,12957.23,13662.21,5
+single,no-cache,write-heavy,1500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,16860.92,19665.59,19926.65,20336.79,21302.14,5
+single,no-cache,write-heavy,1500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,16976.09,19851.2,20126.9,20527.64,21167.28,5
+single,no-cache,write-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,16995.46,19877.2,20146.83,20575.82,21409.61,5
+single,no-cache,write-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,16932.81,19787.14,20064.11,20450.13,21112.11,5
+single,no-cache,write-heavy,1500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,17095.06,19900.19,20198.74,20605.73,21487.93,5
+single,no-cache,write-heavy,2000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,23703.52,27365.06,27496.25,27686.62,28389.18,5
+single,no-cache,write-heavy,2000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,23796.5,27501.18,27628.86,27825.62,28385.2,5
+single,no-cache,write-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,23825.53,27535.37,27668.34,27881.18,28534.1,5
+single,no-cache,write-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,23780.22,27449.53,27577.39,27785.07,28553.96,5
+single,no-cache,write-heavy,2000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,18381.59,20594.9,20786.2,21245.03,27941.49,5
+single,read-through,read-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,77.06,154.87,190.79,273.97,533.55,5
+single,read-through,read-heavy,100,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,85.18,169.47,210.29,299.83,548.21,5
+single,read-through,read-heavy,100,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,87.8,176.2,217.81,306.27,569.82,5
+single,read-through,read-heavy,100,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,105.07,211.7,261.57,364.65,642.5,5
+single,read-through,read-heavy,100,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,109.84,204.08,245.42,345.1,549.76,5
+single,read-through,read-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,128.09,239.7,286.61,393.34,624.67,5
+single,read-through,read-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,1197.53,1526.93,1600.09,1790.99,2785.71,5
+single,read-through,read-heavy,250,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,1236.79,1572.32,1654.07,1849.43,2863.91,5
+single,read-through,read-heavy,250,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,1255.51,1599.18,1680.67,1881.66,2651.96,5
+single,read-through,read-heavy,250,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,1354.22,1724.54,1810.98,2016.67,3132.34,5
+single,read-through,read-heavy,250,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,1322.98,1669.21,1752,1958.56,2900.34,5
+single,read-through,read-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,1406.2,1786.19,1878.27,2089.97,2843.87,5
+single,read-through,read-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,3601.36,4238.4,4322.04,4498.18,5522.67,5
+single,read-through,read-heavy,500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,3638.63,4281.76,4366.17,4548.27,5285.97,5
+single,read-through,read-heavy,500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,3665.33,4308.72,4395.72,4597.08,5569.41,5
+single,read-through,read-heavy,500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,3758.54,4431.42,4523.95,4717.39,5668.69,5
+single,read-through,read-heavy,500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,3710.6,4375.74,4468.22,4668.37,5378.74,5
+single,read-through,read-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,3816.19,4487.25,4579.96,4796.83,5761.95,5
+single,read-through,read-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,5967.93,6906.44,6998.99,7201.89,8198.32,5
+single,read-through,read-heavy,750,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,6009.95,6944.43,7040.44,7237.11,7987.18,5
+single,read-through,read-heavy,750,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,6039.44,6977.34,7076.28,7286.65,8311.81,5
+single,read-through,read-heavy,750,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,6140.94,7094.84,7196.02,7420.84,8605.41,5
+single,read-through,read-heavy,750,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,6098.95,7044.59,7145.66,7368.07,8046.8,5
+single,read-through,read-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,6197.05,7151.38,7252.6,7475.06,8094.33,5
+single,read-through,read-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,8395.28,9615.36,9722.42,9934.41,10979.25,5
+single,read-through,read-heavy,1000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,8447.76,9660.97,9774.04,9988.58,10699.23,5
+single,read-through,read-heavy,1000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,8458.19,9682.63,9798.72,10015.3,10914.73,5
+single,read-through,read-heavy,1000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,8579.05,9795.99,9911.17,10138.81,10929.59,5
+single,read-through,read-heavy,1000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,8526.03,9746.6,9863.28,10077.22,10987.9,5
+single,read-through,read-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,8630.3,9858.84,9976.55,10206.47,10925.28,5
+single,read-through,read-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,13595.89,15455.44,15569.21,15779.69,16874.97,5
+single,read-through,read-heavy,1500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,13668.26,15497.31,15610.36,15825.2,16701.79,5
+single,read-through,read-heavy,1500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,13699.92,15526.84,15644.88,15854.75,16648.03,5
+single,read-through,read-heavy,1500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,13768.33,15641.43,15762.25,15983.95,17254.63,5
+single,read-through,read-heavy,1500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,13767.92,15599.11,15702.33,15911.46,16647.18,5
+single,read-through,read-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,13829.73,15697.93,15814.76,16048.57,16840.99,5
+single,read-through,read-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,18760.85,21224.1,21388.11,21638.94,22310.43,5
+single,read-through,read-heavy,2000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,18787.3,21260.06,21421.13,21687.94,22506.47,5
+single,read-through,read-heavy,2000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,18792.73,21297.4,21456.85,21731.15,22542.66,5
+single,read-through,read-heavy,2000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,18926.75,21412.54,21578.87,21846.1,22819.13,5
+single,read-through,read-heavy,2000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,18819.66,21365.58,21517.14,21798.44,22582.35,5
+single,read-through,read-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,18883.45,21460.21,21623.26,21939.65,22716.64,5
+single,read-through,write-heavy,100,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,354.38,578.8,653.06,837.89,1736.61,5
+single,read-through,write-heavy,100,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,550.02,848.94,949.8,1151.78,1895.21,5
+single,read-through,write-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,321.02,532.16,603.68,770.78,1632.03,5
+single,read-through,write-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,499.27,779.16,868.72,1090.18,2107.61,5
+single,read-through,write-heavy,100,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,586.95,905.75,1002.87,1217.8,2189.37,5
+single,read-through,write-heavy,250,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,2021.53,2472.78,2553.19,2740.5,3758.89,5
+single,read-through,write-heavy,250,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,2251.4,2756.65,2861.05,3062.72,3749.41,5
+single,read-through,write-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,1975.24,2428.43,2508.58,2695.86,3730.73,5
+single,read-through,write-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,2181,2684.8,2780.27,2991.73,4004.98,5
+single,read-through,write-heavy,250,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,2289.3,2813.99,2913.14,3149.28,4076.16,5
+single,read-through,write-heavy,500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,4874.35,5712.36,5813.4,6033.34,7022.06,5
+single,read-through,write-heavy,500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,5120.53,5999.77,6115.56,6345.26,6935.45,5
+single,read-through,write-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,4840.19,5666.23,5763.1,5982.67,6894.66,5
+single,read-through,write-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,5032.81,5928.1,6033.06,6270.82,7165.16,5
+single,read-through,write-heavy,500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,5149.04,6039.91,6155.64,6385.66,7351.06,5
+single,read-through,write-heavy,750,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,7766.11,8988.58,9113.74,9358.31,10085.74,5
+single,read-through,write-heavy,750,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,8019.84,9270.13,9396.79,9671.47,10594.58,5
+single,read-through,write-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,7749.48,8948.73,9067.41,9304.73,10160.6,5
+single,read-through,write-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,7957.45,9202.88,9334.15,9599.65,10686.21,5
+single,read-through,write-heavy,750,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,8065.94,9318.71,9457.07,9727.23,10638.92,5
+single,read-through,write-heavy,1000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,10633.8,12129.05,12271.89,12539.21,13227.69,5
+single,read-through,write-heavy,1000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,10899.55,12411.71,12556.02,12834.47,13499.09,5
+single,read-through,write-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,10582.48,12093.29,12231.4,12479.74,13296.54,5
+single,read-through,write-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,10811.62,12334.01,12487.25,12764.54,13675.5,5
+single,read-through,write-heavy,1000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,10947.9,12455.71,12601.58,12893.49,13729.99,5
+single,read-through,write-heavy,1500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,16397.41,19068.47,19219.94,19415.04,20267.81,5
+single,read-through,write-heavy,1500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,16569.24,19330.48,19480.94,19732.61,20501.27,5
+single,read-through,write-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,16318.42,19034.79,19166.37,19361.49,20118.24,5
+single,read-through,write-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,16582.61,19280.27,19437.67,19666.8,20650.15,5
+single,read-through,write-heavy,1500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,16749.71,19393.8,19553.67,19812.16,20703.43,5
+single,read-through,write-heavy,2000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,23214.38,26621.19,26926.79,27220.57,27912.63,5
+single,read-through,write-heavy,2000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,23483.77,26889.93,27185.21,27524.99,28290.33,5
+single,read-through,write-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,23136.91,26566.56,26875.63,27179.76,28022.63,5
+single,read-through,write-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,23318.24,26815.99,27113.88,27443.37,28416.11,5
+single,read-through,write-heavy,2000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,18015.16,20114.39,20368.57,21009.79,27239.69,5
+single,write-through,read-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,77.12,152.73,189.88,279.96,535.84,5
+single,write-through,read-heavy,100,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,85.43,170.04,208.02,300.24,535.33,5
+single,write-through,read-heavy,100,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,86.5,172.55,212.87,305.74,516.54,5
+single,write-through,read-heavy,100,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,105.15,208.92,256.28,362.58,719.36,5
+single,write-through,read-heavy,100,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,109.82,204.9,248.15,354.06,570.52,5
+single,write-through,read-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,127.85,234.3,285.09,394.47,677.99,5
+single,write-through,read-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,1221.67,1565.79,1638.3,1799.58,2602.16,5
+single,write-through,read-heavy,250,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,1261.37,1611.85,1692.98,1886.23,2774.22,5
+single,write-through,read-heavy,250,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,1281.28,1638.22,1719.26,1915.78,3323.99,5
+single,write-through,read-heavy,250,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,1383.81,1765.96,1848.84,2055.96,3344.48,5
+single,write-through,read-heavy,250,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,1343.11,1712.36,1797.82,2006.44,2905,5
+single,write-through,read-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,1433.13,1832.89,1921.63,2130.6,2866.17,5
+single,write-through,read-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,3599.45,4261.38,4348.44,4539.06,5784.14,5
+single,write-through,read-heavy,500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,3625.78,4303.33,4392.83,4595.5,5688.19,5
+single,write-through,read-heavy,500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,3642.12,4330.94,4425.65,4635.93,5617.7,5
+single,write-through,read-heavy,500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,3736.16,4453.08,4547.99,4765.4,5743.13,5
+single,write-through,read-heavy,500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,3706.17,4405,4499.05,4689.85,5657.09,5
+single,write-through,read-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,3827.82,4518.12,4619.36,4827.99,5718.69,5
+single,write-through,read-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,6045.06,7013.2,7110.66,7291.61,8265.37,5
+single,write-through,read-heavy,750,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,6083.05,7052.21,7148.83,7341.8,8207.62,5
+single,write-through,read-heavy,750,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,6114.55,7080.34,7182.11,7382.98,8468.89,5
+single,write-through,read-heavy,750,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,6203.96,7198.92,7301.33,7516.24,8653.09,5
+single,write-through,read-heavy,750,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,6140.64,7142.3,7241.83,7448.39,8092.64,5
+single,write-through,read-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,6256.42,7257.07,7369.94,7600.09,8467.9,5
+single,write-through,read-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,8507.97,9761.07,9882.84,10140.12,11016.94,5
+single,write-through,read-heavy,1000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,8551.61,9798.92,9921.58,10186.65,10942.5,5
+single,write-through,read-heavy,1000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,8570.65,9823.2,9946.17,10217.66,11007.79,5
+single,write-through,read-heavy,1000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,8672.79,9943.74,10071.19,10336.97,11375.33,5
+single,write-through,read-heavy,1000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,8629.47,9892.67,10014.58,10282.4,10933.42,5
+single,write-through,read-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,8723.19,10006.24,10135.79,10420.11,11475.38,5
+single,write-through,read-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,13550.77,15410.84,15520.44,15757.18,16735.53,5
+single,write-through,read-heavy,1500,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,13548.3,15450.47,15566.04,15796.16,16629.48,5
+single,write-through,read-heavy,1500,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,13555.73,15469.94,15582.85,15819.72,16833.27,5
+single,write-through,read-heavy,1500,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,13691.12,15594.93,15717.75,15959.05,16756.01,5
+single,write-through,read-heavy,1500,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,13599.82,15537.98,15657.47,15907.53,16964.21,5
+single,write-through,read-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,13756.74,15643.94,15774.07,16014.89,16764.49,5
+single,write-through,read-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,18721.3,21187.52,21344.49,21564.68,22483.96,5
+single,write-through,read-heavy,2000,material_detail_duration,"Detail materi",GET,/api/materials/{id},read,18853.16,21226.49,21391.18,21612.34,22526.61,5
+single,write-through,read-heavy,2000,materials_list_duration,"Daftar materi course",GET,/api/courses/{courseId}/materials,read,18842.48,21252.72,21408.46,21640.02,22341.47,5
+single,write-through,read-heavy,2000,quiz_detail_duration,"Detail kuis",GET,/api/quizzes/{id},read,18907.52,21379.77,21537.45,21782.8,22904.86,5
+single,write-through,read-heavy,2000,start_attempt_duration,"Mulai attempt kuis",POST,/api/quizzes/{id}/attempts,write,18854.35,21326.95,21487.12,21715.26,22397.69,5
+single,write-through,read-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,19046.1,21458.15,21614.34,21861.15,22949.5,5
+single,write-through,write-heavy,100,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,363.61,587.89,658.61,836.26,1656.94,5
+single,write-through,write-heavy,100,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,566.23,875.01,968.85,1200.43,1912.77,5
+single,write-through,write-heavy,100,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,328.11,539.45,607.89,783.37,1664.02,5
+single,write-through,write-heavy,100,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,516.97,801.87,888.3,1100.22,1990.72,5
+single,write-through,write-heavy,100,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,595.78,913.28,1006.1,1216.15,1981.96,5
+single,write-through,write-heavy,250,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,2036.08,2508.24,2589.7,2783.22,3905.22,5
+single,write-through,write-heavy,250,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,2251.41,2796.12,2893.59,3109.62,3931.08,5
+single,write-through,write-heavy,250,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,1994.5,2459.15,2538.22,2704.32,3718.17,5
+single,write-through,write-heavy,250,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,2214.77,2731.22,2825.1,3035.55,3945.71,5
+single,write-through,write-heavy,250,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,2312.76,2847.67,2943.19,3153.34,4223.58,5
+single,write-through,write-heavy,500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,4917.46,5754.74,5857.6,6058.35,7049.88,5
+single,write-through,write-heavy,500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,5147.86,6036.08,6152.68,6368.49,7122.01,5
+single,write-through,write-heavy,500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,4861.06,5705.22,5805.04,5997.59,6980.12,5
+single,write-through,write-heavy,500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,5085.16,5975.28,6087.67,6320.89,7416.22,5
+single,write-through,write-heavy,500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,5193.7,6092.75,6207.94,6431.89,7328.61,5
+single,write-through,write-heavy,750,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,7787.47,9018.07,9196.89,9431.04,10167.82,5
+single,write-through,write-heavy,750,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,8025.53,9297.87,9479.98,9749.51,10432.25,5
+single,write-through,write-heavy,750,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,7738.21,8975.09,9158.83,9386.39,10181.31,5
+single,write-through,write-heavy,750,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,7956.66,9223.41,9408.77,9681.85,10510.59,5
+single,write-through,write-heavy,750,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,8066.88,9335.64,9534.49,9805.79,10827.85,5
+single,write-through,write-heavy,1000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,10709.39,12290.65,12432.94,12687.3,13557.93,5
+single,write-through,write-heavy,1000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,10942.33,12566.07,12716.63,12988.09,13816.79,5
+single,write-through,write-heavy,1000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,10651,12241.29,12377.02,12624.36,13338.17,5
+single,write-through,write-heavy,1000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,10876.53,12498.6,12653.62,12915.6,14007.09,5
+single,write-through,write-heavy,1000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,11036.28,12610.9,12762.62,13037.99,14260.82,5
+single,write-through,write-heavy,1500,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,16525.82,19248.71,19399.02,19636.97,20401.09,5
+single,write-through,write-heavy,1500,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,16799.11,19540.54,19698.01,19968.74,20767.13,5
+single,write-through,write-heavy,1500,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,16519.99,19211.01,19362.81,19595.89,20541.5,5
+single,write-through,write-heavy,1500,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,16729.44,19469.02,19627.18,19894,20929.99,5
+single,write-through,write-heavy,1500,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,16961.82,19583.07,19748.29,20027.82,20916.37,5
+single,write-through,write-heavy,2000,assignment_detail_duration,"Detail tugas",GET,/api/assignments/{id},read,23453.65,27182.21,27350.15,27602.03,28311.42,5
+single,write-through,write-heavy,2000,grade_submission_duration,"Penilaian tugas",PUT,/api/submissions/{id}/grade,write,23524.2,27441.04,27626.05,27898.97,28534.27,5
+single,write-through,write-heavy,2000,gradebook_duration,"Gradebook course",GET,/api/courses/{courseId}/gradebook,read,23366.52,27134.26,27305.2,27559.02,28512.37,5
+single,write-through,write-heavy,2000,submit_assignment_duration,"Submit tugas",POST,/api/assignments/{id}/submissions,write,23666.09,27389.48,27563.52,27848.61,28713.43,5
+single,write-through,write-heavy,2000,submit_quiz_duration,"Submit kuis",PUT,/api/quizzes/{quizId}/attempts/{attemptId},write,18283.28,20427.29,20589.13,20920.99,27750.41,5
