@@ -18,6 +18,10 @@ class Submission extends Model
         'file_path',
         'score',
         'feedback',
+        'grader_id',
+        'status',
+        'attempt_number',
+        'is_latest',
         'submitted_at',
         'graded_at',
     ];
@@ -27,6 +31,7 @@ class Submission extends Model
         return [
             'submitted_at' => 'datetime',
             'graded_at' => 'datetime',
+            'is_latest' => 'boolean',
         ];
     }
 
@@ -48,6 +53,16 @@ class Submission extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * User who graded this submission.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function grader(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'grader_id');
     }
 
     /**

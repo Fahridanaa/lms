@@ -3,12 +3,14 @@
 namespace Tests\Feature\Api;
 
 use App\Models\Course;
+use App\Models\CourseEnrollment;
 use App\Models\Question;
 use App\Models\Quiz;
 use App\Models\QuizAttempt;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Database\Eloquent\Factories\Sequence;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class QuizControllerTest extends TestCase
@@ -16,17 +18,24 @@ class QuizControllerTest extends TestCase
     use DatabaseTransactions;
 
     protected User $user;
+
     protected Course $course;
+
     protected Quiz $quiz;
 
     protected function setUp(): void
     {
         parent::setUp();
+        Cache::flush();
 
         // Create test data
         $this->user = User::factory()->create(['role' => 'student']);
         $this->course = Course::factory()->create();
         $this->quiz = Quiz::factory()->create(['course_id' => $this->course->id]);
+        CourseEnrollment::factory()->create([
+            'course_id' => $this->course->id,
+            'user_id' => $this->user->id,
+        ]);
 
         // Create questions for the quiz
         Question::factory()->count(5)->create(['quiz_id' => $this->quiz->id]);
@@ -50,8 +59,8 @@ class QuizControllerTest extends TestCase
                         'passing_score',
                         'created_at',
                         'updated_at',
-                    ]
-                ]
+                    ],
+                ],
             ]);
     }
 
@@ -77,12 +86,14 @@ class QuizControllerTest extends TestCase
                             'question_text',
                             'options',
                             'points',
-                        ]
+                        ],
                     ],
                     'created_at',
                     'updated_at',
-                ]
+                ],
             ]);
+
+        $this->assertArrayNotHasKey('correct_answer', $response->json('data.questions.0'));
     }
 
     public function test_can_get_quiz_questions(): void
@@ -100,9 +111,11 @@ class QuizControllerTest extends TestCase
                         'question_text',
                         'options',
                         'points',
-                    ]
-                ]
+                    ],
+                ],
             ]);
+
+        $this->assertArrayNotHasKey('correct_answer', $response->json('data.0'));
     }
 
     public function test_can_start_quiz_attempt(): void
@@ -122,7 +135,7 @@ class QuizControllerTest extends TestCase
                     'started_at',
                     'created_at',
                     'updated_at',
-                ]
+                ],
             ]);
 
         $this->assertDatabaseHas('quiz_attempts', [
@@ -164,7 +177,7 @@ class QuizControllerTest extends TestCase
                     'completed_at',
                     'created_at',
                     'updated_at',
-                ]
+                ],
             ]);
 
         $this->assertDatabaseHas('quiz_attempts', [
@@ -203,17 +216,24 @@ class QuizControllerTest extends TestCase
                     'completed_at',
                     'created_at',
                     'updated_at',
-                ]
+                ],
             ]);
     }
 
     public function test_can_get_user_quiz_attempts(): void
     {
         // Create multiple attempts for the user
-        QuizAttempt::factory()->count(3)->create([
-            'quiz_id' => $this->quiz->id,
-            'user_id' => $this->user->id,
-        ]);
+        QuizAttempt::factory()
+            ->count(3)
+            ->state(new Sequence(
+                ['attempt_number' => 1],
+                ['attempt_number' => 2],
+                ['attempt_number' => 3],
+            ))
+            ->create([
+                'quiz_id' => $this->quiz->id,
+                'user_id' => $this->user->id,
+            ]);
 
         $response = $this->getJson("/api/users/{$this->user->id}/quiz-attempts");
 
@@ -229,8 +249,8 @@ class QuizControllerTest extends TestCase
                         'started_at',
                         'created_at',
                         'updated_at',
-                    ]
-                ]
+                    ],
+                ],
             ]);
     }
 
@@ -251,9 +271,10 @@ class QuizControllerTest extends TestCase
     public function test_can_start_new_attempt_after_completing_previous(): void
     {
         QuizAttempt::factory()->create([
-            'quiz_id'      => $this->quiz->id,
-            'user_id'      => $this->user->id,
+            'quiz_id' => $this->quiz->id,
+            'user_id' => $this->user->id,
             'completed_at' => now(),
+            'status' => 'finished',
         ]);
 
         $this->postJson("/api/quizzes/{$this->quiz->id}/attempts", [
@@ -261,6 +282,50 @@ class QuizControllerTest extends TestCase
         ])->assertStatus(201);
 
         $this->assertDatabaseCount('quiz_attempts', 2);
+    }
+
+    public function test_hidden_quiz_cannot_be_viewed(): void
+    {
+        $this->quiz->learningModule()->firstOrCreate([], [
+            'course_id' => $this->quiz->course_id,
+            'module_type' => 'quiz',
+            'visible' => true,
+            'sort_order' => $this->quiz->id,
+        ])->update(['visible' => false]);
+
+        $this->getJson("/api/quizzes/{$this->quiz->id}")
+            ->assertStatus(404)
+            ->assertJson(['success' => false]);
+    }
+
+    public function test_suspended_enrollment_cannot_start_quiz_attempt(): void
+    {
+        CourseEnrollment::query()
+            ->where('course_id', $this->course->id)
+            ->where('user_id', $this->user->id)
+            ->update(['status' => 'suspended']);
+
+        $this->postJson("/api/quizzes/{$this->quiz->id}/attempts", [
+            'user_id' => $this->user->id,
+        ])->assertStatus(403)
+            ->assertJson(['success' => false]);
+    }
+
+    public function test_quiz_max_attempts_is_enforced(): void
+    {
+        $this->quiz->update(['max_attempts' => 1]);
+
+        QuizAttempt::factory()->create([
+            'quiz_id' => $this->quiz->id,
+            'user_id' => $this->user->id,
+            'completed_at' => now(),
+            'status' => 'finished',
+        ]);
+
+        $this->postJson("/api/quizzes/{$this->quiz->id}/attempts", [
+            'user_id' => $this->user->id,
+        ])->assertStatus(400)
+            ->assertJson(['success' => false]);
     }
 
     public function test_quiz_not_found_returns_404(): void

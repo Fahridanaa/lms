@@ -118,10 +118,19 @@ class ReadThroughStrategy implements CacheStrategyInterface
         $prefixedKey = $this->getPrefixedKey($key);
 
         try {
+            if ($callback !== null) {
+                $dataSource = fn () => $callback();
+
+                if (! empty($this->cacheTags)) {
+                    return Cache::tags($this->cacheTags)->remember($prefixedKey, $this->ttl, $dataSource);
+                }
+
+                return Cache::remember($prefixedKey, $this->ttl, $dataSource);
+            }
+
             $loader = $this->findLoader($key);
 
             if ($loader !== null) {
-                // Ada loader — gunakan loader, callback diabaikan
                 $dataSource = fn () => $loader->load($key);
 
                 if (! empty($this->cacheTags)) {
@@ -131,18 +140,7 @@ class ReadThroughStrategy implements CacheStrategyInterface
                 return Cache::remember($prefixedKey, $this->ttl, $dataSource);
             }
 
-            // Tidak ada loader — fallback ke callback
-            if ($callback === null) {
-                throw new \RuntimeException("No loader registered for cache key: {$key}");
-            }
-
-            $dataSource = fn () => $callback();
-
-            if (! empty($this->cacheTags)) {
-                return Cache::tags($this->cacheTags)->remember($prefixedKey, $this->ttl, $dataSource);
-            }
-
-            return Cache::remember($prefixedKey, $this->ttl, $dataSource);
+            throw new \RuntimeException("No loader registered for cache key: {$key}");
         } finally {
             // Reset tags setelah operasi selesai
             $this->cacheTags = [];
@@ -173,7 +171,7 @@ class ReadThroughStrategy implements CacheStrategyInterface
             }
 
             // INVALIDATE cache (hapus, bukan update!)
-            return !empty($this->cacheTags)
+            return ! empty($this->cacheTags)
                 ? Cache::tags($this->cacheTags)->forget($prefixedKey)
                 : Cache::forget($prefixedKey);
         } finally {
@@ -190,7 +188,7 @@ class ReadThroughStrategy implements CacheStrategyInterface
         $prefixedKey = $this->getPrefixedKey($key);
 
         try {
-            return !empty($this->cacheTags)
+            return ! empty($this->cacheTags)
                 ? Cache::tags($this->cacheTags)->forget($prefixedKey)
                 : Cache::forget($prefixedKey);
         } finally {
@@ -216,7 +214,7 @@ class ReadThroughStrategy implements CacheStrategyInterface
      * Tags akan di-reset secara otomatis setelah operasi cache (get/put/forget)
      * selesai. Ini mencegah tags bertahan antar operasi yang berbeda.
      *
-     * @param array $tags Array nama tag
+     * @param  array  $tags  Array nama tag
      * @return self Untuk method chaining
      */
     public function tags(array $tags): self

@@ -13,14 +13,29 @@ class CourseEnrollment extends Model
     protected $fillable = [
         'user_id',
         'course_id',
+        'role',
+        'status',
         'enrolled_at',
+        'starts_at',
+        'ends_at',
     ];
 
     protected function casts(): array
     {
         return [
             'enrolled_at' => 'datetime',
+            'starts_at' => 'datetime',
+            'ends_at' => 'datetime',
         ];
+    }
+
+    public function isActive(): bool
+    {
+        $now = now();
+
+        return $this->status === 'active'
+            && ($this->starts_at === null || $this->starts_at->lte($now))
+            && ($this->ends_at === null || $this->ends_at->gte($now));
     }
 
     /**

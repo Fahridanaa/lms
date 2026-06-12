@@ -17,8 +17,18 @@ class Material extends Model
         'file_path',
         'file_size',
         'type',
+        'mime_type',
+        'revision',
+        'checksum',
         'is_active',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'is_active' => 'boolean',
+        ];
+    }
 
     /**
      * Course this material belongs to
@@ -28,5 +38,16 @@ class Material extends Model
     public function course(): BelongsTo
     {
         return $this->belongsTo(Course::class);
+    }
+
+    /**
+     * Moodle-like course module wrapper.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne<LearningModule, $this>
+     */
+    public function learningModule(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(LearningModule::class, 'module_id')
+            ->where('module_type', LearningModule::TYPE_MATERIAL);
     }
 }

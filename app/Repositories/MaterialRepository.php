@@ -19,9 +19,13 @@ class MaterialRepository extends BaseRepository
     public function getByCourse(int $courseId): Collection
     {
         return $this->model->newQuery()
+            ->with(['learningModule'])
             ->where('course_id', $courseId)
+            ->where('is_active', true)
             ->orderBy('created_at', 'desc')
-            ->get();
+            ->get()
+            ->filter(fn (Material $material): bool => $material->learningModule?->isAvailable())
+            ->values();
     }
 
     /**
@@ -29,7 +33,7 @@ class MaterialRepository extends BaseRepository
      */
     public function findWithCourse(int $id): Model
     {
-        return $this->findOrFail($id, ['course']);
+        return $this->findOrFail($id, ['course', 'learningModule']);
     }
 
     /**

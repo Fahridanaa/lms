@@ -7,8 +7,8 @@ use App\Models\Course;
 use App\Models\Grade;
 use App\Models\Quiz;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class GradebookControllerTest extends TestCase
@@ -16,14 +16,19 @@ class GradebookControllerTest extends TestCase
     use DatabaseTransactions;
 
     protected User $user;
+
     protected User $instructor;
+
     protected Course $course;
+
     protected Quiz $quiz;
+
     protected Assignment $assignment;
 
     protected function setUp(): void
     {
         parent::setUp();
+        Cache::flush();
 
         // Create test data
         $this->user = User::factory()->create(['role' => 'student']);
@@ -66,9 +71,49 @@ class GradebookControllerTest extends TestCase
                         'grades',
                         'average_percentage',
                         'total_grades',
-                    ]
-                ]
+                    ],
+                ],
             ]);
+    }
+
+    public function test_course_gradebook_excludes_suspended_enrollments(): void
+    {
+        $activeStudent = User::factory()->create(['role' => 'student']);
+        $suspendedStudent = User::factory()->create(['role' => 'student']);
+
+        $this->course->enrollments()->create([
+            'user_id' => $activeStudent->id,
+            'enrolled_at' => now(),
+            'role' => 'student',
+            'status' => 'active',
+            'starts_at' => now()->subDay(),
+        ]);
+
+        $this->course->enrollments()->create([
+            'user_id' => $suspendedStudent->id,
+            'enrolled_at' => now(),
+            'role' => 'student',
+            'status' => 'suspended',
+            'starts_at' => now()->subDay(),
+        ]);
+
+        Grade::factory()->create([
+            'user_id' => $activeStudent->id,
+            'course_id' => $this->course->id,
+            'status' => 'final',
+        ]);
+
+        Grade::factory()->create([
+            'user_id' => $suspendedStudent->id,
+            'course_id' => $this->course->id,
+            'status' => 'final',
+        ]);
+
+        $response = $this->getJson("/api/courses/{$this->course->id}/gradebook");
+
+        $response->assertStatus(200)
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.student.id', $activeStudent->id);
     }
 
     public function test_can_get_user_grades(): void
@@ -97,8 +142,8 @@ class GradebookControllerTest extends TestCase
                         'percentage',
                         'created_at',
                         'updated_at',
-                    ]
-                ]
+                    ],
+                ],
             ]);
     }
 
@@ -156,7 +201,7 @@ class GradebookControllerTest extends TestCase
                     'percentage',
                     'created_at',
                     'updated_at',
-                ]
+                ],
             ]);
 
         $this->assertDatabaseHas('grades', [

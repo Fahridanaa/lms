@@ -15,12 +15,25 @@ class Grade extends Model
     protected $fillable = [
         'user_id',
         'course_id',
+        'grader_id',
         'gradeable_type',
         'gradeable_id',
         'score',
         'max_score',
         'percentage',
+        'feedback',
+        'status',
+        'source',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'score' => 'decimal:2',
+            'max_score' => 'decimal:2',
+            'percentage' => 'decimal:2',
+        ];
+    }
 
     /**
      * User who received this grade
@@ -40,6 +53,16 @@ class Grade extends Model
     public function course(): BelongsTo
     {
         return $this->belongsTo(Course::class);
+    }
+
+    /**
+     * Instructor or grader who assigned this grade.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function grader(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'grader_id');
     }
 
     /**

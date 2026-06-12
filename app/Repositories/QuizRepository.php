@@ -18,7 +18,12 @@ class QuizRepository extends BaseRepository
      */
     public function getAllWithCourse(): Collection
     {
-        return $this->all(['course']);
+        return $this->model->newQuery()
+            ->with(['course', 'learningModule'])
+            ->where('is_active', true)
+            ->get()
+            ->filter(fn (Quiz $quiz): bool => $quiz->course?->is_active && $quiz->learningModule?->isAvailable())
+            ->values();
     }
 
     /**
@@ -26,7 +31,7 @@ class QuizRepository extends BaseRepository
      */
     public function findWithQuestionsAndCourse(int $id): Model
     {
-        return $this->findOrFail($id, ['questions', 'course']);
+        return $this->findOrFail($id, ['questions', 'course', 'learningModule', 'questionSlots.question']);
     }
 
     /**
@@ -34,7 +39,7 @@ class QuizRepository extends BaseRepository
      */
     public function getQuestions(int $quizId): Collection
     {
-        return $this->findOrFail($quizId, ['questions'])->questions;
+        return $this->findOrFail($quizId, ['questions', 'learningModule', 'course'])->questions;
     }
 
     /**

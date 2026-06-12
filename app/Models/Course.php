@@ -39,7 +39,7 @@ class Course extends Model
     {
         return $this->belongsToMany(User::class, 'course_enrollments')
             ->withTimestamps()
-            ->withPivot('enrolled_at');
+            ->withPivot('enrolled_at', 'role', 'status', 'starts_at', 'ends_at');
     }
 
     /**
@@ -60,6 +60,16 @@ class Course extends Model
     public function quizzes(): HasMany
     {
         return $this->hasMany(Quiz::class);
+    }
+
+    /**
+     * Moodle-like activity wrappers in this course.
+     *
+     * @return HasMany<LearningModule, $this>
+     */
+    public function learningModules(): HasMany
+    {
+        return $this->hasMany(LearningModule::class);
     }
 
     /**

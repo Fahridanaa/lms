@@ -23,11 +23,29 @@ class GradeFactory extends Factory
         return [
             'user_id' => \App\Models\User::factory(),
             'course_id' => \App\Models\Course::factory(),
+            'grader_id' => null,
             'gradeable_type' => fake()->randomElement([\App\Models\Quiz::class, \App\Models\Assignment::class]),
-            'gradeable_id' => 1,
+            'gradeable_id' => fake()->unique()->numberBetween(1, 1000000),
             'score' => $score,
             'max_score' => $maxScore,
             'percentage' => $percentage,
+            'feedback' => null,
+            'status' => 'final',
+            'source' => 'manual',
         ];
+    }
+
+    public function draft(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'status' => 'draft',
+        ]);
+    }
+
+    public function overridden(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'status' => 'overridden',
+        ]);
     }
 }

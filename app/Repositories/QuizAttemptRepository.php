@@ -18,7 +18,7 @@ class QuizAttemptRepository extends BaseRepository
      */
     public function findWithQuizAndQuestions(int $id): Model
     {
-        return $this->findOrFail($id, ['quiz.questions']);
+        return $this->findOrFail($id, ['quiz.questions', 'quiz.course', 'quiz.learningModule']);
     }
 
     /**
@@ -26,7 +26,7 @@ class QuizAttemptRepository extends BaseRepository
      */
     public function findWithFullDetails(int $id): Model
     {
-        return $this->findOrFail($id, ['quiz.questions', 'user']);
+        return $this->findOrFail($id, ['quiz.questions', 'quiz.course', 'quiz.learningModule', 'user']);
     }
 
     /**

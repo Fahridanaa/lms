@@ -23,7 +23,10 @@ class UpdateMaterialRequest extends FormRequest
     {
         return [
             'title' => 'sometimes|string|max:255',
+            'file_size' => 'sometimes|integer',
             'type' => 'sometimes|in:pdf,video,document,image,other',
+            'mime_type' => 'nullable|string|max:255',
+            'checksum' => 'nullable|string|max:255',
         ];
     }
 

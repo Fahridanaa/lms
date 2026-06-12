@@ -23,11 +23,33 @@ class SubmissionFactory extends Factory
         return [
             'assignment_id' => \App\Models\Assignment::factory(),
             'user_id' => \App\Models\User::factory(),
-            'file_path' => 'submissions/' . fake()->uuid() . '.pdf',
+            'grader_id' => null,
+            'file_path' => 'submissions/'.fake()->uuid().'.pdf',
             'score' => $graded ? fake()->randomFloat(2, 0, 100) : null,
             'feedback' => $graded ? fake()->optional(0.8)->sentence() : null,
+            'status' => $graded ? 'graded' : 'submitted',
+            'attempt_number' => 1,
+            'is_latest' => true,
             'submitted_at' => $submittedAt,
             'graded_at' => $gradedAt,
         ];
+    }
+
+    public function draft(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'status' => 'draft',
+            'score' => null,
+            'feedback' => null,
+            'graded_at' => null,
+        ]);
+    }
+
+    public function graded(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'status' => 'graded',
+            'graded_at' => now(),
+        ]);
     }
 }

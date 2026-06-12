@@ -20,6 +20,7 @@ class GradeRepository extends BaseRepository
         return $this->model->newQuery()
             ->with(['course', 'gradeable'])
             ->where('user_id', $userId)
+            ->where('status', 'final')
             ->orderBy('created_at', 'desc')
             ->get();
     }
@@ -33,6 +34,7 @@ class GradeRepository extends BaseRepository
             ->with(['gradeable'])
             ->where('user_id', $userId)
             ->where('course_id', $courseId)
+            ->where('status', 'final')
             ->get();
     }
 
@@ -41,7 +43,11 @@ class GradeRepository extends BaseRepository
      */
     public function getCourseGrades(int $courseId): Collection
     {
-        return $this->where('course_id', $courseId, ['gradeable', 'user']);
+        return $this->model->newQuery()
+            ->with(['gradeable', 'user'])
+            ->where('course_id', $courseId)
+            ->where('status', 'final')
+            ->get();
     }
 
     /**
@@ -52,6 +58,7 @@ class GradeRepository extends BaseRepository
         return $this->model->newQuery()
             ->where('user_id', $userId)
             ->where('gradeable_type', $gradeableType)
+            ->where('status', 'final')
             ->with(['gradeable', 'course'])
             ->get();
     }
@@ -64,6 +71,7 @@ class GradeRepository extends BaseRepository
         return $this->model->newQuery()
             ->selectRaw('user_id, AVG(percentage) as average_percentage')
             ->where('course_id', $courseId)
+            ->where('status', 'final')
             ->groupBy('user_id')
             ->orderByDesc('average_percentage')
             ->limit($limit)
@@ -77,6 +85,7 @@ class GradeRepository extends BaseRepository
     {
         $stats = $this->model->newQuery()
             ->where('course_id', $courseId)
+            ->where('status', 'final')
             ->selectRaw('
                 COUNT(*) as total_grades,
                 AVG(percentage) as average_percentage,
@@ -105,6 +114,7 @@ class GradeRepository extends BaseRepository
         return $this->model->newQuery()
             ->where('user_id', $userId)
             ->where('course_id', $courseId)
+            ->where('status', 'final')
             ->avg('percentage') ?? 0.0;
     }
 

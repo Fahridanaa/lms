@@ -27,6 +27,8 @@ class StoreMaterialRequest extends FormRequest
             'file_path' => 'required|string',
             'file_size' => 'required|integer',
             'type' => 'required|in:pdf,video,document,image,other',
+            'mime_type' => 'nullable|string|max:255',
+            'checksum' => 'nullable|string|max:255',
         ];
     }
 

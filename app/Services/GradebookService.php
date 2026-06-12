@@ -6,6 +6,7 @@ use App\Constants\Messages\GradeMessage;
 use App\Contracts\CacheStrategyInterface;
 use App\Exceptions\BusinessException;
 use App\Models\Course;
+use App\Models\CourseEnrollment;
 use App\Models\Grade;
 use App\Models\User;
 use App\Repositories\GradeRepository;
@@ -31,10 +32,18 @@ class GradebookService
         return $this->cacheStrategy
             ->tags(['gradebook', "course:{$courseId}"])
             ->get("course:{$courseId}:gradebook", function () use ($courseId) {
+                $activeStudentIds = $this->activeStudentIds($courseId);
+
+                if ($activeStudentIds === []) {
+                    return [];
+                }
+
                 // Aggregate grades per student in a single SQL query
                 // instead of loading all Grade models + polymorphic gradeable relations.
                 $studentAverages = Grade::where('course_id', $courseId)
                     ->whereNull('deleted_at')
+                    ->where('status', 'final')
+                    ->whereIn('user_id', $activeStudentIds)
                     ->selectRaw('
                         user_id,
                         AVG(percentage) as average_percentage,
@@ -56,6 +65,8 @@ class GradebookService
 
                 $gradesByStudent = Grade::where('course_id', $courseId)
                     ->whereNull('deleted_at')
+                    ->where('status', 'final')
+                    ->whereIn('user_id', $studentAverages->pluck('user_id'))
                     ->get([
                         'id',
                         'user_id',
@@ -65,6 +76,9 @@ class GradebookService
                         'score',
                         'max_score',
                         'percentage',
+                        'feedback',
+                        'status',
+                        'source',
                         'created_at',
                         'updated_at',
                     ])
@@ -132,14 +146,23 @@ class GradebookService
     {
         $grade = $this->gradeRepository->findOrFail($gradeId);
 
-        if (isset($data['score']) && isset($data['max_score'])) {
-            if ($data['score'] > $data['max_score']) {
-                throw new BusinessException(GradeMessage::EXCEEDS_MAX, 400);
-            }
-            if ($data['score'] < 0 || $data['max_score'] < 0) {
-                throw new BusinessException(GradeMessage::NEGATIVE, 400);
-            }
+        $score = $data['score'] ?? $grade->score;
+        $maxScore = $data['max_score'] ?? $grade->max_score;
+
+        if ($score > $maxScore) {
+            throw new BusinessException(GradeMessage::EXCEEDS_MAX, 400);
         }
+
+        if ($score < 0 || $maxScore < 0) {
+            throw new BusinessException(GradeMessage::NEGATIVE, 400);
+        }
+
+        if (isset($data['grader_id']) && ! $this->canGradeCourse($grade->course_id, (int) $data['grader_id'])) {
+            throw new BusinessException('Pengguna tidak memiliki akses untuk memberi nilai pada kursus ini', 403);
+        }
+
+        $data['percentage'] = $maxScore > 0 ? ($score / $maxScore) * 100 : 0;
+        $data['status'] = $data['status'] ?? $grade->status ?? 'final';
 
         $updatedGrade = $this->gradeRepository->update($gradeId, $data);
 
@@ -176,6 +199,7 @@ class GradebookService
                 // Per-course aggregated stats in a single SQL query
                 $courseStats = Grade::where('user_id', $userId)
                     ->whereNull('deleted_at')
+                    ->where('status', 'final')
                     ->selectRaw('
                         course_id,
                         COUNT(*) as total_grades,
@@ -250,7 +274,9 @@ class GradebookService
         return $this->cacheStrategy
             ->tags(['gradebook', "course:{$courseId}"])
             ->get("course:{$courseId}:top-performers:{$limit}", function () use ($courseId, $limit) {
-                $studentAverages = $this->gradeRepository->getTopPerformers($courseId, $limit);
+                $activeStudentIds = $this->activeStudentIds($courseId);
+                $studentAverages = $this->gradeRepository->getTopPerformers($courseId, $limit)
+                    ->whereIn('user_id', $activeStudentIds);
 
                 $users = User::whereIn('id', $studentAverages->pluck('user_id'))
                     ->get()
@@ -261,5 +287,30 @@ class GradebookService
                     'average_percentage' => $item->average_percentage,
                 ]);
             });
+    }
+
+    private function activeStudentIds(int $courseId): array
+    {
+        return CourseEnrollment::query()
+            ->where('course_id', $courseId)
+            ->where('role', 'student')
+            ->get()
+            ->filter(fn (CourseEnrollment $enrollment): bool => $enrollment->isActive())
+            ->pluck('user_id')
+            ->all();
+    }
+
+    private function canGradeCourse(int $courseId, int $graderId): bool
+    {
+        return Course::query()
+            ->where('id', $courseId)
+            ->where('instructor_id', $graderId)
+            ->exists()
+            || CourseEnrollment::query()
+                ->where('course_id', $courseId)
+                ->where('user_id', $graderId)
+                ->where('role', 'instructor')
+                ->where('status', 'active')
+                ->exists();
     }
 }

@@ -126,6 +126,15 @@ class WriteThroughStrategy implements CacheStrategyInterface
                 return $value;
             }
 
+            // Cache MISS - service callbacks are authoritative because they may
+            // apply policy checks before loading the model.
+            if ($callback !== null) {
+                $value = $callback();
+                $this->storeInCache($prefixedKey, $value);
+
+                return $value;
+            }
+
             // Cache MISS - use store
             $store = $this->findStore($key);
             if ($store !== null) {
@@ -135,15 +144,7 @@ class WriteThroughStrategy implements CacheStrategyInterface
                 return $value;
             }
 
-            // Tidak ada store — fallback ke callback
-            if ($callback === null) {
-                throw new \RuntimeException("No store registered for cache key: {$key}");
-            }
-
-            $value = $callback();
-            $this->storeInCache($prefixedKey, $value);
-
-            return $value;
+            throw new \RuntimeException("No store registered for cache key: {$key}");
         } finally {
             // Reset tags setelah operasi selesai
             $this->cacheTags = [];
@@ -220,7 +221,7 @@ class WriteThroughStrategy implements CacheStrategyInterface
                     $store->erase($key);
 
                     // Hapus dari cache
-                    return !empty($this->cacheTags)
+                    return ! empty($this->cacheTags)
                         ? Cache::tags($this->cacheTags)->forget($prefixedKey)
                         : Cache::forget($prefixedKey);
                 } catch (\Exception $e) {
@@ -229,7 +230,7 @@ class WriteThroughStrategy implements CacheStrategyInterface
             }
 
             // Tidak ada store — cukup hapus dari cache
-            return !empty($this->cacheTags)
+            return ! empty($this->cacheTags)
                 ? Cache::tags($this->cacheTags)->forget($prefixedKey)
                 : Cache::forget($prefixedKey);
         } finally {
@@ -279,8 +280,8 @@ class WriteThroughStrategy implements CacheStrategyInterface
     /**
      * Store ke cache (dengan atau tanpa tags)
      *
-     * @param string $key Prefixed cache key
-     * @param mixed $value Data to cache
+     * @param  string  $key  Prefixed cache key
+     * @param  mixed  $value  Data to cache
      */
     protected function storeInCache(string $key, mixed $value): void
     {

@@ -20,9 +20,10 @@ class CourseFactory extends Factory
         $levels = ['Beginner', 'Intermediate', 'Advanced'];
 
         return [
-            'name' => fake()->randomElement($subjects) . ' ' . fake()->randomElement($levels),
+            'name' => fake()->randomElement($subjects).' '.fake()->randomElement($levels),
             'description' => fake()->paragraphs(3, true),
             'instructor_id' => \App\Models\User::factory(),
+            'is_active' => true,
         ];
     }
 }

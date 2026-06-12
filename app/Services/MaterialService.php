@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Constants\Messages\MaterialMessage;
 use App\Contracts\CacheStrategyInterface;
 use App\Exceptions\BusinessException;
+use App\Models\LearningModule;
 use App\Models\Material;
 use App\Repositories\MaterialRepository;
 
@@ -13,8 +14,7 @@ class MaterialService
     public function __construct(
         protected CacheStrategyInterface $cacheStrategy,
         protected MaterialRepository $materialRepository
-    ) {
-    }
+    ) {}
 
     /**
      * Get all materials for a course (cached)
@@ -25,7 +25,7 @@ class MaterialService
             ->tags(['materials', "course:{$courseId}"])
             ->get(
                 "course:{$courseId}:materials",
-                fn() => $this->materialRepository->getByCourse($courseId)
+                fn () => $this->materialRepository->getByCourse($courseId)
             );
     }
 
@@ -38,7 +38,7 @@ class MaterialService
             ->tags(['materials', "material:{$materialId}"])
             ->get(
                 "material:{$materialId}",
-                fn() => $this->materialRepository->findWithCourse($materialId)
+                fn () => tap($this->materialRepository->findWithCourse($materialId), fn (Material $material) => $this->ensureMaterialVisible($material))
             );
     }
 
@@ -51,6 +51,8 @@ class MaterialService
             ->tags(['materials', "material:{$materialId}"])
             ->get("material:{$materialId}:metadata", function () use ($materialId) {
                 $material = $this->materialRepository->findOrFail($materialId);
+                $material->loadMissing(['course', 'learningModule']);
+                $this->ensureMaterialVisible($material);
 
                 return [
                     'id' => $material->id,
@@ -58,6 +60,8 @@ class MaterialService
                     'file_path' => $material->file_path,
                     'file_size' => $material->file_size,
                     'type' => $material->type,
+                    'mime_type' => $material->mime_type,
+                    'revision' => $material->revision,
                     'course_id' => $material->course_id,
                 ];
             });
@@ -79,9 +83,16 @@ class MaterialService
 
         $material = $this->materialRepository->create($data);
 
+        $material->learningModule()->create([
+            'course_id' => $material->course_id,
+            'module_type' => LearningModule::TYPE_MATERIAL,
+            'visible' => true,
+            'sort_order' => $material->id,
+        ]);
+
         $this->cacheStrategy->flushTags([
             'materials',
-            "course:{$material->course_id}"
+            "course:{$material->course_id}",
         ]);
 
         return $material;
@@ -114,7 +125,7 @@ class MaterialService
 
         $this->cacheStrategy->flushTags([
             'materials',
-            "course:{$material->course_id}"
+            "course:{$material->course_id}",
         ]);
 
         return $updatedMaterial;
@@ -134,9 +145,34 @@ class MaterialService
         $this->cacheStrategy->flushTags([
             'materials',
             "material:{$materialId}",
-            "course:{$courseId}"
+            "course:{$courseId}",
         ]);
 
         return $deleted;
+    }
+
+    private function ensureMaterialVisible(Material $material): void
+    {
+        $material->loadMissing(['course']);
+
+        $learningModule = LearningModule::query()
+            ->where('module_type', LearningModule::TYPE_MATERIAL)
+            ->where('module_id', $material->id)
+            ->first();
+
+        if ($learningModule === null) {
+            $learningModule = $material->learningModule()->create([
+                'course_id' => $material->course_id,
+                'module_type' => LearningModule::TYPE_MATERIAL,
+                'visible' => true,
+                'sort_order' => $material->id,
+            ]);
+        }
+
+        $material->setRelation('learningModule', $learningModule);
+
+        if (! $material->is_active || ! $material->course?->is_active || ! $learningModule->isAvailable()) {
+            throw new BusinessException(MaterialMessage::NOT_FOUND, 404);
+        }
     }
 }

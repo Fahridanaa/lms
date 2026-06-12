@@ -21,6 +21,7 @@ class SubmissionRepository extends BaseRepository
         return $this->model->newQuery()
             ->with(['user'])
             ->where('assignment_id', $assignmentId)
+            ->where('is_latest', true)
             ->orderBy('submitted_at', 'desc')
             ->get();
     }
@@ -33,6 +34,7 @@ class SubmissionRepository extends BaseRepository
         return $this->model->newQuery()
             ->where('assignment_id', $assignmentId)
             ->where('user_id', $userId)
+            ->where('is_latest', true)
             ->first();
     }
 
@@ -56,6 +58,7 @@ class SubmissionRepository extends BaseRepository
         return $this->model->newQuery()
             ->with(['user'])
             ->where('assignment_id', $assignmentId)
+            ->where('is_latest', true)
             ->whereNull('graded_at')
             ->orderBy('submitted_at', 'asc')
             ->get();
@@ -69,6 +72,7 @@ class SubmissionRepository extends BaseRepository
         return $this->model->newQuery()
             ->with(['user'])
             ->where('assignment_id', $assignmentId)
+            ->where('is_latest', true)
             ->whereNotNull('graded_at')
             ->orderBy('graded_at', 'desc')
             ->get();

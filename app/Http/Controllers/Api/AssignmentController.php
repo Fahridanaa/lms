@@ -12,10 +12,10 @@ use App\Services\AssignmentService;
 class AssignmentController extends Controller
 {
     use ApiResponseTrait;
+
     public function __construct(
         protected AssignmentService $assignmentService
-    ) {
-    }
+    ) {}
 
     /**
      * GET /api/courses/{courseId}/assignments
@@ -83,7 +83,8 @@ class AssignmentController extends Controller
         $submission = $this->assignmentService->gradeSubmission(
             $id,
             $validated['score'],
-            $validated['feedback'] ?? null
+            $validated['feedback'] ?? null,
+            $validated['grader_id'] ?? null
         );
 
         return $this->success($submission, AssignmentMessage::GRADED);

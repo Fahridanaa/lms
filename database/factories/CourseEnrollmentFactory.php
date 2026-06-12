@@ -19,7 +19,25 @@ class CourseEnrollmentFactory extends Factory
         return [
             'user_id' => \App\Models\User::factory(),
             'course_id' => \App\Models\Course::factory(),
+            'role' => 'student',
+            'status' => 'active',
             'enrolled_at' => fake()->dateTimeBetween('-6 months', 'now'),
+            'starts_at' => now()->subMonth(),
+            'ends_at' => null,
         ];
+    }
+
+    public function suspended(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'status' => 'suspended',
+        ]);
+    }
+
+    public function instructor(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'role' => 'instructor',
+        ]);
     }
 }

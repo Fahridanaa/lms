@@ -4,10 +4,11 @@ namespace Tests\Feature\Api;
 
 use App\Models\Assignment;
 use App\Models\Course;
+use App\Models\CourseEnrollment;
 use App\Models\Submission;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class AssignmentControllerTest extends TestCase
@@ -15,19 +16,27 @@ class AssignmentControllerTest extends TestCase
     use DatabaseTransactions;
 
     protected User $user;
+
     protected User $instructor;
+
     protected Course $course;
+
     protected Assignment $assignment;
 
     protected function setUp(): void
     {
         parent::setUp();
+        Cache::flush();
 
         // Create test data
         $this->user = User::factory()->create(['role' => 'student']);
         $this->instructor = User::factory()->create(['role' => 'instructor']);
         $this->course = Course::factory()->create(['instructor_id' => $this->instructor->id]);
         $this->assignment = Assignment::factory()->create(['course_id' => $this->course->id]);
+        CourseEnrollment::factory()->create([
+            'course_id' => $this->course->id,
+            'user_id' => $this->user->id,
+        ]);
     }
 
     public function test_can_list_course_assignments(): void
@@ -51,8 +60,8 @@ class AssignmentControllerTest extends TestCase
                         'max_score',
                         'created_at',
                         'updated_at',
-                    ]
-                ]
+                    ],
+                ],
             ]);
     }
 
@@ -73,7 +82,7 @@ class AssignmentControllerTest extends TestCase
                     'max_score',
                     'created_at',
                     'updated_at',
-                ]
+                ],
             ]);
     }
 
@@ -98,7 +107,7 @@ class AssignmentControllerTest extends TestCase
                     'submitted_at',
                     'created_at',
                     'updated_at',
-                ]
+                ],
             ]);
 
         $this->assertDatabaseHas('submissions', [
@@ -130,8 +139,8 @@ class AssignmentControllerTest extends TestCase
                         'submitted_at',
                         'created_at',
                         'updated_at',
-                    ]
-                ]
+                    ],
+                ],
             ]);
     }
 
@@ -166,8 +175,8 @@ class AssignmentControllerTest extends TestCase
                         'submitted_at',
                         'created_at',
                         'updated_at',
-                    ]
-                ]
+                    ],
+                ],
             ]);
     }
 
@@ -191,7 +200,7 @@ class AssignmentControllerTest extends TestCase
                     'graded_submissions',
                     'pending_submissions',
                     'average_score',
-                ]
+                ],
             ]);
     }
 
@@ -227,7 +236,7 @@ class AssignmentControllerTest extends TestCase
                     'graded_at',
                     'created_at',
                     'updated_at',
-                ]
+                ],
             ]);
 
         $this->assertDatabaseHas('submissions', [
@@ -255,6 +264,34 @@ class AssignmentControllerTest extends TestCase
             ->assertJson(['success' => false]);
 
         $this->assertDatabaseCount('submissions', 1);
+    }
+
+    public function test_hidden_assignment_cannot_be_viewed(): void
+    {
+        $this->assignment->learningModule()->firstOrCreate([], [
+            'course_id' => $this->assignment->course_id,
+            'module_type' => 'assignment',
+            'visible' => true,
+            'sort_order' => $this->assignment->id,
+        ])->update(['visible' => false]);
+
+        $this->getJson("/api/assignments/{$this->assignment->id}")
+            ->assertStatus(404)
+            ->assertJson(['success' => false]);
+    }
+
+    public function test_suspended_enrollment_cannot_submit_assignment(): void
+    {
+        CourseEnrollment::query()
+            ->where('course_id', $this->course->id)
+            ->where('user_id', $this->user->id)
+            ->update(['status' => 'suspended']);
+
+        $this->postJson("/api/assignments/{$this->assignment->id}/submissions", [
+            'user_id' => $this->user->id,
+            'file_path' => '/storage/submissions/test-submission.pdf',
+        ])->assertStatus(403)
+            ->assertJson(['success' => false]);
     }
 
     public function test_submit_assignment_validation_fails_without_required_fields(): void

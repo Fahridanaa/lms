@@ -24,6 +24,10 @@ class UpdateGradebookRequest extends FormRequest
         return [
             'score' => 'sometimes|numeric|min:0',
             'max_score' => 'sometimes|numeric|min:0',
+            'grader_id' => 'sometimes|nullable|exists:users,id',
+            'feedback' => 'sometimes|nullable|string',
+            'status' => 'sometimes|in:draft,final,overridden',
+            'source' => 'sometimes|in:quiz,assignment,manual',
         ];
     }
 

@@ -5,33 +5,30 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Question extends Model
+class QuizQuestionSlot extends Model
 {
     use HasFactory;
 
     protected $fillable = [
         'quiz_id',
-        'question_text',
-        'options',
-        'correct_answer',
-        'points',
-    ];
-
-    protected $hidden = [
-        'correct_answer',
+        'question_id',
+        'slot',
+        'page',
+        'max_points',
+        'require_previous',
     ];
 
     protected function casts(): array
     {
         return [
-            'options' => 'array',
+            'max_points' => 'decimal:2',
+            'require_previous' => 'boolean',
         ];
     }
 
     /**
-     * Quiz this question belongs to
+     * Quiz that owns the slot.
      *
      * @return BelongsTo<Quiz, $this>
      */
@@ -41,12 +38,12 @@ class Question extends Model
     }
 
     /**
-     * Quiz slots containing this question.
+     * Question placed in the quiz slot.
      *
-     * @return HasMany<QuizQuestionSlot, $this>
+     * @return BelongsTo<Question, $this>
      */
-    public function slots(): HasMany
+    public function question(): BelongsTo
     {
-        return $this->hasMany(QuizQuestionSlot::class);
+        return $this->belongsTo(Question::class);
     }
 }

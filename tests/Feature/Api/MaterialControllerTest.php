@@ -4,8 +4,8 @@ namespace Tests\Feature\Api;
 
 use App\Models\Course;
 use App\Models\Material;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class MaterialControllerTest extends TestCase
@@ -13,11 +13,13 @@ class MaterialControllerTest extends TestCase
     use DatabaseTransactions;
 
     protected Course $course;
+
     protected Material $material;
 
     protected function setUp(): void
     {
         parent::setUp();
+        Cache::flush();
 
         // Create test data
         $this->course = Course::factory()->create();
@@ -49,8 +51,8 @@ class MaterialControllerTest extends TestCase
                         'type',
                         'created_at',
                         'updated_at',
-                    ]
-                ]
+                    ],
+                ],
             ]);
     }
 
@@ -71,7 +73,7 @@ class MaterialControllerTest extends TestCase
                     'type',
                     'created_at',
                     'updated_at',
-                ]
+                ],
             ]);
     }
 
@@ -90,7 +92,7 @@ class MaterialControllerTest extends TestCase
                     'file_path',
                     'file_size',
                     'type',
-                ]
+                ],
             ]);
     }
 
@@ -119,7 +121,7 @@ class MaterialControllerTest extends TestCase
                     'type',
                     'created_at',
                     'updated_at',
-                ]
+                ],
             ]);
 
         $this->assertDatabaseHas('materials', [
@@ -150,7 +152,7 @@ class MaterialControllerTest extends TestCase
                     'type',
                     'created_at',
                     'updated_at',
-                ]
+                ],
             ]);
 
         $this->assertDatabaseHas('materials', [
@@ -174,6 +176,20 @@ class MaterialControllerTest extends TestCase
         $this->assertSoftDeleted('materials', [
             'id' => $materialId,
         ]);
+    }
+
+    public function test_hidden_material_cannot_be_viewed(): void
+    {
+        $this->material->learningModule()->firstOrCreate([], [
+            'course_id' => $this->material->course_id,
+            'module_type' => 'material',
+            'visible' => true,
+            'sort_order' => $this->material->id,
+        ])->update(['visible' => false]);
+
+        $this->getJson("/api/materials/{$this->material->id}")
+            ->assertStatus(404)
+            ->assertJson(['success' => false]);
     }
 
     public function test_create_material_validation_fails_without_required_fields(): void

@@ -17,8 +17,12 @@ class QuizAttempt extends Model
         'user_id',
         'answers',
         'score',
+        'status',
+        'attempt_number',
         'started_at',
         'completed_at',
+        'submitted_at',
+        'expires_at',
     ];
 
     protected function casts(): array
@@ -27,6 +31,8 @@ class QuizAttempt extends Model
             'answers' => 'array',
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
+            'submitted_at' => 'datetime',
+            'expires_at' => 'datetime',
         ];
     }
 
@@ -58,5 +64,10 @@ class QuizAttempt extends Model
     public function grade(): MorphOne
     {
         return $this->morphOne(Grade::class, 'gradeable');
+    }
+
+    public function isActive(): bool
+    {
+        return $this->completed_at === null && $this->status === 'in_progress';
     }
 }
