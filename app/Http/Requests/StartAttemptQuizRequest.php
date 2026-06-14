@@ -22,15 +22,14 @@ class StartAttemptQuizRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'user_id' => 'required|exists:users,id',
+            //
         ];
     }
 
     public function messages(): array
     {
         return [
-            'user_id.required' => 'ID pengguna wajib diisi.',
-            'user_id.exists' => 'Pengguna tidak ditemukan.',
+            //
         ];
     }
 }

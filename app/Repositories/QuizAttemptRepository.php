@@ -22,11 +22,25 @@ class QuizAttemptRepository extends BaseRepository
     }
 
     /**
-     * Find attempt with quiz, questions, and user
+     * Find attempt with quiz, questions, user, and normalized attempt detail.
+     *
+     * Eager-loads the full attempt-question → step → step-data tree so
+     * that the getAttemptResult() read path traverses normalized rows
+     * rather than only the legacy answers JSON column.
      */
     public function findWithFullDetails(int $id): Model
     {
-        return $this->findOrFail($id, ['quiz.questions', 'quiz.course', 'quiz.learningModule', 'user']);
+        return $this->findOrFail($id, [
+            'quiz.questions',
+            'quiz.course',
+            'quiz.learningModule',
+            'user',
+            'attemptQuestions.question',
+            'attemptQuestions.steps' => function ($q) {
+                $q->orderBy('sequence_number');
+            },
+            'attemptQuestions.steps.stepData',
+        ]);
     }
 
     /**

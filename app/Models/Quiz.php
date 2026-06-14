@@ -26,6 +26,10 @@ class Quiz extends Model
         'grading_method',
         'shuffle_questions',
         'shuffle_answers',
+        'grace_period',
+        'overdue_handling',
+        'delay_between_attempts',
+        'review_visibility',
     ];
 
     protected function casts(): array
@@ -36,6 +40,8 @@ class Quiz extends Model
             'is_active' => 'boolean',
             'shuffle_questions' => 'boolean',
             'shuffle_answers' => 'boolean',
+            'grace_period' => 'integer',
+            'delay_between_attempts' => 'integer',
         ];
     }
 
@@ -98,6 +104,26 @@ class Quiz extends Model
     public function grades(): MorphMany
     {
         return $this->morphMany(Grade::class, 'gradeable');
+    }
+
+    /**
+     * Quiz overrides for this quiz.
+     *
+     * @return HasMany<QuizOverride, $this>
+     */
+    /**
+     * Aggregate quiz grades for this quiz.
+     *
+     * @return HasMany<QuizGrade, $this>
+     */
+    public function quizGrades(): HasMany
+    {
+        return $this->hasMany(QuizGrade::class);
+    }
+
+    public function overrides(): HasMany
+    {
+        return $this->hasMany(QuizOverride::class);
     }
 
     public function isOpen(): bool
