@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Api\AssignmentController;
+use App\Http\Controllers\Api\CourseCompletionController;
+use App\Http\Controllers\Api\CourseStructureController;
 use App\Http\Controllers\Api\GradebookController;
 use App\Http\Controllers\Api\MaterialController;
 use App\Http\Controllers\Api\QuizController;
@@ -48,13 +50,22 @@ Route::prefix('assignments')->group(function () {
 // Submission grading
 Route::put('/submissions/{id}/grade', [AssignmentController::class, 'gradeSubmission']);
 
+// Marker grading
+Route::put('/submissions/{id}/marker-grade', [AssignmentController::class, 'markerGrade']);
+
 // Course-specific routes
 Route::prefix('courses')->group(function () {
+    // Course structure (sections + modules + activity summaries)
+    Route::get('/{course}/structure', [CourseStructureController::class, 'show']);
+
     // Course materials
     Route::get('/{courseId}/materials', [MaterialController::class, 'index']);
 
     // Course assignments
     Route::get('/{courseId}/assignments', [AssignmentController::class, 'index']);
+
+    // Course completion state
+    Route::get('/{courseId}/completion', [CourseCompletionController::class, 'show']);
 
     // Course gradebook
     Route::get('/{courseId}/gradebook', [GradebookController::class, 'courseGradebook']);
