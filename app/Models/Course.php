@@ -18,7 +18,15 @@ class Course extends Model
         'description',
         'instructor_id',
         'is_active',
+        'course_category_id',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'is_active' => 'boolean',
+        ];
+    }
 
     /**
      * Instructor who teaches this course
@@ -63,6 +71,16 @@ class Course extends Model
     }
 
     /**
+     * Sections in this course.
+     *
+     * @return HasMany<CourseSection, $this>
+     */
+    public function sections(): HasMany
+    {
+        return $this->hasMany(CourseSection::class)->orderBy('sort_order');
+    }
+
+    /**
      * Moodle-like activity wrappers in this course.
      *
      * @return HasMany<LearningModule, $this>
@@ -100,5 +118,45 @@ class Course extends Model
     public function grades(): HasMany
     {
         return $this->hasMany(Grade::class);
+    }
+
+    /**
+     * Groups in this course.
+     *
+     * @return HasMany<CourseGroup, $this>
+     */
+    public function groups(): HasMany
+    {
+        return $this->hasMany(CourseGroup::class);
+    }
+
+    /**
+     * Grade items in this course.
+     *
+     * @return HasMany<GradeItem, $this>
+     */
+    public function gradeItems(): HasMany
+    {
+        return $this->hasMany(GradeItem::class);
+    }
+
+    /**
+     * The category this course belongs to.
+     *
+     * @return BelongsTo<CourseCategory, $this>
+     */
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(CourseCategory::class, 'course_category_id');
+    }
+
+    /**
+     * Groupings in this course.
+     *
+     * @return HasMany<CourseGrouping, $this>
+     */
+    public function groupings(): HasMany
+    {
+        return $this->hasMany(CourseGrouping::class);
     }
 }
