@@ -23,9 +23,7 @@ class MaterialRepository extends BaseRepository
             ->where('course_id', $courseId)
             ->where('is_active', true)
             ->orderBy('created_at', 'desc')
-            ->get()
-            ->filter(fn (Material $material): bool => $material->learningModule?->isAvailable())
-            ->values();
+            ->get();
     }
 
     /**
