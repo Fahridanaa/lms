@@ -64,34 +64,57 @@ class GradeRepository extends BaseRepository
     }
 
     /**
-     * Get top performers in a course
+     * Get top performers in a course (uses weighted average via grade_items.weight).
      */
-    public function getTopPerformers(int $courseId, int $limit = 10): Collection
+    /**
+     * Get top performers in a course (uses weighted average via grade_items.weight).
+     * Active student IDs are passed in and applied BEFORE ordering/limiting so
+     * that non-active students (suspended, expired) cannot consume top slots.
+     */
+    public function getTopPerformers(int $courseId, int $limit = 10, array $activeStudentIds = []): Collection
     {
-        return $this->model->newQuery()
-            ->selectRaw('user_id, AVG(percentage) as average_percentage')
-            ->where('course_id', $courseId)
-            ->where('status', 'final')
-            ->groupBy('user_id')
+        $q = $this->model->newQuery()
+            ->from('grades', 'g')
+            ->withoutGlobalScope(\Illuminate\Database\Eloquent\SoftDeletingScope::class)
+            ->leftJoin('grade_items', 'g.grade_item_id', '=', 'grade_items.id')
+            ->whereNull('g.deleted_at')
+            ->selectRaw('
+                g.user_id,
+                SUM(g.percentage * COALESCE(grade_items.weight, 1.0)) / NULLIF(SUM(COALESCE(grade_items.weight, 1.0)), 0) as average_percentage
+            ')
+            ->where('g.course_id', $courseId)
+            ->where('g.status', 'final')
+            ->groupBy('g.user_id')
             ->orderByDesc('average_percentage')
-            ->limit($limit)
-            ->get();
+            ->limit($limit);
+
+        // Filter to active students BEFORE limit so non-active users cannot
+        // push valid students out of the top-N slots.
+        if (! empty($activeStudentIds)) {
+            $q->whereIn('g.user_id', $activeStudentIds);
+        }
+
+        return $q->get();
     }
 
     /**
-     * Get course statistics
+     * Get course statistics (uses weighted average via grade_items.weight).
      */
     public function getCourseStatistics(int $courseId): array
     {
         $stats = $this->model->newQuery()
-            ->where('course_id', $courseId)
-            ->where('status', 'final')
+            ->from('grades', 'g')
+            ->withoutGlobalScope(\Illuminate\Database\Eloquent\SoftDeletingScope::class)
+            ->leftJoin('grade_items', 'g.grade_item_id', '=', 'grade_items.id')
+            ->where('g.course_id', $courseId)
+            ->whereNull('g.deleted_at')
+            ->where('g.status', 'final')
             ->selectRaw('
                 COUNT(*) as total_grades,
-                AVG(percentage) as average_percentage,
-                MAX(percentage) as highest_percentage,
-                MIN(percentage) as lowest_percentage,
-                SUM(CASE WHEN percentage >= 60 THEN 1 ELSE 0 END) as passing_count
+                SUM(g.percentage * COALESCE(grade_items.weight, 1.0)) / NULLIF(SUM(COALESCE(grade_items.weight, 1.0)), 0) as average_percentage,
+                MAX(g.percentage) as highest_percentage,
+                MIN(g.percentage) as lowest_percentage,
+                SUM(CASE WHEN g.percentage >= 60 THEN 1 ELSE 0 END) as passing_count
             ')
             ->first();
 

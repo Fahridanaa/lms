@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -15,6 +16,7 @@ class Grade extends Model
     protected $fillable = [
         'user_id',
         'course_id',
+        'grade_item_id',
         'grader_id',
         'gradeable_type',
         'gradeable_id',
@@ -73,5 +75,25 @@ class Grade extends Model
     public function gradeable(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    /**
+     * Grade item that this grade belongs to.
+     *
+     * @return BelongsTo<GradeItem, $this>
+     */
+    public function gradeItem(): BelongsTo
+    {
+        return $this->belongsTo(GradeItem::class);
+    }
+
+    /**
+     * History entries for this grade.
+     *
+     * @return HasMany<GradeHistory, $this>
+     */
+    public function histories(): HasMany
+    {
+        return $this->hasMany(GradeHistory::class);
     }
 }
