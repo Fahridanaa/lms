@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -24,6 +25,9 @@ class Submission extends Model
         'is_latest',
         'submitted_at',
         'graded_at',
+        'returned_at',
+        'reopened_at',
+        'late',
     ];
 
     protected function casts(): array
@@ -31,7 +35,10 @@ class Submission extends Model
         return [
             'submitted_at' => 'datetime',
             'graded_at' => 'datetime',
+            'returned_at' => 'datetime',
+            'reopened_at' => 'datetime',
             'is_latest' => 'boolean',
+            'late' => 'boolean',
         ];
     }
 
@@ -70,6 +77,26 @@ class Submission extends Model
      *
      * @return MorphOne<Grade, $this>
      */
+    /**
+     * Allocated markers for this submission.
+     *
+     * @return HasMany<AssignmentAllocatedMarker, $this>
+     */
+    public function allocatedMarkers(): HasMany
+    {
+        return $this->hasMany(AssignmentAllocatedMarker::class);
+    }
+
+    /**
+     * Marker marks for this submission.
+     *
+     * @return HasMany<AssignmentMark, $this>
+     */
+    public function assignmentMarks(): HasMany
+    {
+        return $this->hasMany(AssignmentMark::class);
+    }
+
     public function grade(): MorphOne
     {
         return $this->morphOne(Grade::class, 'gradeable');

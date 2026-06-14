@@ -24,7 +24,6 @@ class GradeSubmissionAssignmentRequest extends FormRequest
         return [
             'score' => 'required|numeric|min:0',
             'feedback' => 'nullable|string',
-            'grader_id' => 'sometimes|nullable|exists:users,id',
         ];
     }
 

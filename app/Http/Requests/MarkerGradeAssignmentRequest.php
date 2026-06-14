@@ -4,7 +4,7 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class SubmitAssignmentRequest extends FormRequest
+class MarkerGradeAssignmentRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -22,15 +22,18 @@ class SubmitAssignmentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'file_path' => 'required|string',
+            'score' => 'required|numeric|min:0',
+            'feedback' => 'nullable|string',
         ];
     }
 
     public function messages(): array
     {
         return [
-            'file_path.required' => 'Path file wajib diisi.',
-            'file_path.string' => 'Path file harus berupa teks.',
+            'score.required' => 'Score is required.',
+            'score.numeric' => 'Score must be a number.',
+            'score.min' => 'Score must not be negative.',
+            'feedback.string' => 'Feedback must be text.',
         ];
     }
 }

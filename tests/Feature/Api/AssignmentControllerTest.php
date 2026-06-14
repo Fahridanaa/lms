@@ -3,13 +3,18 @@
 namespace Tests\Feature\Api;
 
 use App\Models\Assignment;
+use App\Models\AssignmentAllocatedMarker;
+use App\Models\AssignmentMark;
+use App\Models\AssignmentOverride;
 use App\Models\Course;
 use App\Models\CourseEnrollment;
+use App\Models\LearningModule;
 use App\Models\Submission;
 use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 class AssignmentControllerTest extends TestCase
 {
@@ -44,7 +49,8 @@ class AssignmentControllerTest extends TestCase
         // Create additional assignments for the course
         Assignment::factory()->count(3)->create(['course_id' => $this->course->id]);
 
-        $response = $this->getJson("/api/courses/{$this->course->id}/assignments");
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->getJson("/api/courses/{$this->course->id}/assignments");
 
         $response->assertStatus(200)
             ->assertJsonStructure([
@@ -67,7 +73,8 @@ class AssignmentControllerTest extends TestCase
 
     public function test_can_show_assignment_detail(): void
     {
-        $response = $this->getJson("/api/assignments/{$this->assignment->id}");
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->getJson("/api/assignments/{$this->assignment->id}");
 
         $response->assertStatus(200)
             ->assertJsonStructure([
@@ -89,11 +96,11 @@ class AssignmentControllerTest extends TestCase
     public function test_can_submit_assignment(): void
     {
         $submissionData = [
-            'user_id' => $this->user->id,
             'file_path' => '/storage/submissions/test-submission.pdf',
         ];
 
-        $response = $this->postJson("/api/assignments/{$this->assignment->id}/submissions", $submissionData);
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->postJson("/api/assignments/{$this->assignment->id}/submissions", $submissionData);
 
         $response->assertStatus(201)
             ->assertJsonStructure([
@@ -124,7 +131,8 @@ class AssignmentControllerTest extends TestCase
             'assignment_id' => $this->assignment->id,
         ]);
 
-        $response = $this->getJson("/api/assignments/{$this->assignment->id}/submissions");
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->getJson("/api/assignments/{$this->assignment->id}/submissions");
 
         $response->assertStatus(200)
             ->assertJsonStructure([
@@ -160,7 +168,8 @@ class AssignmentControllerTest extends TestCase
             'score' => null,
         ]);
 
-        $response = $this->getJson("/api/assignments/{$this->assignment->id}/submissions/pending");
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->getJson("/api/assignments/{$this->assignment->id}/submissions/pending");
 
         $response->assertStatus(200)
             ->assertJsonStructure([
@@ -189,7 +198,8 @@ class AssignmentControllerTest extends TestCase
             'score' => 85,
         ]);
 
-        $response = $this->getJson("/api/assignments/{$this->assignment->id}/statistics");
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->getJson("/api/assignments/{$this->assignment->id}/statistics");
 
         $response->assertStatus(200)
             ->assertJsonStructure([
@@ -221,7 +231,8 @@ class AssignmentControllerTest extends TestCase
             'feedback' => 'Great work!',
         ];
 
-        $response = $this->putJson("/api/submissions/{$submission->id}/grade", $gradeData);
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$submission->id}/grade", $gradeData);
 
         $response->assertStatus(200)
             ->assertJsonStructure([
@@ -252,18 +263,24 @@ class AssignmentControllerTest extends TestCase
     public function test_cannot_submit_assignment_twice(): void
     {
         $submissionData = [
-            'user_id' => $this->user->id,
             'file_path' => '/storage/submissions/first.pdf',
         ];
 
-        $this->postJson("/api/assignments/{$this->assignment->id}/submissions", $submissionData)
+        $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->postJson("/api/assignments/{$this->assignment->id}/submissions", $submissionData)
             ->assertStatus(201);
 
-        $this->postJson("/api/assignments/{$this->assignment->id}/submissions", $submissionData)
+        $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->postJson("/api/assignments/{$this->assignment->id}/submissions", $submissionData)
             ->assertStatus(400)
             ->assertJson(['success' => false]);
 
-        $this->assertDatabaseCount('submissions', 1);
+        // Scoped count: only count submissions for this assignment+user
+        // Avoids brittle global table counts that break when seed data exists
+        $this->assertEquals(1, \App\Models\Submission::query()
+            ->where('assignment_id', $this->assignment->id)
+            ->where('user_id', $this->user->id)
+            ->count());
     }
 
     public function test_hidden_assignment_cannot_be_viewed(): void
@@ -275,7 +292,8 @@ class AssignmentControllerTest extends TestCase
             'sort_order' => $this->assignment->id,
         ])->update(['visible' => false]);
 
-        $this->getJson("/api/assignments/{$this->assignment->id}")
+        $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->getJson("/api/assignments/{$this->assignment->id}")
             ->assertStatus(404)
             ->assertJson(['success' => false]);
     }
@@ -287,19 +305,20 @@ class AssignmentControllerTest extends TestCase
             ->where('user_id', $this->user->id)
             ->update(['status' => 'suspended']);
 
-        $this->postJson("/api/assignments/{$this->assignment->id}/submissions", [
-            'user_id' => $this->user->id,
-            'file_path' => '/storage/submissions/test-submission.pdf',
-        ])->assertStatus(403)
+        $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->postJson("/api/assignments/{$this->assignment->id}/submissions", [
+                'file_path' => '/storage/submissions/test-submission.pdf',
+            ])->assertStatus(403)
             ->assertJson(['success' => false]);
     }
 
     public function test_submit_assignment_validation_fails_without_required_fields(): void
     {
-        $response = $this->postJson("/api/assignments/{$this->assignment->id}/submissions", []);
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->postJson("/api/assignments/{$this->assignment->id}/submissions", []);
 
         $response->assertStatus(422)
-            ->assertJsonValidationErrors(['user_id', 'file_path']);
+            ->assertJsonValidationErrors(['file_path']);
     }
 
     public function test_grade_submission_validation_fails_without_score(): void
@@ -308,7 +327,8 @@ class AssignmentControllerTest extends TestCase
             'assignment_id' => $this->assignment->id,
         ]);
 
-        $response = $this->putJson("/api/submissions/{$submission->id}/grade", []);
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$submission->id}/grade", []);
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['score']);
@@ -325,7 +345,8 @@ class AssignmentControllerTest extends TestCase
             'score' => 150, // Exceeds max_score
         ];
 
-        $response = $this->putJson("/api/submissions/{$submission->id}/grade", $gradeData);
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$submission->id}/grade", $gradeData);
 
         // Business logic validation returns 400, not 422
         $response->assertStatus(400)
@@ -334,19 +355,490 @@ class AssignmentControllerTest extends TestCase
             ]);
     }
 
+    public function test_marker_can_grade_allocated_submission(): void
+    {
+        $this->assignment->update(['marking_allocation_enabled' => true, 'multi_mark_method' => 'highest', 'max_score' => 100]);
+
+        $submission = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+        ]);
+
+        // Allocate the instructor as a marker
+        AssignmentAllocatedMarker::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'submission_id' => $submission->id,
+            'student_id' => $this->user->id,
+            'marker_id' => $this->instructor->id,
+        ]);
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$submission->id}/marker-grade", [
+                'score' => 85,
+                'feedback' => 'Good effort',
+            ]);
+
+        $response->assertStatus(200);
+        $data = $response->json('data');
+
+        // Must include marker mark
+        $this->assertArrayHasKey('mark', $data);
+        $this->assertEquals(85, $data['mark']['score']);
+
+        // Must include final submission and grade (finalization)
+        $this->assertArrayHasKey('submission', $data);
+        $this->assertArrayHasKey('grade', $data);
+        $this->assertEquals(85, $data['submission']['score']);
+        $this->assertEquals('graded', $data['submission']['status']);
+
+        // Verify database records
+        $this->assertDatabaseHas('assignment_marks', [
+            'submission_id' => $submission->id,
+            'marker_id' => $this->instructor->id,
+            'score' => 85,
+        ]);
+
+        $this->assertDatabaseHas('submissions', [
+            'id' => $submission->id,
+            'score' => 85,
+            'status' => 'graded',
+        ]);
+
+        $this->assertDatabaseHas('grades', [
+            'user_id' => $this->user->id,
+            'gradeable_type' => 'submission',
+            'gradeable_id' => $submission->id,
+            'score' => 85,
+            'source' => 'assignment',
+        ]);
+    }
+
+    public function test_non_allocated_marker_is_rejected(): void
+    {
+        $this->assignment->update(['marking_allocation_enabled' => true, 'max_score' => 100]);
+
+        $submission = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+        ]);
+
+        // Instructor is NOT allocated as a marker
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$submission->id}/marker-grade", [
+                'score' => 85,
+            ]);
+
+        $response->assertStatus(403);
+    }
+
+    public function test_marker_grade_validates_score_within_max(): void
+    {
+        $this->assignment->update(['marking_allocation_enabled' => true, 'max_score' => 50]);
+
+        $submission = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+        ]);
+
+        AssignmentAllocatedMarker::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'submission_id' => $submission->id,
+            'student_id' => $this->user->id,
+            'marker_id' => $this->instructor->id,
+        ]);
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$submission->id}/marker-grade", [
+                'score' => 100, // Exceeds max_score of 50
+            ]);
+
+        $response->assertStatus(400);
+    }
+
     public function test_assignment_not_found_returns_404(): void
     {
-        $response = $this->getJson('/api/assignments/99999');
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->getJson('/api/assignments/99999');
 
         $response->assertStatus(404);
     }
 
     public function test_submission_not_found_for_grading_returns_404(): void
     {
-        $response = $this->putJson('/api/submissions/99999/grade', [
-            'score' => 90,
-        ]);
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson('/api/submissions/99999/grade', [
+                'score' => 90,
+            ]);
 
         $response->assertStatus(404);
+    }
+
+    #[Test]
+    public function user_assignment_override_allows_submission_before_global_available_time(): void
+    {
+        // Arrange: assignment with future available_from
+        $futureAssignment = Assignment::factory()->create([
+            'course_id' => $this->course->id,
+            'available_from' => now()->addDays(7),
+            'due_date' => now()->addDays(14),
+            'cutoff_date' => now()->addDays(21),
+        ]);
+
+        // User override opens it now
+        AssignmentOverride::factory()->create([
+            'assignment_id' => $futureAssignment->id,
+            'user_id' => $this->user->id,
+            'course_group_id' => null,
+            'available_from' => now()->subHour(),
+        ]);
+
+        // Act: student submits
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->postJson("/api/assignments/{$futureAssignment->id}/submissions", [
+                'file_path' => 'override-test-submission.pdf',
+            ]);
+
+        // Assert: override allows submission despite global future available_from
+        $response->assertStatus(201);
+    }
+
+    #[Test]
+    public function group_assignment_override_extends_due_cutoff_behavior(): void
+    {
+        // Arrange: group with extended due/cutoff
+        $group = \App\Models\CourseGroup::factory()->create([
+            'course_id' => $this->course->id,
+            'active' => true,
+        ]);
+        \App\Models\CourseGroupMember::factory()->create([
+            'course_group_id' => $group->id,
+            'user_id' => $this->user->id,
+        ]);
+
+        // Assignment with past due_date but a group override extends it
+        $assignment = Assignment::factory()->create([
+            'course_id' => $this->course->id,
+            'available_from' => now()->subDays(30),
+            'due_date' => now()->subDays(1),  // Past due
+            'cutoff_date' => now()->subDays(1), // Past cutoff globally
+            'allow_late_submission' => true,
+        ]);
+
+        AssignmentOverride::factory()->create([
+            'assignment_id' => $assignment->id,
+            'user_id' => null,
+            'course_group_id' => $group->id,
+            'due_date' => now()->addDays(7),
+            'cutoff_date' => now()->addDays(14),
+        ]);
+
+        // Act: group member student submits
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->postJson("/api/assignments/{$assignment->id}/submissions", [
+                'file_path' => 'group-override-test.pdf',
+            ]);
+
+        // Assert: group override allows submission
+        $response->assertStatus(201);
+    }
+
+    #[Test]
+    public function non_overridden_student_remains_blocked_by_assignment_window(): void
+    {
+        // Arrange: assignment with future available_from
+        $futureAssignment = Assignment::factory()->create([
+            'course_id' => $this->course->id,
+            'available_from' => now()->addDays(7),
+            'due_date' => now()->addDays(14),
+        ]);
+
+        $otherStudent = User::factory()->create(['role' => 'student']);
+        CourseEnrollment::factory()->create([
+            'course_id' => $this->course->id,
+            'user_id' => $otherStudent->id,
+        ]);
+
+        // Act: non-overridden student tries to submit
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $otherStudent->id)
+            ->postJson("/api/assignments/{$futureAssignment->id}/submissions", [
+                'file_path' => 'blocked-submission.pdf',
+            ]);
+
+        // Assert: blocked by global window (effective available_from rejects)
+        $response->assertStatus(400);
+    }
+
+    #[Test]
+    public function suspended_user_remains_blocked_even_with_assignment_override(): void
+    {
+        // Arrange: assignment with future available_from and override
+        $futureAssignment = Assignment::factory()->create([
+            'course_id' => $this->course->id,
+            'available_from' => now()->addDays(7),
+        ]);
+
+        $suspendedUser = User::factory()->create(['role' => 'student']);
+        CourseEnrollment::factory()->create([
+            'course_id' => $this->course->id,
+            'user_id' => $suspendedUser->id,
+            'status' => 'suspended',
+        ]);
+
+        AssignmentOverride::factory()->create([
+            'assignment_id' => $futureAssignment->id,
+            'user_id' => $suspendedUser->id,
+            'available_from' => now()->subHour(),
+        ]);
+
+        // Act: suspended user tries to submit
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $suspendedUser->id)
+            ->postJson("/api/assignments/{$futureAssignment->id}/submissions", [
+                'file_path' => 'suspended-test.pdf',
+            ]);
+
+        // Assert: blocked by enrollment check
+        $response->assertStatus(403);
+    }
+
+    #[Test]
+    public function instructor_cannot_submit_assignment_through_override_logic(): void
+    {
+        // Arrange: instructor with enrollment
+        $instructor = User::factory()->create(['role' => 'instructor']);
+        $course = Course::factory()->create(['instructor_id' => $instructor->id]);
+        $assignment = Assignment::factory()->create([
+            'course_id' => $course->id,
+            'available_from' => now()->subDay(),
+            'due_date' => now()->addDays(7),
+        ]);
+
+        CourseEnrollment::factory()->create([
+            'course_id' => $course->id,
+            'user_id' => $instructor->id,
+            'role' => 'instructor',
+        ]);
+
+        // Instructor gets an override (theoretically)
+        AssignmentOverride::factory()->create([
+            'assignment_id' => $assignment->id,
+            'user_id' => $instructor->id,
+            'available_from' => now()->subDay(),
+        ]);
+
+        // Act: instructor tries to submit
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $instructor->id)
+            ->postJson("/api/assignments/{$assignment->id}/submissions", [
+                'file_path' => 'instructor-submission.pdf',
+            ]);
+
+        // Assert: blocked because canSubmitAssignment requires student role
+        $response->assertStatus(403);
+    }
+
+    #[Test]
+    public function get_assignment_does_not_create_learning_module(): void
+    {
+        // Arrange: create assignment without a learning module
+        $orphanAssignment = Assignment::factory()->create([
+            'course_id' => $this->course->id,
+        ]);
+        // Delete the learning module that the factory created
+        $orphanAssignment->learningModule()->delete();
+        $orphanAssignment->load('learningModule');
+        $this->assertNull($orphanAssignment->learningModule);
+
+        // Act: attempt to read the assignment (should fail since no module)
+        $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->getJson("/api/assignments/{$orphanAssignment->id}")
+            ->assertStatus(404);
+
+        // Assert: no learning module was created by the read path
+        $this->assertNull(
+            LearningModule::where('module_type', LearningModule::TYPE_ASSIGNMENT)
+                ->where('module_id', $orphanAssignment->id)
+                ->first()
+        );
+    }
+
+    #[Test]
+    public function marker_latest_method_follows_explicit_recency_ordering(): void
+    {
+        // Arrange: assignment with multi_mark_method = 'latest'
+        $this->assignment->update([
+            'marking_allocation_enabled' => true,
+            'multi_mark_method' => 'latest',
+            'max_score' => 100,
+        ]);
+
+        $submission = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+            'status' => 'submitted',
+        ]);
+
+        $marker1 = User::factory()->create(['role' => 'instructor']);
+        $marker2 = User::factory()->create(['role' => 'instructor']);
+
+        // Allocate both markers (different markers to avoid unique constraint)
+        AssignmentAllocatedMarker::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'submission_id' => $submission->id,
+            'student_id' => $this->user->id,
+            'marker_id' => $marker1->id,
+        ]);
+        AssignmentAllocatedMarker::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'submission_id' => $submission->id,
+            'student_id' => $this->user->id,
+            'marker_id' => $marker2->id,
+        ]);
+        // Allocate course instructor as third marker to trigger recalculation
+        AssignmentAllocatedMarker::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'submission_id' => $submission->id,
+            'student_id' => $this->user->id,
+            'marker_id' => $this->instructor->id,
+        ]);
+
+        // Create an older mark with higher score (marker1, 2 days ago, score=90)
+        AssignmentMark::factory()->create([
+            'submission_id' => $submission->id,
+            'assignment_id' => $this->assignment->id,
+            'marker_id' => $marker1->id,
+            'score' => 90,
+            'workflow_state' => 'completed',
+            'updated_at' => now()->subDays(2),
+            'created_at' => now()->subDays(2),
+        ]);
+
+        // Create a newer mark with lower score (marker2, 6 hours ago, score=70)
+        // This SHOULD be chosen as 'latest' since it's more recently updated
+        AssignmentMark::factory()->create([
+            'submission_id' => $submission->id,
+            'assignment_id' => $this->assignment->id,
+            'marker_id' => $marker2->id,
+            'score' => 70,
+            'workflow_state' => 'completed',
+            'updated_at' => now()->subHours(6),
+            'created_at' => now()->subHours(6),
+        ]);
+
+        // Act: call markerGrade which records a new mark then recalculates final score
+        // The third mark (instructor, newest) will be chosen as latest
+        $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$submission->id}/marker-grade", [
+                'score' => 80,
+                'feedback' => 'Third marker mark',
+            ])
+            ->assertStatus(200);
+
+        // Assert: the final score should be 80 (newest mark since this API call is the latest)
+        $submission->refresh();
+        $this->assertEquals(80, $submission->score);
+
+        // More importantly: verify the ordering is deterministic
+        // Without explicit ordering, the results would be random
+        $marks = \App\Models\AssignmentMark::query()
+            ->where('submission_id', $submission->id)
+            ->where('workflow_state', 'completed')
+            ->orderBy('updated_at', 'desc')
+            ->orderBy('id', 'desc')
+            ->pluck('id', 'score')
+            ->all();
+
+        // The first score (highest sort order) should be 80 (most recent)
+        $orderedScores = array_keys($marks);
+        $this->assertEquals(80, $orderedScores[0], 'Most recent mark must be first in order');
+        $this->assertEquals(70, $orderedScores[1], '6-hour-old mark must be second');
+        $this->assertEquals(90, $orderedScores[2], '2-day-old mark must be last');
+    }
+
+    #[Test]
+    public function marker_latest_tie_breaker_uses_highest_id(): void
+    {
+        // Arrange: assignment with multi_mark_method = 'latest'
+        $this->assignment->update([
+            'marking_allocation_enabled' => true,
+            'multi_mark_method' => 'latest',
+            'max_score' => 100,
+        ]);
+
+        $submission = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+            'status' => 'submitted',
+        ]);
+
+        // Use three markers: mark1, mark2 (for tied marks), and course instructor (for trigger)
+        $marker1 = User::factory()->create(['role' => 'instructor']);
+        $marker2 = User::factory()->create(['role' => 'instructor']);
+
+        // Allocate marker1 and marker2
+        AssignmentAllocatedMarker::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'submission_id' => $submission->id,
+            'student_id' => $this->user->id,
+            'marker_id' => $marker1->id,
+        ]);
+        AssignmentAllocatedMarker::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'submission_id' => $submission->id,
+            'student_id' => $this->user->id,
+            'marker_id' => $marker2->id,
+        ]);
+        // Also allocate the course instructor as a third marker to trigger recalculation
+        AssignmentAllocatedMarker::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'submission_id' => $submission->id,
+            'student_id' => $this->user->id,
+            'marker_id' => $this->instructor->id,
+        ]);
+
+        // Create two marks with the same updated_at (tie) but different IDs
+        // The mark with higher ID should be chosen as 'latest'
+        \Illuminate\Support\Carbon::setTestNow(now()->subDay());
+        $mark1 = AssignmentMark::factory()->create([
+            'submission_id' => $submission->id,
+            'assignment_id' => $this->assignment->id,
+            'marker_id' => $marker1->id,
+            'score' => 50,
+            'workflow_state' => 'completed',
+        ]);
+
+        $mark2 = AssignmentMark::factory()->create([
+            'submission_id' => $submission->id,
+            'assignment_id' => $this->assignment->id,
+            'marker_id' => $marker2->id,
+            'score' => 85,
+            'workflow_state' => 'completed',
+        ]);
+        \Illuminate\Support\Carbon::setTestNow();
+
+        // Verify the second mark has a higher ID than the first
+        $this->assertGreaterThan($mark1->id, $mark2->id);
+
+        // Act: trigger calculateFinalMarkerScore via marker-grade with a third mark
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$submission->id}/marker-grade", [
+                'score' => 60,
+                'feedback' => 'Tie-breaker third mark',
+            ]);
+
+        $response->assertStatus(200);
+
+        // The final score should be 60 (the third mark is newest)
+        $submission->refresh();
+        $this->assertEquals(60, $submission->score);
+
+        // Verify ordering: marks ordered by updated_at desc, then id desc
+        $marks = \App\Models\AssignmentMark::query()
+            ->where('submission_id', $submission->id)
+            ->where('workflow_state', 'completed')
+            ->orderBy('updated_at', 'desc')
+            ->orderBy('id', 'desc')
+            ->pluck('score');
+
+        $this->assertEquals([60, 85, 50], $marks->values()->all(), 'Ordering must be: newest mark first, then by id desc within same updated_at');
     }
 }

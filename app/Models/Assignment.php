@@ -25,6 +25,11 @@ class Assignment extends Model
         'max_attempts',
         'allow_late_submission',
         'submission_type',
+        'marking_allocation_enabled',
+        'marker_count',
+        'multi_mark_method',
+        'anonymous_marking_enabled',
+        'hide_grader_from_student',
     ];
 
     protected function casts(): array
@@ -77,6 +82,36 @@ class Assignment extends Model
     {
         return $this->hasOne(LearningModule::class, 'module_id')
             ->where('module_type', LearningModule::TYPE_ASSIGNMENT);
+    }
+
+    /**
+     * Assignment overrides for this assignment.
+     *
+     * @return HasMany<AssignmentOverride, $this>
+     */
+    /**
+     * Allocated markers for this assignment.
+     *
+     * @return HasMany<AssignmentAllocatedMarker, $this>
+     */
+    public function allocatedMarkers(): HasMany
+    {
+        return $this->hasMany(AssignmentAllocatedMarker::class);
+    }
+
+    /**
+     * Marker marks for this assignment.
+     *
+     * @return HasMany<AssignmentMark, $this>
+     */
+    public function assignmentMarks(): HasMany
+    {
+        return $this->hasMany(AssignmentMark::class);
+    }
+
+    public function overrides(): HasMany
+    {
+        return $this->hasMany(AssignmentOverride::class);
     }
 
     public function isOpenForSubmission(): bool
