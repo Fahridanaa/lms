@@ -1,168 +1,305 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
+import {
+  headersFor,
+  randomEnrolledPair,
+  randomInstructorCoursePair,
+  READABLE_MATERIAL_TARGETS,
+  READABLE_QUIZ_TARGETS,
+  READABLE_ASSIGNMENT_TARGETS,
+  WRITABLE_ASSIGNMENT_SUBMISSION_TARGETS,
+  WRITABLE_QUIZ_ATTEMPT_TARGETS,
+  QUIZ_DETAIL_ATTEMPT_TARGETS,
+  COURSE_COMPLETION_CHECK_TARGETS,
+  GROUP_RESTRICTED_MODULE_TARGETS,
+  GROUPING_RESTRICTED_MODULE_TARGETS,
+  PREREQUISITE_LOCKED_TARGETS,
+  HIDDEN_MODULE_TARGETS,
+  MIN_GRADE_LOCKED_TARGETS,
+  SUSPENDED_ACCESS_TARGETS,
+  NON_ENROLLED_ACCESS_TARGETS,
+  pick,
+  activityPath,
+} from './fixtures.js';
 
 // ============================================================
 // READ-HEAVY SCENARIO (80% Read, 20% Write)
-// Sesuai Tabel 3.2 Proposal Skripsi
 //
 // Distribusi Operasi:
-//   25% - GET /api/quizzes/{id}                      (read)
-//   20% - GET /api/courses/{courseId}/materials       (read)
-//   15% - GET /api/materials/{id}                     (read)
-//   20% - GET /api/courses/{courseId}/gradebook       (read)
-//   10% - POST /api/quizzes/{id}/attempts             (write)
-//   10% - POST /api/assignments/{id}/submissions      (write)
-//
-// Penggunaan:
-//   k6 run --env BASE_URL=http://your-vps-ip \
-//           --env CONCURRENT_USERS=100 \
-//           --env CACHE_STRATEGY=cache-aside \
-//           read-heavy-scenario.js
+//  25% - GET /api/courses/{courseId}/structure          (read)
+//  10% - GET /api/materials/{id}                          (read)
+//   5% - GET /api/quizzes/{id}                          (read)
+//   8% - GET /api/assignments/{id}                      (read)
+//  12% - GET /api/courses/{id}/gradebook                (read)
+//   5% - GET /api/users/{id}/grades                     (read)
+//   3% - GET /api/courses/{id}/materials                (read)
+//   2% - GET /api/courses/{id}/completion               (read, course completion)
+//   7% - Expected failure: restricted/hidden/unavailable (read, controlled)
+//   3% - GET /api/quizzes/{id}/attempts/{id}/result     (read, detail)
+//  10% - POST /api/quizzes/{id}/attempts                (write)
+//  10% - POST /api/assignments/{id}/submissions         (write)
+// -------------------------------------------------------
+// Total: 80% read (incl. 7% controlled failures), 20% write
 // ============================================================
 
-// Custom metrics per endpoint
 const errorRate = new Rate('errors');
-const quizDetailDuration    = new Trend('quiz_detail_duration', true);
-const materialsListDuration = new Trend('materials_list_duration', true);
-const materialDetailDuration = new Trend('material_detail_duration', true);
-const gradebookDuration     = new Trend('gradebook_duration', true);
-const startAttemptDuration  = new Trend('start_attempt_duration', true);
+const courseStructureDuration  = new Trend('course_structure_duration', true);
+const materialDetailDuration   = new Trend('material_detail_duration', true);
+const quizDetailDuration       = new Trend('quiz_detail_duration', true);
+const assignmentDetailDuration = new Trend('assignment_detail_duration', true);
+const gradebookDuration        = new Trend('gradebook_duration', true);
+const userGradesDuration       = new Trend('user_grades_duration', true);
+const materialListDuration         = new Trend('material_list_duration', true);
+const courseCompletionDuration      = new Trend('course_completion_duration', true);
+const quizAttemptResultDuration     = new Trend('quiz_attempt_result_duration', true);
+const startAttemptDuration          = new Trend('start_attempt_duration', true);
 const submitAssignmentDuration = new Trend('submit_assignment_duration', true);
 
-// Ambil concurrent users dari env (default: 100)
 const CONCURRENT_USERS = parseInt(__ENV.CONCURRENT_USERS || '100');
 
 export const options = {
-  // 1 menit ramp-up + 5 menit steady state + 30 detik ramp-down
-  // Sesuai proposal: "Duration: 5 menit per test, Ramp-up: 60 detik"
   stages: [
-    { duration: '1m',  target: CONCURRENT_USERS },  // ramp-up
-    { duration: '5m',  target: CONCURRENT_USERS },  // steady state
-    { duration: '30s', target: 0 },                 // ramp-down
+    { duration: '1m',  target: CONCURRENT_USERS },
+    { duration: '5m',  target: CONCURRENT_USERS },
+    { duration: '30s', target: 0 },
   ],
   thresholds: {
-    http_req_duration: ['p(95)<2000'],  // 95% request < 2 detik
-    http_req_failed:   ['rate<0.10'],   // error rate < 10%
-    errors:            ['rate<0.10'],
+    http_req_duration:        ['p(95)<2000'],
+    // http_req_failed includes ~7% expected 403/404 controlled failures (tagged ef=1).
+    // The custom `errors` metric is the clean benchmark-validity signal.
+    'http_req_failed{ef:1}': ['rate<1.0'],
+    http_req_failed:          ['rate<0.15'],
+    errors:                   ['rate<0.10'],
   },
-  // Pastikan p(99) ikut tersimpan di summary export
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   tags: {
     scenario:          'read-heavy',
     concurrent_users:  `${CONCURRENT_USERS}`,
     cache_strategy:    __ENV.CACHE_STRATEGY || 'unknown',
-    cluster_mode:      __ENV.CLUSTER_MODE || 'false',
   },
 };
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost';
 
-const headers = { headers: { 'Content-Type': 'application/json' }, timeout: '30s' };
-
-// ─────────────────────────────────────────────
-// Helper: random integer [min, max]
-// ─────────────────────────────────────────────
-function randomInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-// Sesuai data seeder:
-//   - User 1–100      : instructors
-//   - User 101–5000   : students
-//   - Course 1–50
-//   - Quiz 1–250      (5 per course)
-//   - Material 1–500  (10 per course)
-//   - Assignment 1–250 (5 per course)
-
-function randomStudentId()    { return randomInt(101, 5000); }
-function randomCourseId()     { return randomInt(1, 50);     }
-function randomQuizId()       { return randomInt(1, 250);    }
-function randomMaterialId()   { return randomInt(1, 500);    }
-function randomAssignmentId() { return randomInt(1, 250);    }
-
-// ─────────────────────────────────────────────
-// Main VU function
-// ─────────────────────────────────────────────
 export default function () {
   const action = Math.random();
 
+  // ── 25% — Course Structure (READ) ──────────────────────
   if (action < 0.25) {
-    // ── 25% ─ GET /api/quizzes/{id} ──────────────────────
-    const res = http.get(`${BASE_URL}/api/quizzes/${randomQuizId()}`, headers);
+    const pair = randomEnrolledPair();
+    const h = headersFor(pair.studentId);
+    const res = http.get(`${BASE_URL}/api/courses/${pair.courseId}/structure`, h);
+    courseStructureDuration.add(res.timings.duration);
+    check(res, {
+      '[course-structure] status 200': (r) => r.status === 200,
+      '[course-structure] has sections': (r) => {
+        try {
+          const d = JSON.parse(r.body).data;
+          return d && d.sections && d.sections.length > 0;
+        } catch(_) { return false; }
+      },
+    }) || errorRate.add(1);
+
+  // ── 10% — Material Detail (READ, actor-aware) ──────────
+  } else if (action < 0.35) {
+    const target = pick(READABLE_MATERIAL_TARGETS);
+    const h = headersFor(target.studentId);
+    const res = http.get(`${BASE_URL}/api/materials/${target.activityId}`, h);
+    materialDetailDuration.add(res.timings.duration);
+    // Enrolled student + fully available material → 200
+    check(res, {
+      '[material] status 200': (r) => r.status === 200,
+    }) || errorRate.add(1);
+
+  // ── 5% — Quiz Detail (READ, actor-aware) ──────────────
+  } else if (action < 0.40) {
+    const target = pick(READABLE_QUIZ_TARGETS);
+    const h = headersFor(target.studentId);
+    const res = http.get(`${BASE_URL}/api/quizzes/${target.activityId}`, h);
     quizDetailDuration.add(res.timings.duration);
+    // Enrolled student + fully available quiz → 200
     check(res, {
       '[quiz-detail] status 200': (r) => r.status === 200,
-      '[quiz-detail] success':    (r) => {
-        try { return JSON.parse(r.body).success === true; } catch(_) { return false; }
-      },
     }) || errorRate.add(1);
 
-  } else if (action < 0.45) {
-    // ── 20% ─ GET /api/courses/{id}/materials ────────────
-    const res = http.get(`${BASE_URL}/api/courses/${randomCourseId()}/materials`, headers);
-    materialsListDuration.add(res.timings.duration);
+  // ── 8% — Assignment Detail (READ, actor-aware) ─────────
+  } else if (action < 0.48) {
+    const target = pick(READABLE_ASSIGNMENT_TARGETS);
+    const h = headersFor(target.studentId);
+    const res = http.get(`${BASE_URL}/api/assignments/${target.activityId}`, h);
+    assignmentDetailDuration.add(res.timings.duration);
+    // Enrolled student + fully available assignment → 200
     check(res, {
-      '[materials-list] status 200': (r) => r.status === 200,
-      '[materials-list] success':    (r) => {
-        try { return JSON.parse(r.body).success === true; } catch(_) { return false; }
-      },
+      '[assignment-detail] status 200': (r) => r.status === 200,
     }) || errorRate.add(1);
 
+  // ── 12% — Gradebook (READ, instructor only) ────────────
   } else if (action < 0.60) {
-    // ── 15% ─ GET /api/materials/{id} ────────────────────
-    const res = http.get(`${BASE_URL}/api/materials/${randomMaterialId()}`, headers);
-    materialDetailDuration.add(res.timings.duration);
-    check(res, {
-      '[material-detail] status 200': (r) => r.status === 200,
-      '[material-detail] success':    (r) => {
-        try { return JSON.parse(r.body).success === true; } catch(_) { return false; }
-      },
-    }) || errorRate.add(1);
-
-  } else if (action < 0.80) {
-    // ── 20% ─ GET /api/courses/{id}/gradebook ────────────
-    // Query berat: agregasi nilai semua mahasiswa per course
-    const res = http.get(`${BASE_URL}/api/courses/${randomCourseId()}/gradebook`, headers);
+    const pair = randomInstructorCoursePair();
+    const h = headersFor(pair.instructorId);
+    const res = http.get(`${BASE_URL}/api/courses/${pair.courseId}/gradebook`, h);
     gradebookDuration.add(res.timings.duration);
     check(res, {
       '[gradebook] status 200': (r) => r.status === 200,
-      '[gradebook] success':    (r) => {
-        try { return JSON.parse(r.body).success === true; } catch(_) { return false; }
-      },
     }) || errorRate.add(1);
 
+  // ── 5% — User Grades (READ, student reads own) ────────
+  } else if (action < 0.65) {
+    const pair = randomEnrolledPair();
+    const h = headersFor(pair.studentId);
+    const res = http.get(`${BASE_URL}/api/users/${pair.studentId}/grades`, h);
+    userGradesDuration.add(res.timings.duration);
+    check(res, {
+      '[user-grades] status 200': (r) => r.status === 200,
+    }) || errorRate.add(1);
+
+  // ── 3% — Course Materials List (READ) ─────────────────
+  } else if (action < 0.68) {
+    const pair = randomEnrolledPair();
+    const h = headersFor(pair.studentId);
+    const res = http.get(`${BASE_URL}/api/courses/${pair.courseId}/materials`, h);
+    materialListDuration.add(res.timings.duration);
+    check(res, {
+      '[material-list] status 200': (r) => r.status === 200,
+    }) || errorRate.add(1);
+
+  // ── 2% — Course Completion State (READ) ────────────────
+  } else if (action < 0.70) {
+    if (COURSE_COMPLETION_CHECK_TARGETS.length > 0) {
+      const target = pick(COURSE_COMPLETION_CHECK_TARGETS);
+      const h = headersFor(target.studentId);
+      const res = http.get(
+        `${BASE_URL}/api/courses/${target.courseId}/completion`,
+        h
+      );
+      courseCompletionDuration.add(res.timings.duration);
+      check(res, {
+        '[course-completion] status 200': (r) => r.status === 200,
+        '[course-completion] has progress': (r) => {
+          try {
+            const body = JSON.parse(r.body);
+            return body && body.progress && typeof body.progress.criteria_total === 'number';
+          } catch(_) { return false; }
+        },
+      }) || errorRate.add(1);
+    }
+
+  // ── 7% — Controlled Failures (READ, expected 403/404) ─
+  } else if (action < 0.77) {
+    const failureType = Math.random();
+
+    // All controlled-failure requests are tagged ef=1 so http_req_failed threshold can exclude them
+
+    if (failureType < 0.20 && GROUP_RESTRICTED_MODULE_TARGETS.length > 0) {
+      // Group-restricted module access (expect 404)
+      const target = pick(GROUP_RESTRICTED_MODULE_TARGETS);
+      const h = { ...headersFor(target.userId), tags: { ef: '1' } };
+      const res = http.get(`${BASE_URL}${activityPath(target)}`, h);
+      const ok = check(res, {
+        '[cf-group-restricted] status 404': (r) => r.status === target.expectedStatus,
+      });
+      if (!ok) errorRate.add(1);
+
+    } else if (failureType < 0.40 && PREREQUISITE_LOCKED_TARGETS.length > 0) {
+      // Prerequisite-locked module (expect 404)
+      const target = pick(PREREQUISITE_LOCKED_TARGETS);
+      const h = { ...headersFor(target.userId), tags: { ef: '1' } };
+      const res = http.get(`${BASE_URL}${activityPath(target)}`, h);
+      const ok = check(res, {
+        '[cf-prereq-locked] status 404': (r) => r.status === target.expectedStatus,
+      });
+      if (!ok) errorRate.add(1);
+
+    } else if (failureType < 0.60 && MIN_GRADE_LOCKED_TARGETS.length > 0) {
+      // Min-grade locked module (expect 404)
+      const target = pick(MIN_GRADE_LOCKED_TARGETS);
+      const h = { ...headersFor(target.userId), tags: { ef: '1' } };
+      const res = http.get(`${BASE_URL}${activityPath(target)}`, h);
+      const ok = check(res, {
+        '[cf-min-grade-locked] status 404': (r) => r.status === target.expectedStatus,
+      });
+      if (!ok) errorRate.add(1);
+
+    } else if (failureType < 0.80 && GROUPING_RESTRICTED_MODULE_TARGETS.length > 0) {
+      // Grouping-restricted module access (expect 404)
+      const target = pick(GROUPING_RESTRICTED_MODULE_TARGETS);
+      const h = { ...headersFor(target.userId), tags: { ef: '1' } };
+      const res = http.get(`${BASE_URL}${activityPath(target)}`, h);
+      const ok = check(res, {
+        '[cf-grouping-restricted] status 404': (r) => r.status === (target.expectedStatus || 404),
+      });
+      if (!ok) errorRate.add(1);
+
+    } else if (SUSPENDED_ACCESS_TARGETS.length > 0) {
+      // Suspended student tries to read (expect 403)
+      const target = pick(SUSPENDED_ACCESS_TARGETS);
+      const h = { ...headersFor(target.userId), tags: { ef: '1' } };
+      const res = http.get(`${BASE_URL}/api/courses/${target.courseId}/structure`, h);
+      const ok = check(res, {
+        '[cf-suspended] status 403': (r) => r.status === target.expectedStatus,
+      });
+      if (!ok) errorRate.add(1);
+
+    } else if (NON_ENROLLED_ACCESS_TARGETS.length > 0) {
+      // Non-enrolled student tries to read (expect 403)
+      const target = pick(NON_ENROLLED_ACCESS_TARGETS);
+      const h = { ...headersFor(target.userId), tags: { ef: '1' } };
+      const res = http.get(`${BASE_URL}/api/courses/${target.courseId}/structure`, h);
+      const ok = check(res, {
+        '[cf-non-enrolled] status 403': (r) => r.status === target.expectedStatus,
+      });
+      if (!ok) errorRate.add(1);
+    }
+
+  // ── 3% — Quiz Attempt Result (READ, normalized detail) ─
+  } else if (action < 0.80) {
+    if (QUIZ_DETAIL_ATTEMPT_TARGETS.length > 0) {
+      const target = pick(QUIZ_DETAIL_ATTEMPT_TARGETS);
+      const h = headersFor(target.userId);
+      const res = http.get(
+        `${BASE_URL}/api/quizzes/${target.quizId}/attempts/${target.attemptId}/result`,
+        h
+      );
+      quizAttemptResultDuration.add(res.timings.duration);
+      check(res, {
+        '[quiz-attempt-result] status 200': (r) => r.status === 200,
+      }) || errorRate.add(1);
+    }
+
+  // ── 10% — Start Quiz Attempt (WRITE, actor-valid) ─────
   } else if (action < 0.90) {
-    // ── 10% ─ POST /api/quizzes/{id}/attempts ────────────
-    // 400 ONGOING_ATTEMPT adalah perilaku normal saat high-concurrency.
+    const target = pick(WRITABLE_QUIZ_ATTEMPT_TARGETS);
+    const h = headersFor(target.studentId);
     const res = http.post(
-      `${BASE_URL}/api/quizzes/${randomQuizId()}/attempts`,
-      JSON.stringify({ user_id: randomStudentId() }),
-      { ...headers, responseCallback: http.expectedStatuses(201, 400) }
+      `${BASE_URL}/api/quizzes/${target.activityId}/attempts`,
+      JSON.stringify({}),
+      h
     );
     startAttemptDuration.add(res.timings.duration);
-    check(res, {
-      '[start-attempt] status 201 or 400': (r) => r.status === 201 || r.status === 400,
-    }) || errorRate.add(1);
+    const ok = check(res, {
+      '[start-attempt] status 201': (r) => r.status === target.expectedStatus,
+    });
+    if (!ok) errorRate.add(1);
 
+  // ── 10% — Submit Assignment (WRITE, actor-valid) ───────
   } else {
-    // ── 10% ─ POST /api/assignments/{id}/submissions ──────
-    // 400 ALREADY_SUBMITTED adalah perilaku normal saat high-concurrency.
+    const target = pick(WRITABLE_ASSIGNMENT_SUBMISSION_TARGETS);
+    const h = headersFor(target.studentId);
     const res = http.post(
-      `${BASE_URL}/api/assignments/${randomAssignmentId()}/submissions`,
+      `${BASE_URL}/api/assignments/${target.activityId}/submissions`,
       JSON.stringify({
-        user_id:   randomStudentId(),
-        file_path: `submissions/rh-${Date.now()}-${randomInt(1000, 9999)}.pdf`,
+        file_path: `benchmark/rh-${__VU}-${Date.now()}.pdf`,
       }),
-      { ...headers, responseCallback: http.expectedStatuses(201, 400) }
+      h
     );
     submitAssignmentDuration.add(res.timings.duration);
-    check(res, {
-      '[submit-assignment] status 201 or 400': (r) => r.status === 201 || r.status === 400,
-    }) || errorRate.add(1);
+    const ok = check(res, {
+      '[submit-assignment] status 201': (r) => r.status === target.expectedStatus,
+    });
+    if (!ok) errorRate.add(1);
   }
 
-  // Think time: 0.5–2 detik (simulasi user nyata)
   sleep(Math.random() * 1.5 + 0.5);
 }
 
