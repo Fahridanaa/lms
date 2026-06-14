@@ -104,11 +104,16 @@ class ReadThroughStrategy implements CacheStrategyInterface
      *
      * Flow:
      * 1. Check cache → HIT? return
-     * 2. Find loader yang supports($key) → load()
+     * 2. Find loader yang supports($key) → load() (LOADER-FIRST)
      * 3. No loader? Execute callback fallback
      *
+     * LOADER-FIRST CONTRACT:
+     * If a registered loader supports the key, it takes precedence over
+     * any provided callback. Callbacks are only used as a fallback when
+     * no loader matches, for custom or unregistered cache keys.
+     *
      * @param  string  $key  Cache key
-     * @param  callable|null  $callback  Fallback jika tidak ada loader yang support key ini
+     * @param  callable|null  $callback  Fallback hanya jika tidak ada loader yang support key ini
      * @return mixed Data dari cache atau database
      *
      * @throws \RuntimeException If no loader supports the key AND no callback provided
@@ -118,8 +123,10 @@ class ReadThroughStrategy implements CacheStrategyInterface
         $prefixedKey = $this->getPrefixedKey($key);
 
         try {
-            if ($callback !== null) {
-                $dataSource = fn () => $callback();
+            $loader = $this->findLoader($key);
+
+            if ($loader !== null) {
+                $dataSource = fn () => $loader->load($key);
 
                 if (! empty($this->cacheTags)) {
                     return Cache::tags($this->cacheTags)->remember($prefixedKey, $this->ttl, $dataSource);
@@ -128,10 +135,8 @@ class ReadThroughStrategy implements CacheStrategyInterface
                 return Cache::remember($prefixedKey, $this->ttl, $dataSource);
             }
 
-            $loader = $this->findLoader($key);
-
-            if ($loader !== null) {
-                $dataSource = fn () => $loader->load($key);
+            if ($callback !== null) {
+                $dataSource = fn () => $callback();
 
                 if (! empty($this->cacheTags)) {
                     return Cache::tags($this->cacheTags)->remember($prefixedKey, $this->ttl, $dataSource);
