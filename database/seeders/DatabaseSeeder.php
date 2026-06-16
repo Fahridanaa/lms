@@ -11,6 +11,7 @@ use App\Models\CourseCompletion;
 use App\Models\CourseCompletionCriterion;
 use App\Models\CourseCompletionCriterionCompletion;
 use App\Models\CourseEnrollment;
+use App\Models\CourseEnrolmentMethod;
 use App\Models\CourseGroup;
 use App\Models\CourseGrouping;
 use App\Models\CourseGroupingGroup;
@@ -30,55 +31,725 @@ use App\Models\QuizAttemptQuestion;
 use App\Models\QuizAttemptStep;
 use App\Models\QuizAttemptStepData;
 use App\Models\QuizGrade;
+use App\Models\QuizOverride;
+use App\Models\AssignmentOverride;
 use App\Models\QuizQuestionSlot;
 use App\Models\Role;
 use App\Models\RoleAssignment;
 use App\Models\Submission;
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 class DatabaseSeeder extends Seeder
 {
-    /**
-     * Deterministic seed data for the LMS benchmark.
-     *
-     * All data is derived from fixed arrays — no faker randomness
-     * so that every seed produces identical results.
-     */
+    private const BATCH_SIZE = 500;
+
+    private array $roleIdMap = [];
+
     public function run(): void
     {
         ini_set('memory_limit', '512M');
 
-        $this->command->info('--- LMS Benchmark Seed (deterministic) ---');
+        DB::disableQueryLog();
+        $this->command->info('--- LMS Benchmark Seed (deterministic, bulk) ---');
 
-        // ─── 1. Users ───────────────────────────────────────────────────────────
-        $this->command->info('Creating users...');
+        // ─── 1. Base tables ───────────────────────────────────
+        $this->seedRoles();
+        $systemContextId = $this->seedSystemContext();
+        $this->seedRoleAssignments($systemContextId);
 
-        $instructors = collect();
-        foreach (['Alice', 'Bob', 'Carol', 'Dave', 'Eve'] as $i => $name) {
-            $instructors->push(User::create([
-                'name' => "Instructor {$name}",
-                'email' => 'instructor'.strtolower($name).'@lms.test',
-                'password' => bcrypt('password'),
+        // ─── 2. Users ─────────────────────────────────────────
+        $this->command->info('Creating 5,000 users (100 instructors + 4,900 students)...');
+        $instructorIds = $this->bulkInsertUsers('instructor', 100);
+        $studentIds = $this->bulkInsertUsers('student', 4900);
+        $allUserIds = array_merge($instructorIds, $studentIds);
+        $this->command->info('  -> '.count($allUserIds).' users created');
+
+        // ─── 3. Course Categories ──────────────────────────────
+        $categoryIds = $this->seedCourseCategories();
+        $this->command->info('  -> '.count($categoryIds).' categories created');
+
+        // ─── 4. Courses (50 total: 10 detailed + 40 generated) ─
+        $this->command->info('Creating 50 courses...');
+        $courseDefs = $this->generateCourseDefs($instructorIds, $categoryIds);
+        $courseIds = [];
+        $courseCategoryMap = [];
+
+        // --- 4a. Detailed courses (indices 0-9) ---
+        $detailedDefs = $this->detailedCourseDefs($instructorIds, $categoryIds);
+
+        // --- 4b. Generated courses (indices 10-49) ---
+        $generatedDefs = $this->generatedCourseDefs($instructorIds, $categoryIds, 40);
+
+        $allCourseDefs = array_merge($detailedDefs, $generatedDefs);
+
+        foreach ($allCourseDefs as $ci => $def) {
+            $courseIds[] = DB::table('courses')->insertGetId([
+                'name' => $def['name'],
+                'description' => $def['description'],
+                'instructor_id' => $def['instructor_id'],
+                'is_active' => $def['is_active'],
+                'course_category_id' => $def['course_category_id'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $courseCategoryMap[$courseIds[$ci]] = $def['course_category_id'];
+
+            // Course context
+            $courseCtxId = DB::table('contexts')->insertGetId([
+                'contextlevel' => Context::LEVEL_COURSE,
+                'instance_id' => $courseIds[$ci],
+                'path' => '/'.$systemContextId.'/'.$courseIds[$ci],
+                'depth' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            // Instructor role assignment at course context
+            DB::table('role_assignments')->insert([
+                'role_id' => $this->roleIdMap['instructor'],
+                'context_id' => $courseCtxId,
+                'user_id' => $def['instructor_id'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            // Course enrolment method
+            DB::table('course_enrolment_methods')->insert([
+                'course_id' => $courseIds[$ci],
+                'method' => 'manual',
+                'status' => 'active',
+                'default_role' => 'student',
+                'starts_at' => now()->subYears(1),
+                'ends_at' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+        $this->command->info('  -> '.count($courseIds).' courses created');
+
+        // ─── 5. Sections + Modules + Activities ────────────────
+        $this->command->info('Creating sections, modules, and activities...');
+        $sectionIds = [];
+        $moduleIds = []; // [courseIdx => [sectionTitle => [module_id, type, title, visible, completion_enabled]]]
+        $activityIds = []; // [courseIdx => {quiz_ids: [...], assignment_ids: [...], material_ids: [...]}]
+        $createdQuizIds = [];
+        $createdAssignmentIds = [];
+        $createdMaterialIds = [];
+
+        foreach ($allCourseDefs as $ci => $def) {
+            $courseId = $courseIds[$ci];
+            $moduleIds[$ci] = [];
+            $sectionNames = $def['sections'];
+            $sectionNameToId = [];
+
+            foreach ($sectionNames as $si => $sectionTitle) {
+                $secId = DB::table('course_sections')->insertGetId([
+                    'course_id' => $courseId,
+                    'title' => $sectionTitle,
+                    'summary' => 'Summary for '.$sectionTitle.'.',
+                    'sort_order' => $si,
+                    'visible' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                $sectionIds[] = $secId;
+                $sectionNameToId[$sectionTitle] = $secId;
+            }
+
+            // Activities per section
+            $sortOrder = 0;
+            foreach ($def['activities'] as $sectionTitle => $acts) {
+                $secId = $sectionNameToId[$sectionTitle] ?? null;
+                if (!$secId) continue;
+
+                foreach ($acts as $act) {
+                    $type = $act['type'];
+                    $aTitle = $act['title'];
+                    $visible = $act['visible'] ?? true;
+                    $completionEnabled = $act['completion_enabled'] ?? false;
+
+                    $activityId = $this->insertActivity($type, $aTitle, $courseId, $visible, $act);
+
+                    if ($type === 'quiz') $createdQuizIds[$ci][] = $activityId;
+                    elseif ($type === 'assignment') $createdAssignmentIds[$ci][] = $activityId;
+                    elseif ($type === 'material') $createdMaterialIds[$ci][] = $activityId;
+
+                    // Learning Module
+                    $moduleId = DB::table('learning_modules')->insertGetId([
+                        'course_id' => $courseId,
+                        'course_section_id' => $secId,
+                        'module_type' => $type,
+                        'module_id' => $activityId,
+                        'visible' => $visible,
+                        'available_from' => $act['available_from'] ?? null,
+                        'available_until' => $act['available_until'] ?? null,
+                        'sort_order' => $sortOrder++,
+                        'completion_enabled' => $completionEnabled,
+                        'completion_rule' => $completionEnabled ? ($type === 'quiz' ? 'finish' : ($type === 'assignment' ? 'submit' : 'view')) : null,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    $moduleIds[$ci][] = [
+                        'id' => $moduleId,
+                        'type' => $type,
+                        'title' => $aTitle,
+                        'visible' => $visible,
+                        'completion_enabled' => $completionEnabled,
+                    ];
+
+                    // Module context
+                    $courseCtxRow = DB::table('contexts')
+                        ->where('contextlevel', Context::LEVEL_COURSE)
+                        ->where('instance_id', $courseId)
+                        ->first();
+                    if ($courseCtxRow) {
+                        DB::table('contexts')->insert([
+                            'contextlevel' => Context::LEVEL_MODULE,
+                            'instance_id' => $moduleId,
+                            'path' => $courseCtxRow->path.'/'.$moduleId,
+                            'depth' => $courseCtxRow->depth + 1,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    }
+                }
+            }
+        }
+        $this->command->info('  -> '.count($sectionIds).' sections, activities created');
+
+        // ─── 6. Enrollments ────────────────────────────────────
+        $this->command->info('Creating enrollments (~100 per course)...');
+        $enrollmentCount = 0;
+        $enrolledUserIdsByCourse = [];
+
+        mt_srand(42);
+        foreach ($courseIds as $ci => $courseId) {
+            $count = mt_rand(80, 120);
+            $pool = $studentIds;
+            shuffle($pool);
+            $selected = array_slice($pool, 0, min($count, count($pool)));
+            $enrolledUserIdsByCourse[$courseId] = $selected;
+
+            $batch = [];
+            foreach ($selected as $uid) {
+                $batch[] = [
+                    'user_id' => $uid,
+                    'course_id' => $courseId,
+                    'role' => 'student',
+                    'status' => 'active',
+                    'enrolled_at' => now()->subDays(mt_rand(30, 90)),
+                    'starts_at' => now()->subDays(mt_rand(30, 90)),
+                    'ends_at' => null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+                if (count($batch) >= self::BATCH_SIZE) {
+                    DB::table('course_enrollments')->insert($batch);
+                    $enrollmentCount += count($batch);
+                    $batch = [];
+                }
+            }
+            if (!empty($batch)) {
+                DB::table('course_enrollments')->insert($batch);
+                $enrollmentCount += count($batch);
+            }
+
+            // Role assignment for student enrollments
+            $raBatch = [];
+            foreach ($selected as $uid) {
+                $courseCtxRow = DB::table('contexts')
+                    ->where('contextlevel', Context::LEVEL_COURSE)
+                    ->where('instance_id', $courseId)
+                    ->first();
+                if ($courseCtxRow) {
+                    $raBatch[] = [
+                        'role_id' => $this->roleIdMap['student'],
+                        'context_id' => $courseCtxRow->id,
+                        'user_id' => $uid,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                }
+                if (count($raBatch) >= self::BATCH_SIZE) {
+                    DB::table('role_assignments')->insert($raBatch);
+                    $raBatch = [];
+                }
+            }
+            if (!empty($raBatch)) {
+                DB::table('role_assignments')->insert($raBatch);
+            }
+
+            // Instructor enrollment
+            $def = $allCourseDefs[$ci];
+            DB::table('course_enrollments')->insert([
+                'user_id' => $def['instructor_id'],
+                'course_id' => $courseId,
                 'role' => 'instructor',
-            ]));
+                'status' => 'active',
+                'enrolled_at' => now()->subDays(60),
+                'starts_at' => now()->subDays(60),
+                'ends_at' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $enrollmentCount++;
+        }
+        $this->command->info('  -> '.$enrollmentCount.' enrollments created');
+
+        // ─── 7. Grade Items ────────────────────────────────────
+        $this->command->info('Creating grade items...');
+        $gradeItemIdsByCourse = []; // [courseId => [type_itemId => gradeItemId]]
+        foreach ($courseIds as $ci => $courseId) {
+            $gradeItemIdsByCourse[$courseId] = [];
+            $quizIds = $createdQuizIds[$ci] ?? [];
+            foreach ($quizIds as $qid) {
+                $giId = DB::table('grade_items')->insertGetId([
+                    'course_id' => $courseId,
+                    'item_type' => 'quiz',
+                    'item_id' => $qid,
+                    'name' => $this->getQuizTitle($qid).' - Grade',
+                    'max_score' => 100,
+                    'pass_score' => 60,
+                    'weight' => round(mt_rand(50, 200) / 100, 2),
+                    'hidden' => false,
+                    'locked' => false,
+                    'source' => 'quiz',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                $gradeItemIdsByCourse[$courseId]['quiz_'.$qid] = $giId;
+            }
+            $assignIds = $createdAssignmentIds[$ci] ?? [];
+            foreach ($assignIds as $aid) {
+                $maxScore = $this->getAssignmentMaxScore($aid) ?: 100;
+                $giId = DB::table('grade_items')->insertGetId([
+                    'course_id' => $courseId,
+                    'item_type' => 'assignment',
+                    'item_id' => $aid,
+                    'name' => $this->getAssignmentTitle($aid).' - Grade',
+                    'max_score' => $maxScore,
+                    'pass_score' => $maxScore * 0.6,
+                    'weight' => round(mt_rand(50, 200) / 100, 2),
+                    'hidden' => false,
+                    'locked' => false,
+                    'source' => 'assignment',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                $gradeItemIdsByCourse[$courseId]['assignment_'.$aid] = $giId;
+            }
+        }
+        $this->command->info('  -> grade items created');
+
+        // ─── 8. Availability Rules + Completion + Course Completion Criteria ──
+        $this->command->info('Creating availability rules and completion records...');
+        $this->createAvailabilityRules($moduleIds, $courseIds, $allCourseDefs);
+        $this->createCourseCompletionCriteriaAll($courseIds, $allCourseDefs, $moduleIds, $gradeItemIdsByCourse);
+
+        // Module completions for some enrolled users
+        mt_srand(123);
+        $compCount = 0;
+        foreach ($courseIds as $ci => $courseId) {
+            $enrolled = $enrolledUserIdsByCourse[$courseId] ?? [];
+            if (empty($enrolled)) continue;
+            $sample = array_slice($enrolled, 0, min(5, count($enrolled)));
+
+            foreach ($moduleIds[$ci] ?? [] as $mod) {
+                if (!$mod['completion_enabled']) continue;
+                foreach ($sample as $uid) {
+                    DB::table('module_completions')->insert([
+                        'learning_module_id' => $mod['id'],
+                        'user_id' => $uid,
+                        'state' => 'complete',
+                        'completed_at' => now()->subDays(mt_rand(1, 20)),
+                        'source' => match ($mod['type']) {
+                            'material' => 'view',
+                            'quiz' => 'quiz_attempt',
+                            'assignment' => 'assignment_submission',
+                            default => 'view',
+                        },
+                        'override_by' => null,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    $compCount++;
+                }
+            }
+
+            // Pre-seed course completions
+            $this->preSeedCourseCompletionsBulk($courseId, $gradeItemIdsByCourse[$courseId] ?? []);
+        }
+        $this->command->info('  -> '.$compCount.' module completions created');
+
+        // ─── 9. Groups ─────────────────────────────────────────
+        $this->command->info('Creating groups...');
+        $groupNames = ['Group A', 'Group B', 'Alpha', 'Beta', 'Gamma', 'Team 1', 'Workshop 1', 'Workshop 2',
+                       'Lab A', 'Lab B', 'Lab C', 'Study Group', 'Project Team', 'Section 1', 'Section 2', 'Cohort 1'];
+        $groupCount = 0;
+        $groupMemberCount = 0;
+
+        foreach ($courseIds as $ci => $courseId) {
+            $ng = mt_rand(1, 3);
+            $gIds = [];
+            mt_srand($ci * 7 + 42);
+            for ($gi = 0; $gi < $ng; $gi++) {
+                $gName = ($ci < 10 && isset($groupNames[$gi])) ? $groupNames[$gi] : 'Group '.($gi + 1);
+                $gId = DB::table('course_groups')->insertGetId([
+                    'course_id' => $courseId,
+                    'name' => $gName,
+                    'sort_order' => $gi,
+                    'active' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                $gIds[] = $gId;
+                $groupCount++;
+            }
+
+            // Group members — split enrolled students across groups
+            $enrolled = $enrolledUserIdsByCourse[$courseId] ?? [];
+            if (!empty($gIds) && !empty($enrolled)) {
+                $chunks = array_chunk($enrolled, (int) ceil(count($enrolled) / count($gIds)));
+                foreach ($gIds as $gi => $gId) {
+                    $chunk = $chunks[$gi] ?? [];
+                    $gmBatch = [];
+                    foreach ($chunk as $uid) {
+                        $gmBatch[] = [
+                            'course_group_id' => $gId,
+                            'user_id' => $uid,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ];
+                    }
+                    if (!empty($gmBatch)) {
+                        DB::table('course_group_members')->insert($gmBatch);
+                        $groupMemberCount += count($gmBatch);
+                    }
+                }
+            }
+
+            // Course groupings for some courses
+            if (!empty($gIds) && $ci % 3 === 0) {
+                $groupingId = DB::table('course_groupings')->insertGetId([
+                    'course_id' => $courseId,
+                    'name' => 'Cohort '.($ci),
+                    'sort_order' => 0,
+                    'active' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                foreach ($gIds as $gId) {
+                    DB::table('course_grouping_groups')->insert([
+                        'course_grouping_id' => $groupingId,
+                        'course_group_id' => $gId,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
+        }
+        $this->command->info('  -> '.$groupCount.' groups, '.$groupMemberCount.' members');
+
+        // ─── 10. Quiz Attempts (~25,000) ──────────────────────
+        $this->command->info('Creating quiz attempts (~25,000)...');
+        $attemptCount = 0;
+        $quizIdToCourse = [];
+        foreach ($courseIds as $ci => $courseId) {
+            foreach ($createdQuizIds[$ci] ?? [] as $qid) {
+                $quizIdToCourse[$qid] = $courseId;
+            }
         }
 
-        $students = collect();
-        for ($i = 1; $i <= 50; $i++) {
-            $students->push(User::create([
-                'name' => "Student {$i}",
-                'email' => "student{$i}@lms.test",
-                'password' => bcrypt('password'),
-                'role' => 'student',
-            ]));
+        mt_srand(456);
+        foreach ($createdQuizIds as $ci => $qids) {
+            $courseId = $courseIds[$ci];
+            $enrolled = $enrolledUserIdsByCourse[$courseId] ?? [];
+            if (empty($enrolled)) continue;
+            $sample = array_slice($enrolled, 0, min(100, count($enrolled)));
+
+            foreach ($qids as $qid) {
+                $batch = [];
+                foreach ($sample as $uid) {
+                    $score = mt_rand(40, 100);
+                    $batch[] = [
+                        'quiz_id' => $qid,
+                        'user_id' => $uid,
+                        'answers' => '[]',
+                        'score' => $score,
+                        'status' => 'finished',
+                        'attempt_number' => 1,
+                        'started_at' => now()->subDays(mt_rand(1, 30)),
+                        'completed_at' => now()->subDays(mt_rand(0, 5)),
+                        'submitted_at' => now()->subDays(mt_rand(0, 5)),
+                        'expires_at' => null,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                    if (count($batch) >= self::BATCH_SIZE) {
+                        DB::table('quiz_attempts')->insert($batch);
+                        $attemptCount += count($batch);
+                        $batch = [];
+                    }
+                }
+                if (!empty($batch)) {
+                    DB::table('quiz_attempts')->insert($batch);
+                    $attemptCount += count($batch);
+                }
+            }
+        }
+        $this->command->info('  -> '.$attemptCount.' quiz attempts');
+
+        // ─── 11. Submissions (~12,500) ────────────────────────
+        $this->command->info('Creating submissions (~12,500)...');
+        $submissionCount = 0;
+
+        mt_srand(789);
+        foreach ($createdAssignmentIds as $ci => $aids) {
+            $courseId = $courseIds[$ci];
+            $enrolled = $enrolledUserIdsByCourse[$courseId] ?? [];
+            if (empty($enrolled)) continue;
+            $sample = array_slice($enrolled, 0, min(50, count($enrolled)));
+
+            foreach ($aids as $aid) {
+                $batch = [];
+                foreach ($sample as $uid) {
+                    $score = mt_rand(40, 100);
+                    $batch[] = [
+                        'assignment_id' => $aid,
+                        'user_id' => $uid,
+                        'file_path' => 'submissions/assignment-'.$aid.'-user-'.$uid.'.pdf',
+                        'score' => $score,
+                        'status' => 'graded',
+                        'attempt_number' => 1,
+                        'is_latest' => true,
+                        'submitted_at' => now()->subDays(mt_rand(1, 15)),
+                        'graded_at' => now()->subDays(mt_rand(0, 5)),
+                        'late' => false,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                    if (count($batch) >= self::BATCH_SIZE) {
+                        DB::table('submissions')->insert($batch);
+                        $submissionCount += count($batch);
+                        $batch = [];
+                    }
+                }
+                if (!empty($batch)) {
+                    DB::table('submissions')->insert($batch);
+                    $submissionCount += count($batch);
+                }
+            }
+        }
+        $this->command->info('  -> '.$submissionCount.' submissions');
+
+        // ─── 12. Grades from Quiz Attempts (~25k) + Submissions (~12.5k) ─────
+        $this->command->info('Creating grades from quiz attempts...');
+        $gradeCount = 0;
+
+        // Grades from quiz attempts
+        DB::table('quiz_attempts')
+            ->whereNotNull('score')
+            ->where('status', 'finished')
+            ->orderBy('id')
+            ->chunk(500, function ($attempts) use ($gradeItemIdsByCourse, $quizIdToCourse, &$gradeCount) {
+                $batch = [];
+                foreach ($attempts as $attempt) {
+                    $courseId = $quizIdToCourse[$attempt->quiz_id] ?? null;
+                    if (!$courseId) continue;
+
+                    $giId = $gradeItemIdsByCourse[$courseId]['quiz_'.$attempt->quiz_id] ?? null;
+                    if (!$giId) continue;
+
+                    $batch[] = [
+                        'user_id' => $attempt->user_id,
+                        'course_id' => $courseId,
+                        'grade_item_id' => $giId,
+                        'gradeable_type' => 'quiz_attempt',
+                        'gradeable_id' => $attempt->id,
+                        'score' => $attempt->score,
+                        'max_score' => 100,
+                        'percentage' => $attempt->score,
+                        'status' => 'final',
+                        'source' => 'quiz',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                    if (count($batch) >= self::BATCH_SIZE) {
+                        DB::table('grades')->insert($batch);
+                        $gradeCount += count($batch);
+                        $batch = [];
+                    }
+                }
+                if (!empty($batch)) {
+                    DB::table('grades')->insert($batch);
+                    $gradeCount += count($batch);
+                }
+            });
+        $this->command->info('  -> '.$gradeCount.' grades from quiz attempts');
+
+        // Grades from submissions
+        $this->command->info('Creating grades from submissions...');
+        DB::table('submissions')
+            ->whereNotNull('score')
+            ->where('status', 'graded')
+            ->orderBy('id')
+            ->chunk(500, function ($submissions) use ($gradeItemIdsByCourse, &$gradeCount) {
+                $batch = [];
+                foreach ($submissions as $sub) {
+                    $courseId = DB::table('assignments')->where('id', $sub->assignment_id)->value('course_id');
+                    if (!$courseId) continue;
+
+                    $giId = $gradeItemIdsByCourse[$courseId]['assignment_'.$sub->assignment_id] ?? null;
+                    if (!$giId) continue;
+
+                    $maxScore = DB::table('assignments')->where('id', $sub->assignment_id)->value('max_score') ?: 100;
+
+                    $batch[] = [
+                        'user_id' => $sub->user_id,
+                        'course_id' => $courseId,
+                        'grade_item_id' => $giId,
+                        'gradeable_type' => 'submission',
+                        'gradeable_id' => $sub->id,
+                        'score' => $sub->score,
+                        'max_score' => $maxScore,
+                        'percentage' => ($sub->score / $maxScore) * 100,
+                        'status' => 'final',
+                        'source' => 'assignment',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                    if (count($batch) >= self::BATCH_SIZE) {
+                        DB::table('grades')->insert($batch);
+                        $gradeCount += count($batch);
+                        $batch = [];
+                    }
+                }
+                if (!empty($batch)) {
+                    DB::table('grades')->insert($batch);
+                    $gradeCount += count($batch);
+                }
+            });
+        $this->command->info('  -> grades total now: '.$gradeCount);
+
+        // ─── 13. Post-seed data (overrides, quiz detail rows, etc.) ──────────
+        $this->command->info('Creating overrides, quiz details, file records...');
+        $this->seedPostData($courseIds, $allCourseDefs, $gradeItemIdsByCourse);
+
+        // ─── 14. Summary ──────────────────────────────────────
+        $this->printSummary();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  ROLES & CONTEXTS
+    // ═══════════════════════════════════════════════════════════════
+
+    private function seedRoles(): void
+    {
+        $roleDefs = ['manager', 'instructor', 'student'];
+        foreach ($roleDefs as $shortname) {
+            $existing = DB::table('roles')->where('shortname', $shortname)->first();
+            if ($existing) {
+                $this->roleIdMap[$shortname] = $existing->id;
+            } else {
+                $id = DB::table('roles')->insertGetId([
+                    'shortname' => $shortname,
+                    'name' => ucfirst($shortname),
+                    'archetype' => $shortname,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                $this->roleIdMap[$shortname] = $id;
+            }
+        }
+    }
+
+    private function seedSystemContext(): int
+    {
+        $existing = DB::table('contexts')
+            ->where('contextlevel', Context::LEVEL_SYSTEM)
+            ->where('instance_id', 0)
+            ->first();
+        if ($existing) {
+            return $existing->id;
+        }
+        return DB::table('contexts')->insertGetId([
+            'contextlevel' => Context::LEVEL_SYSTEM,
+            'instance_id' => 0,
+            'path' => '/1',
+            'depth' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function seedRoleAssignments(int $systemContextId): void
+    {
+        // First instructor gets manager role at system context
+        // (we'll assign later after users are created, using the first instructor ID)
+        // This is done inside seedPostData
+        $this->systemContextId = $systemContextId;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  USERS (bulk insert, no Eloquent)
+    // ═══════════════════════════════════════════════════════════════
+
+    private function bulkInsertUsers(string $role, int $count): array
+    {
+        $ids = [];
+        $hashCache = [];
+        $batch = [];
+
+        for ($i = 1; $i <= $count; $i++) {
+            $hashIdx = ($i - 1) % 50;
+            if (!isset($hashCache[$hashIdx])) {
+                $hashCache[$hashIdx] = bcrypt('password');
+            }
+
+            $displayName = $role === 'instructor'
+                ? 'Instructor '.$i
+                : 'Student '.$i;
+
+            $batch[] = [
+                'name' => $displayName,
+                'email' => strtolower(str_replace(' ', '.', $displayName)).'@lms.test',
+                'password' => $hashCache[$hashIdx],
+                'role' => $role,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+
+            if (count($batch) >= self::BATCH_SIZE) {
+                $ids = array_merge($ids, $this->insertAndGetIds('users', $batch));
+                $batch = [];
+            }
         }
 
-        $studentIds = $students->pluck('id');
+        if (!empty($batch)) {
+            $ids = array_merge($ids, $this->insertAndGetIds('users', $batch));
+        }
 
-        // ─── 1b. Course Categories (Plan 005) ──────────────────────────────────
-        $this->command->info('Creating course categories...');
+        return $ids;
+    }
 
+    private function insertAndGetIds(string $table, array $rows): array
+    {
+        if (empty($rows)) return [];
+        DB::table($table)->insert($rows);
+
+        // Get the last inserted IDs
+        $firstId = DB::getPdo()->lastInsertId();
+        return range($firstId, $firstId + count($rows) - 1);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  COURSE CATEGORIES
+    // ═══════════════════════════════════════════════════════════════
+
+    private function seedCourseCategories(): array
+    {
         $catDefs = [
             ['name' => 'Technology', 'children' => [
                 ['name' => 'Computer Science', 'children' => [
@@ -98,14 +769,14 @@ class DatabaseSeeder extends Seeder
             ['name' => 'Artificial Intelligence', 'visible' => false],
         ];
 
-        $allCategoryIds = [];
-        $allCategoryNames = [];
-        $createCategories = function (array $defs, ?int $parentId, int $depth, string $pathPrefix) use (&$createCategories, &$allCategoryIds, &$allCategoryNames): void {
+        $ids = [];
+        $walk = function (array $defs, ?int $parentId, int $depth, string $pathPrefix) use (&$walk, &$ids): void {
             foreach ($defs as $i => $def) {
                 $name = $def['name'];
                 $visible = $def['visible'] ?? true;
                 $path = $parentId !== null ? ($pathPrefix ? $pathPrefix.'/'.$parentId : (string) $parentId) : null;
-                $cat = CourseCategory::create([
+
+                $id = DB::table('course_categories')->insertGetId([
                     'parent_id' => $parentId,
                     'name' => $name,
                     'description' => $name.' category',
@@ -113,942 +784,381 @@ class DatabaseSeeder extends Seeder
                     'visible' => $visible,
                     'depth' => $depth,
                     'path' => $path,
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ]);
-                $allCategoryIds[] = $cat->id;
-                $allCategoryNames[$name] = $cat->id;
-                if (! empty($def['children'])) {
-                    $createCategories($def['children'], $cat->id, $depth + 1, $path ? $path.'/'.$cat->id : (string) $cat->id);
+                $ids[] = $id;
+
+                if (!empty($def['children'])) {
+                    $walk($def['children'], $id, $depth + 1, $path ? $path.'/'.$id : (string) $id);
                 }
             }
         };
-        $createCategories($catDefs, null, 0, '');
+        $walk($catDefs, null, 0, '');
 
-        $this->command->info('  -> '.count($allCategoryIds).' categories created');
+        return $ids;
+    }
 
-        // ─── 2. Courses ─────────────────────────────────────────────────────────
-        $this->command->info('Creating courses...');
+    // ═══════════════════════════════════════════════════════════════
+    //  COURSE DEFINITIONS
+    // ═══════════════════════════════════════════════════════════════
 
-        $courseDefs = [
-            ['title' => 'Web Development Fundamentals',    'instructor_idx' => 0, 'sections' => 3, 'active' => true, 'category' => 'Web Development'],
-            ['title' => 'Data Science with Python',         'instructor_idx' => 0, 'sections' => 5, 'active' => true, 'category' => 'Data Science'],
-            ['title' => 'Mobile App Development',           'instructor_idx' => 1, 'sections' => 4, 'active' => true, 'category' => 'Programming'],
-            ['title' => 'Database Design & SQL',            'instructor_idx' => 1, 'sections' => 6, 'active' => true, 'category' => 'Computer Science'],
-            ['title' => 'Machine Learning Foundations',     'instructor_idx' => 2, 'sections' => 7, 'active' => true, 'category' => 'Data Science'],
-            ['title' => 'Cloud Architecture',               'instructor_idx' => 2, 'sections' => 3, 'active' => false, 'category' => 'Cloud Computing'],
-            ['title' => 'Cybersecurity Essentials',         'instructor_idx' => 3, 'sections' => 4, 'active' => true, 'category' => 'Cybersecurity'],
-            ['title' => 'UI/UX Design Principles',          'instructor_idx' => 3, 'sections' => 5, 'active' => true, 'category' => 'UI/UX Design'],
-            ['title' => 'DevOps & CI/CD',                   'instructor_idx' => 4, 'sections' => 3, 'active' => true, 'category' => 'DevOps'],
-            ['title' => 'Artificial Intelligence Intro',    'instructor_idx' => 4, 'sections' => 3, 'active' => false, 'category' => 'Artificial Intelligence'],
-        ];
-
-        $sectionNames = [
-            ['Introduction', 'Core Concepts', 'Final Project'],
-            ['Setup', 'Data Wrangling', 'Visualization', 'Statistics', 'Final Project'],
-            ['Getting Started', 'UI Components', 'Navigation', 'Publishing'],
-            ['ER Modeling', 'Normalization', 'SELECT Queries', 'Joins', 'Indexes', 'Transactions'],
-            ['Intro', 'Regression', 'Classification', 'Clustering', 'Neural Networks', 'Evaluation', 'Capstone'],
-            ['Overview', 'AWS Basics', 'Case Study'],
-            ['Threat Model', 'Network Security', 'Cryptography', 'Incident Response'],
-            ['Design Thinking', 'Wireframing', 'Prototyping', 'User Testing', 'Portfolio'],
-            ['CI Fundamentals', 'Pipeline Setup', 'Monitoring'],
-            ['History', 'Tools', 'Ethics'],
-        ];
-
-        $enrollmentMap = [
-            0 => [1, 10],
-            1 => [5, 19],
-            2 => [10, 29],
-            3 => [15, 26],
-            4 => [20, 44],
-            5 => [1, 30],
-            6 => [5, 22],
-            7 => [10, 31],
-            8 => [1, 14],
-            9 => [20, 29],
-        ];
-
-        $suspendEnrollments = [
-            0 => [5],
-            5 => [2, 15],
-            9 => [22, 25],
-        ];
-
-        $expireEnrollments = [
-            5 => [8],
-        ];
-
-        $courses = collect();
-
-        foreach ($courseDefs as $ci => $def) {
-            $catId = isset($def['category']) ? ($allCategoryNames[$def['category']] ?? null) : null;
-            $course = Course::create([
-                'name' => $def['title'],
-                'description' => 'Course description for '.$def['title'].'.',
-                'instructor_id' => $instructors[$def['instructor_idx']]->id,
-                'is_active' => $def['active'],
-                'course_category_id' => $catId,
-            ]);
-            $courses->push($course);
-
-            // Create course context
-            $courseContext = Context::create([
-                'contextlevel' => Context::LEVEL_COURSE,
-                'instance_id' => $course->id,
-                'path' => '/1/'.$course->id,
-                'depth' => 1,
-            ]);
-
-            // Assign instructor role at course context
-            $instructorRole = Role::where('shortname', 'instructor')->first();
-            if ($instructorRole) {
-                RoleAssignment::firstOrCreate([
-                    'role_id' => $instructorRole->id,
-                    'context_id' => $courseContext->id,
-                    'user_id' => $instructors[$def['instructor_idx']]->id,
-                ]);
-            }
-
-            // Assign manager role at system context (first instructor)
-            if ($ci === 0) {
-                $systemContext = Context::firstOrCreate(
-                    ['contextlevel' => Context::LEVEL_SYSTEM, 'instance_id' => 0],
-                    ['path' => '/1', 'depth' => 0]
-                );
-                $managerRole = Role::where('shortname', 'manager')->first();
-                if ($managerRole) {
-                    RoleAssignment::firstOrCreate([
-                        'role_id' => $managerRole->id,
-                        'context_id' => $systemContext->id,
-                        'user_id' => $instructors[$def['instructor_idx']]->id,
-                    ]);
-                }
-            }
-
-            // Sections
-            $sections = collect();
-            $names = $sectionNames[$ci];
-            for ($si = 0; $si < $def['sections']; $si++) {
-                $sectionTitle = $names[$si] ?? 'Section '.($si + 1);
-                $sections->push(CourseSection::create([
-                    'course_id' => $course->id,
-                    'title' => $sectionTitle,
-                    'summary' => 'Summary for '.$sectionTitle.'.',
-                    'sort_order' => $si,
-                    'visible' => true,
-                ]));
-            }
-            // Make last section of inactive courses hidden
-            if (! $def['active']) {
-                $sections->last()->update(['visible' => false]);
-            }
-
-            // Enroll students
-            [$start, $end] = $enrollmentMap[$ci];
-            $suspended = $suspendEnrollments[$ci] ?? [];
-            $expired = $expireEnrollments[$ci] ?? [];
-
-            for ($sid = $start; $sid <= $end; $sid++) {
-                $student = $students->where('id', $studentIds[$sid - 1])->first();
-                if (! $student) {
-                    continue;
-                }
-                $status = 'active';
-                $endsAt = null;
-                if (in_array($sid, $suspended)) {
-                    $status = 'suspended';
-                } elseif (in_array($sid, $expired)) {
-                    $status = 'active';
-                    $endsAt = now()->subDay();
-                }
-                $enrollment = CourseEnrollment::create([
-                    'user_id' => $student->id,
-                    'course_id' => $course->id,
-                    'role' => 'student',
-                    'status' => $status,
-                    'enrolled_at' => now()->subDays(60),
-                    'starts_at' => now()->subDays(60),
-                    'ends_at' => $endsAt,
-                ]);
-
-                // Create role_assignment for student at course context
-                if ($enrollment->role === 'student' && $status === 'active') {
-                    $studentRole = Role::where('shortname', 'student')->first();
-                    if ($studentRole) {
-                        RoleAssignment::firstOrCreate([
-                            'role_id' => $studentRole->id,
-                            'context_id' => $courseContext->id,
-                            'user_id' => $student->id,
-                        ]);
-                    }
-                }
-            }
-
-            // Create a default manual enrolment method for this course
-            \App\Models\CourseEnrolmentMethod::create([
-                'course_id' => $course->id,
-                'method' => 'manual',
-                'status' => 'active',
-                'default_role' => 'student',
-                'starts_at' => now()->subYears(1),
-                'ends_at' => null,
-            ]);
-
-            // Enroll instructor as instructor-role enrollment too
-            CourseEnrollment::create([
-                'user_id' => $instructors[$def['instructor_idx']]->id,
-                'course_id' => $course->id,
-                'role' => 'instructor',
-                'status' => 'active',
-                'enrolled_at' => now()->subDays(60),
-                'starts_at' => now()->subDays(60),
-                'ends_at' => null,
-            ]);
-
-            // ─── Groups ─────────────────────────────────────────────────────────
-            $groupDefsForCourse = [
-                0 => ['Group A', 'Group B'],
-                1 => ['Alpha', 'Beta', 'Gamma'],
-                2 => ['Team 1'],
-                3 => ['Workshop 1', 'Workshop 2'],
-                4 => ['Lab A', 'Lab B', 'Lab C'],
-                5 => [],
-                6 => ['Study Group', 'Project Team'],
-                7 => ['Section 1', 'Section 2'],
-                8 => ['Cohort 1'],
-                9 => [],
+    private function detailedCourseDefs(array $instructorIds, array $categoryIds): array
+    {
+        $catIndex = function (string $name) {
+            $map = [
+                'Web Development' => 3, 'Data Science' => 2, 'Programming' => 2,
+                'Computer Science' => 1, 'Cloud Computing' => 8, 'Cybersecurity' => 4,
+                'UI/UX Design' => 6, 'DevOps' => 7, 'Artificial Intelligence' => 9,
             ];
+            return $map[$name] ?? null;
+        };
 
-            $createdGroups = collect();
-            foreach (($groupDefsForCourse[$ci] ?? []) as $gi => $gname) {
-                $group = CourseGroup::create([
-                    'course_id' => $course->id,
-                    'name' => $gname,
-                    'sort_order' => $gi,
-                    'active' => true,
-                ]);
-                $createdGroups->push($group);
-            }
-
-            // Group members — split enrolled students across groups
-            if ($createdGroups->isNotEmpty()) {
-                $enrolledStudentIds = CourseEnrollment::where('course_id', $course->id)
-                    ->where('role', 'student')
-                    ->where('status', 'active')
-                    ->pluck('user_id');
-                $split = $enrolledStudentIds->chunk((int) ceil($enrolledStudentIds->count() / $createdGroups->count()));
-                foreach ($createdGroups as $gi => $group) {
-                    $chunk = $split->get($gi);
-                    if ($chunk) {
-                        foreach ($chunk as $uid) {
-                            CourseGroupMember::create([
-                                'course_group_id' => $group->id,
-                                'user_id' => $uid,
-                            ]);
-                        }
-                    }
-                }
-            }
-
-            // ─── Course Groupings (Plan 005) ────────────────────────────────────
-            // Create groupings for courses that have groups
-            if ($createdGroups->isNotEmpty() && in_array($ci, [1, 4, 6, 7], true)) {
-                $grouping = CourseGrouping::create([
-                    'course_id' => $course->id,
-                    'name' => 'Lab Cohorts',
-                    'sort_order' => 0,
-                    'active' => true,
-                ]);
-                // Add all course groups to this grouping
-                foreach ($createdGroups as $cg) {
-                    CourseGroupingGroup::create([
-                        'course_grouping_id' => $grouping->id,
-                        'course_group_id' => $cg->id,
-                    ]);
-                }
-                $this->command->info('  -> Created grouping with '.$createdGroups->count().' groups for course '.$course->id);
-            }
-
-            // ─── Modules per Section ────────────────────────────────────────────
-            $sort = 0;
-            $activitySpecs = $this->getActivitySpecsForCourse($ci);
-
-            foreach ($sections as $section) {
-                $specs = $activitySpecs[$section->title] ?? [];
-                foreach ($specs as $spec) {
-                    $spec['course_id'] = $course->id;
-                    $spec['course_section_id'] = $section->id;
-                    $spec['sort_order'] = $sort++;
-                    $this->createActivity($spec, $course, $section, $ci, $createdGroups);
-                }
-            }
-
-            // ─── Grade Items for quizzes and assignments ────────────────────────
-            $quizzes = Quiz::where('course_id', $course->id)->get();
-            foreach ($quizzes as $quiz) {
-                GradeItem::create([
-                    'course_id' => $course->id,
-                    'item_type' => 'quiz',
-                    'item_id' => $quiz->id,
-                    'name' => $quiz->title.' - Grade',
-                    'max_score' => 100,
-                    'pass_score' => 60,
-                    'weight' => round(mt_rand(50, 200) / 100, 2),
-                    'hidden' => false,
-                    'locked' => false,
-                    'source' => 'quiz',
-                ]);
-            }
-
-            $assignments = Assignment::where('course_id', $course->id)->get();
-            foreach ($assignments as $assignment) {
-                GradeItem::create([
-                    'course_id' => $course->id,
-                    'item_type' => 'assignment',
-                    'item_id' => $assignment->id,
-                    'name' => $assignment->title.' - Grade',
-                    'max_score' => $assignment->max_score,
-                    'pass_score' => $assignment->max_score * 0.6,
-                    'weight' => round(mt_rand(50, 200) / 100, 2),
-                    'hidden' => false,
-                    'locked' => false,
-                    'source' => 'assignment',
-                ]);
-            }
-
-            // ─── Second pass: min-grade availability rules (requires grade items to exist) ─
-            $this->createMinGradeRules($course, $ci);
-
-            // ─── Course-level completion criteria ────────────────────────────────
-            $this->createCourseCompletionCriteria($course, $ci);
-
-            // ─── Pre-seed course completions from existing data ──────────────────
-            $this->preSeedCourseCompletions($course);
-
-            unset($sections, $quizzes, $assignments, $createdGroups);
-        }
-
-        unset($courses);
-
-        // ─── Benchmark-required seed additions ──────────────────────────────────
-        $this->command->info('Adding benchmark-specific seed data...');
-
-        // Lock one grade item for locked-grade benchmark targets
-        $firstQuizGradeItem = GradeItem::where('item_type', 'quiz')->first();
-        if ($firstQuizGradeItem) {
-            $firstQuizGradeItem->update(['locked' => true]);
-            $this->command->info('  -> Locked grade item '.$firstQuizGradeItem->id);
-        }
-
-        // Create one quiz override for a student on the first quiz
-        $firstQuiz = Quiz::where('is_active', true)->first();
-        $sampleStudent = User::where('role', 'student')->first();
-        if ($firstQuiz && $sampleStudent) {
-            \App\Models\QuizOverride::create([
-                'quiz_id' => $firstQuiz->id,
-                'user_id' => $sampleStudent->id,
-                'max_attempts' => 5,
-                'time_limit' => 60,
-                'grace_period' => 5,
-            ]);
-            $this->command->info('  -> Created quiz override for user '.$sampleStudent->id.' on quiz '.$firstQuiz->id);
-        }
-
-        // Create one assignment override for a student on the first assignment
-        $firstAssignment = Assignment::where('is_active', true)->first();
-        if ($firstAssignment && $sampleStudent) {
-            \App\Models\AssignmentOverride::create([
-                'assignment_id' => $firstAssignment->id,
-                'user_id' => $sampleStudent->id,
-                'due_date' => now()->addDays(35),
-                'cutoff_date' => now()->addDays(40),
-                'max_attempts' => 5,
-            ]);
-            $this->command->info('  -> Created assignment override for user '.$sampleStudent->id.' on assignment '.$firstAssignment->id);
-        }
-
-        // ─── Quiz Attempts ──────────────────────────────────────────────────────
-        $this->command->info('Creating quiz attempts...');
-        $attemptCount = 0;
-        Quiz::with('course.enrollments')->chunk(50, function ($quizzes) use (&$attemptCount) {
-            foreach ($quizzes as $quiz) {
-                $enrolled = $quiz->course->enrollments
-                    ->where('role', 'student')
-                    ->where('status', 'active')
-                    ->pluck('user_id');
-                if ($enrolled->isEmpty()) {
-                    continue;
-                }
-                $sample = $enrolled->take(5);
-                foreach ($sample as $uid) {
-                    try {
-                        QuizAttempt::create([
-                            'quiz_id' => $quiz->id,
-                            'user_id' => $uid,
-                            'answers' => [],
-                            'score' => rand(40, 100),
-                            'status' => 'finished',
-                            'attempt_number' => 1,
-                            'started_at' => now()->subDays(rand(1, 30)),
-                            'completed_at' => now()->subDays(rand(0, 5)),
-                            'submitted_at' => now()->subDays(rand(0, 5)),
-                            'expires_at' => null,
-                        ]);
-                        $attemptCount++;
-                    } catch (\Illuminate\Database\QueryException $e) {
-                        // Unique constraint — skip duplicates
-                    }
-                }
-            }
-        });
-        $this->command->info('  -> '.$attemptCount.' quiz attempts');
-
-        // ─── Assignment Submissions ─────────────────────────────────────────────
-        $this->command->info('Creating assignment submissions...');
-        $submissionCount = 0;
-        Assignment::with('course.enrollments')->chunk(50, function ($assignments) use (&$submissionCount) {
-            foreach ($assignments as $assignment) {
-                $enrolled = $assignment->course->enrollments
-                    ->where('role', 'student')
-                    ->where('status', 'active')
-                    ->pluck('user_id');
-                if ($enrolled->isEmpty()) {
-                    continue;
-                }
-                $sample = $enrolled->take(3);
-                foreach ($sample as $uid) {
-                    try {
-                        Submission::create([
-                            'assignment_id' => $assignment->id,
-                            'user_id' => $uid,
-                            'file_path' => 'submissions/assignment-'.$assignment->id.'-user-'.$uid.'.pdf',
-                            'score' => rand(40, 100),
-                            'status' => 'graded',
-                            'attempt_number' => 1,
-                            'is_latest' => true,
-                            'submitted_at' => now()->subDays(rand(1, 15)),
-                            'graded_at' => now()->subDays(rand(0, 5)),
-                            'late' => false,
-                        ]);
-                        $submissionCount++;
-                    } catch (\Illuminate\Database\QueryException $e) {
-                        // Unique constraint — skip duplicates
-                    }
-                }
-            }
-        });
-        $this->command->info('  -> '.$submissionCount.' submissions');
-
-        // ─── Grades from Quiz Attempts ──────────────────────────────────────────
-        $this->command->info('Creating grades from quiz attempts...');
-        $gradeCount = 0;
-        QuizAttempt::whereNotNull('score')
-            ->where('status', 'finished')
-            ->chunk(100, function ($attempts) use (&$gradeCount) {
-                foreach ($attempts as $attempt) {
-                    $gradeItem = GradeItem::where('course_id', $attempt->quiz->course_id)
-                        ->where('item_type', 'quiz')
-                        ->where('item_id', $attempt->quiz_id)
-                        ->first();
-                    if (! $gradeItem) {
-                        continue;
-                    }
-                    try {
-                        Grade::create([
-                            'user_id' => $attempt->user_id,
-                            'course_id' => $attempt->quiz->course_id,
-                            'grade_item_id' => $gradeItem->id,
-                            'gradeable_type' => 'quiz_attempt',
-                            'gradeable_id' => $attempt->id,
-                            'score' => $attempt->score,
-                            'max_score' => 100,
-                            'percentage' => $attempt->score,
-                            'status' => 'final',
-                            'source' => 'quiz',
-                        ]);
-                        $gradeCount++;
-                    } catch (\Illuminate\Database\QueryException $e) {
-                        // Unique constraint skip
-                    }
-                }
-            });
-        $this->command->info('  -> '.$gradeCount.' grades from quiz attempts');
-
-        // ─── Grades from Submissions ────────────────────────────────────────────
-        $this->command->info('Creating grades from submissions...');
-        Submission::whereNotNull('score')
-            ->where('status', 'graded')
-            ->chunk(100, function ($submissions) use (&$gradeCount) {
-                foreach ($submissions as $submission) {
-                    $gradeItem = GradeItem::where('course_id', $submission->assignment->course_id)
-                        ->where('item_type', 'assignment')
-                        ->where('item_id', $submission->assignment_id)
-                        ->first();
-                    if (! $gradeItem) {
-                        continue;
-                    }
-                    $maxScore = $submission->assignment->max_score ?: 100;
-                    try {
-                        Grade::create([
-                            'user_id' => $submission->user_id,
-                            'course_id' => $submission->assignment->course_id,
-                            'grade_item_id' => $gradeItem->id,
-                            'gradeable_type' => 'submission',
-                            'gradeable_id' => $submission->id,
-                            'score' => $submission->score,
-                            'max_score' => $maxScore,
-                            'percentage' => ($submission->score / $maxScore) * 100,
-                            'status' => 'final',
-                            'source' => 'assignment',
-                        ]);
-                        $gradeCount++;
-                    } catch (\Illuminate\Database\QueryException $e) {
-                        // Unique constraint skip
-                    }
-                }
-            });
-        $this->command->info('  -> grades total now: '.$gradeCount);
-
-        // ─── Backfill Quiz Attempt Detail Rows (Plan 001) ───────────────────────
-        $this->command->info('Backfilling quiz attempt detail rows...');
-        $detailCount = 0;
-        QuizAttempt::where('status', 'finished')
-            ->whereDoesntHave('attemptQuestions')
-            ->chunk(50, function ($attempts) use (&$detailCount) {
-                foreach ($attempts as $attempt) {
-                    $quiz = $attempt->quiz;
-                    if (! $quiz) {
-                        continue;
-                    }
-
-                    $quiz->load(['questionSlots.question']);
-                    foreach ($quiz->questionSlots as $slot) {
-                        $attemptQuestion = QuizAttemptQuestion::create([
-                            'quiz_attempt_id' => $attempt->id,
-                            'quiz_question_slot_id' => $slot->id,
-                            'question_id' => $slot->question_id,
-                            'slot' => $slot->slot,
-                            'max_points' => $slot->max_points ?? (float) $slot->question?->points ?? 0,
-                            'score' => null,
-                            'state' => 'not_answered',
-                        ]);
-
-                        QuizAttemptStep::create([
-                            'quiz_attempt_question_id' => $attemptQuestion->id,
-                            'sequence_number' => 0,
-                            'state' => 'not_answered',
-                            'user_id' => $attempt->user_id,
-                        ]);
-
-                        $detailCount++;
-                    }
-                }
-            });
-        $this->command->info('  -> '.$detailCount.' attempt-question rows created');
-
-        // ─── Backfill Quiz Aggregate Grades (Plan 002) ─────────────────────────
-        $this->command->info('Backfilling quiz aggregate grades...');
-        $aggCount = 0;
-        QuizAttempt::where('status', 'finished')
-            ->whereNotNull('score')
-            ->chunk(100, function ($attempts) use (&$aggCount) {
-                // Group by (quiz_id, user_id) and compute aggregate
-                $grouped = $attempts->groupBy(fn ($a) => $a->quiz_id.'-'.$a->user_id);
-                foreach ($grouped as $key => $userAttempts) {
-                    $first = $userAttempts->first();
-                    $quizId = $first->quiz_id;
-                    $userId = $first->user_id;
-                    $quiz = $first->quiz;
-                    if (! $quiz) {
-                        continue;
-                    }
-
-                    $maxScore = (float) $quiz->questions->sum('points');
-                    $gradingMethod = $quiz->grading_method ?? 'highest';
-
-                    $grade = match ($gradingMethod) {
-                        'highest' => $userAttempts->max('score'),
-                        'latest' => $userAttempts->sortByDesc('completed_at')->first()->score,
-                        'average' => $userAttempts->avg('score'),
-                        'first' => $userAttempts->sortBy('completed_at')->first()->score,
-                        default => $userAttempts->max('score'),
-                    };
-                    $percentage = $maxScore > 0 ? $grade : 0;
-
-                    QuizGrade::updateOrCreate(
-                        ['quiz_id' => $quizId, 'user_id' => $userId],
-                        [
-                            'grade' => $grade,
-                            'max_score' => $maxScore,
-                            'percentage' => $percentage,
-                            'grading_method' => $gradingMethod,
-                            'attempt_count' => $userAttempts->count(),
-                            'last_attempt_id' => $userAttempts->sortByDesc('id')->first()->id,
-                            'graded_at' => now(),
-                        ]
-                    );
-                    $aggCount++;
-                }
-            });
-        $this->command->info('  -> '.$aggCount.' quiz aggregate grades created/updated');
-
-        // ─── Backfill Assignment Marker Allocation (Plan 004) ───────────────────
-        $this->command->info('Backfilling assignment marker allocations...');
-        $markerAllocCount = 0;
-        $assignments = Assignment::where('is_active', true)->get();
-        // Pick first 3 assignments for marker allocation
-        foreach ($assignments->take(3) as $assignment) {
-            $assignment->update([
-                'marking_allocation_enabled' => true,
-                'marker_count' => 2,
-                'multi_mark_method' => 'average',
-            ]);
-
-            // Find submissions for this assignment
-            $submissions = Submission::where('assignment_id', $assignment->id)->take(3)->get();
-            // Find instructors other than the course owner
-            $otherInstructors = User::where('role', 'instructor')
-                ->where('id', '!=', $assignment->course->instructor_id)
-                ->take(2)
-                ->get();
-
-            foreach ($submissions as $submission) {
-                foreach ($otherInstructors as $marker) {
-                    AssignmentAllocatedMarker::firstOrCreate([
-                        'assignment_id' => $assignment->id,
-                        'submission_id' => $submission->id,
-                        'student_id' => $submission->user_id,
-                        'marker_id' => $marker->id,
-                    ]);
-                    $markerAllocCount++;
-                }
-            }
-        }
-        $this->command->info('  -> '.$markerAllocCount.' marker allocations created');
-
-        // ─── File Records for Materials ─────────────────────────────────────────
-        $this->command->info('Creating file records for materials...');
-        Material::chunk(50, function ($materials) {
-            foreach ($materials as $material) {
-                FileRecord::create([
-                    'owner_type' => 'material',
-                    'owner_id' => $material->id,
-                    'uploader_id' => $material->course->instructor_id,
-                    'component' => 'material',
-                    'file_path' => $material->file_path,
-                    'mime_type' => $material->mime_type,
-                    'file_size' => $material->file_size,
-                    'checksum' => sha1($material->file_path),
-                    'revision' => $material->revision,
-                    'visible' => true,
-                ]);
-            }
-        });
-
-        // ─── File Records for Submissions ───────────────────────────────────────
-        $this->command->info('Creating file records for submissions...');
-        Submission::chunk(50, function ($submissions) {
-            foreach ($submissions as $submission) {
-                FileRecord::create([
-                    'owner_type' => 'submission',
-                    'owner_id' => $submission->id,
-                    'uploader_id' => $submission->user_id,
-                    'component' => 'assignment_submission',
-                    'file_path' => $submission->file_path,
-                    'mime_type' => 'application/pdf',
-                    'file_size' => rand(100000, 5000000),
-                    'checksum' => sha1($submission->file_path),
-                    'revision' => 1,
-                    'visible' => true,
-                ]);
-            }
-        });
-
-        // ─── Summary ────────────────────────────────────────────────────────────
-        $this->command->info('');
-        $this->command->info('Seeding complete!');
-        $this->command->info('- Users: '.User::count().' (5 instructors, 50 students)');
-        $this->command->info('- Courses: '.Course::count().' (2 inactive)');
-        $this->command->info('- Sections: '.CourseSection::count());
-        $this->command->info('- Enrollments: '.CourseEnrollment::count().' (includes suspended & expired)');
-        $this->command->info('- Groups: '.CourseGroup::count());
-        $this->command->info('- Group Members: '.CourseGroupMember::count());
-        $this->command->info('- Materials: '.Material::count());
-        $this->command->info('- Quizzes: '.Quiz::count());
-        $this->command->info('- Assignments: '.Assignment::count());
-        $this->command->info('- Learning Modules: '.LearningModule::count());
-        $this->command->info('- Availability Rules: '.ModuleAvailabilityRule::count());
-        $this->command->info('- Module Completions: '.ModuleCompletion::count());
-        $this->command->info('- Course Completion Criteria: '.CourseCompletionCriterion::count());
-        $this->command->info('- Course Completions: '.CourseCompletion::count());
-        $this->command->info('- Quiz Attempts: '.QuizAttempt::count());
-        $this->command->info('- Submissions: '.Submission::count());
-        $this->command->info('- Grade Items: '.GradeItem::count());
-        $this->command->info('- Grades: '.Grade::count());
-        $this->command->info('- Course Categories: '.CourseCategory::count());
-        $this->command->info('- Course Groupings: '.CourseGrouping::count());
-        $this->command->info('- Grouping Groups: '.CourseGroupingGroup::count());
-        $this->command->info('- Quiz Attempt Questions: '.QuizAttemptQuestion::count());
-        $this->command->info('- Quiz Attempt Steps: '.QuizAttemptStep::count());
-        $this->command->info('- Quiz Attempt Step Data: '.QuizAttemptStepData::count());
-        $this->command->info('- Quiz Aggregate Grades: '.QuizGrade::count());
-        $this->command->info('- Marker Allocations: '.AssignmentAllocatedMarker::count());
-        $this->command->info('- File Records: '.FileRecord::count());
-    }
-
-    /**
-     * Return activity specs keyed by section title for a given course index.
-     */
-    private function getActivitySpecsForCourse(int $courseIdx): array
-    {
-        $all = [
-            0 => [ // Web Development Fundamentals
-                'Introduction' => [
-                    ['type' => 'material', 'title' => 'Course Overview', 'visible' => true, 'completion_enabled' => true],
-                    ['type' => 'material', 'title' => 'Development Environment Setup', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Core Concepts' => [
-                    ['type' => 'material', 'title' => 'HTML Fundamentals', 'visible' => true, 'completion_enabled' => false],
-                    ['type' => 'material', 'title' => 'CSS Styling Guide', 'visible' => true, 'completion_enabled' => true],
-                    ['type' => 'assignment', 'title' => 'Build a Personal Page', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Final Project' => [
-                    ['type' => 'quiz', 'title' => 'HTML & CSS Basics Quiz', 'visible' => true, 'completion_enabled' => true],
-                    ['type' => 'assignment', 'title' => 'Final Project: Portfolio Site', 'visible' => true, 'completion_enabled' => true],
-                ],
-            ],
-            1 => [ // Data Science with Python
-                'Setup' => [
-                    ['type' => 'material', 'title' => 'Python Environment Setup', 'visible' => true, 'completion_enabled' => true],
-                    ['type' => 'material', 'title' => 'Jupyter Notebooks Guide', 'visible' => true, 'completion_enabled' => false],
-                ],
-                'Data Wrangling' => [
-                    ['type' => 'material', 'title' => 'Pandas Fundamentals', 'visible' => true, 'completion_enabled' => true],
-                    ['type' => 'assignment', 'title' => 'Data Cleaning Exercise', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Visualization' => [
-                    ['type' => 'material', 'title' => 'Matplotlib & Seaborn', 'visible' => false, 'completion_enabled' => false],
-                    ['type' => 'quiz', 'title' => 'Data Wrangling Quiz', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Statistics' => [
-                    ['type' => 'material', 'title' => 'Descriptive Statistics', 'visible' => true, 'completion_enabled' => false],
-                    ['type' => 'quiz', 'title' => 'Statistics Fundamentals Quiz', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Final Project' => [
-                    ['type' => 'assignment', 'title' => 'Data Analysis Report', 'visible' => true, 'completion_enabled' => true],
-                ],
-            ],
-            2 => [ // Mobile App Development
-                'Getting Started' => [
-                    ['type' => 'material', 'title' => 'Environment Setup', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'UI Components' => [
-                    ['type' => 'material', 'title' => 'Layouts & Views', 'visible' => true, 'completion_enabled' => true],
-                    ['type' => 'assignment', 'title' => 'Build a Login Screen', 'visible' => true, 'completion_enabled' => true],
-                    ['type' => 'quiz', 'title' => 'UI Components Quiz', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Navigation' => [
-                    ['type' => 'material', 'title' => 'Navigation Patterns', 'visible' => true, 'completion_enabled' => false],
-                    ['type' => 'assignment', 'title' => 'Multi-Screen App', 'visible' => false, 'completion_enabled' => false],
-                ],
-                'Publishing' => [
-                    ['type' => 'material', 'title' => 'App Store Deployment', 'visible' => true, 'completion_enabled' => false],
-                ],
-            ],
-            3 => [ // Database Design & SQL
-                'ER Modeling' => [
-                    ['type' => 'material', 'title' => 'Entity-Relationship Diagrams', 'visible' => true, 'completion_enabled' => true],
-                    ['type' => 'assignment', 'title' => 'Design an ER Diagram', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Normalization' => [
-                    ['type' => 'material', 'title' => 'Normal Forms (1NF-3NF)', 'visible' => true, 'completion_enabled' => true],
-                    ['type' => 'quiz', 'title' => 'Normalization Quiz', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'SELECT Queries' => [
-                    ['type' => 'material', 'title' => 'Basic SELECT & WHERE', 'visible' => true, 'completion_enabled' => false],
-                    ['type' => 'assignment', 'title' => 'SQL Query Exercises', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Joins' => [
-                    ['type' => 'material', 'title' => 'INNER, LEFT, RIGHT, FULL Joins', 'visible' => true, 'completion_enabled' => false],
-                    ['type' => 'quiz', 'title' => 'Joins & Relationships Quiz', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Indexes' => [
-                    ['type' => 'material', 'title' => 'Indexing Strategies', 'visible' => true, 'completion_enabled' => false],
-                ],
-                'Transactions' => [
-                    ['type' => 'material', 'title' => 'ACID & Transactions', 'visible' => true, 'completion_enabled' => false],
-                ],
-            ],
-            4 => [ // Machine Learning Foundations
-                'Intro' => [
-                    ['type' => 'material', 'title' => 'What is ML?', 'visible' => true, 'completion_enabled' => true],
-                    ['type' => 'quiz', 'title' => 'ML Concepts Quiz', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Regression' => [
-                    ['type' => 'material', 'title' => 'Linear Regression', 'visible' => true, 'completion_enabled' => true],
-                    ['type' => 'assignment', 'title' => 'Regression Analysis', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Classification' => [
-                    ['type' => 'material', 'title' => 'Logistic Regression & Decision Trees', 'visible' => true, 'completion_enabled' => false],
-                    ['type' => 'assignment', 'title' => 'Classification Task', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Clustering' => [
-                    ['type' => 'material', 'title' => 'K-Means & Hierarchical Clustering', 'visible' => true, 'completion_enabled' => false],
-                    ['type' => 'quiz', 'title' => 'Clustering Quiz', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Neural Networks' => [
-                    ['type' => 'material', 'title' => 'Neural Network Basics', 'visible' => false, 'completion_enabled' => false],
-                ],
-                'Evaluation' => [
-                    ['type' => 'material', 'title' => 'Model Evaluation Metrics', 'visible' => true, 'completion_enabled' => false],
-                ],
-                'Capstone' => [
-                    ['type' => 'assignment', 'title' => 'ML Capstone Project', 'visible' => true, 'completion_enabled' => true],
-                ],
-            ],
-            5 => [ // Cloud Architecture (inactive)
-                'Overview' => [
-                    ['type' => 'material', 'title' => 'Cloud Computing Overview', 'visible' => true, 'completion_enabled' => false],
-                ],
-                'AWS Basics' => [
-                    ['type' => 'material', 'title' => 'AWS Core Services', 'visible' => true, 'completion_enabled' => false],
-                ],
-                'Case Study' => [
-                    ['type' => 'material', 'title' => 'Architecture Case Study', 'visible' => true, 'completion_enabled' => false],
-                ],
-            ],
-            6 => [ // Cybersecurity Essentials
-                'Threat Model' => [
-                    ['type' => 'material', 'title' => 'Threat Modeling Overview', 'visible' => true, 'completion_enabled' => true],
-                    ['type' => 'assignment', 'title' => 'Threat Model Document', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Network Security' => [
-                    ['type' => 'material', 'title' => 'Firewalls & IDS', 'visible' => true, 'completion_enabled' => false],
-                    ['type' => 'quiz', 'title' => 'Network Security Quiz', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Cryptography' => [
-                    ['type' => 'material', 'title' => 'Symmetric & Asymmetric Crypto', 'visible' => true, 'completion_enabled' => false],
-                    ['type' => 'assignment', 'title' => 'Implement a Caesar Cipher', 'visible' => false, 'completion_enabled' => false],
-                ],
-                'Incident Response' => [
-                    ['type' => 'material', 'title' => 'Incident Response Plan', 'visible' => true, 'completion_enabled' => false],
-                ],
-            ],
-            7 => [ // UI/UX Design Principles
-                'Design Thinking' => [
-                    ['type' => 'material', 'title' => 'Design Thinking Process', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Wireframing' => [
-                    ['type' => 'material', 'title' => 'Wireframing Tools & Techniques', 'visible' => true, 'completion_enabled' => true],
-                    ['type' => 'assignment', 'title' => 'Create Wireframes', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Prototyping' => [
-                    ['type' => 'material', 'title' => 'Interactive Prototyping', 'visible' => true, 'completion_enabled' => false],
-                    ['type' => 'quiz', 'title' => 'UX Principles Quiz', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'User Testing' => [
-                    ['type' => 'material', 'title' => 'Conducting User Tests', 'visible' => true, 'completion_enabled' => false],
-                    ['type' => 'assignment', 'title' => 'Usability Test Report', 'visible' => false, 'completion_enabled' => false],
-                ],
-                'Portfolio' => [
-                    ['type' => 'material', 'title' => 'Building Your Portfolio', 'visible' => true, 'completion_enabled' => false],
-                ],
-            ],
-            8 => [ // DevOps & CI/CD
-                'CI Fundamentals' => [
-                    ['type' => 'material', 'title' => 'Continuous Integration Concepts', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Pipeline Setup' => [
-                    ['type' => 'material', 'title' => 'Building a CI Pipeline', 'visible' => true, 'completion_enabled' => true],
-                    ['type' => 'assignment', 'title' => 'GitHub Actions Pipeline', 'visible' => true, 'completion_enabled' => true],
-                    ['type' => 'quiz', 'title' => 'CI/CD Concepts Quiz', 'visible' => true, 'completion_enabled' => true],
-                ],
-                'Monitoring' => [
-                    ['type' => 'material', 'title' => 'Application Monitoring', 'visible' => true, 'completion_enabled' => false],
-                ],
-            ],
-            9 => [ // Artificial Intelligence Intro (inactive)
-                'History' => [
-                    ['type' => 'material', 'title' => 'History of AI', 'visible' => true, 'completion_enabled' => false],
-                ],
-                'Tools' => [
-                    ['type' => 'material', 'title' => 'AI Tools & Libraries', 'visible' => true, 'completion_enabled' => false],
-                ],
-                'Ethics' => [
-                    ['type' => 'material', 'title' => 'AI Ethics', 'visible' => true, 'completion_enabled' => false],
-                ],
-            ],
+        return [
+            ['name' => 'Web Development Fundamentals',
+             'description' => 'Course description for Web Development Fundamentals.',
+             'instructor_id' => $instructorIds[0], 'is_active' => true,
+             'course_category_id' => $catIndex('Web Development'),
+             'sections' => ['Introduction', 'Core Concepts', 'Final Project'],
+             'activities' => [
+                 'Introduction' => [
+                     ['type' => 'material', 'title' => 'Course Overview', 'visible' => true, 'completion_enabled' => true],
+                     ['type' => 'material', 'title' => 'Development Environment Setup', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Core Concepts' => [
+                     ['type' => 'material', 'title' => 'HTML Fundamentals', 'visible' => true, 'completion_enabled' => false],
+                     ['type' => 'material', 'title' => 'CSS Styling Guide', 'visible' => true, 'completion_enabled' => true],
+                     ['type' => 'assignment', 'title' => 'Build a Personal Page', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Final Project' => [
+                     ['type' => 'quiz', 'title' => 'HTML & CSS Basics Quiz', 'visible' => true, 'completion_enabled' => true],
+                     ['type' => 'assignment', 'title' => 'Final Project: Portfolio Site', 'visible' => true, 'completion_enabled' => true],
+                 ],
+             ]],
+            ['name' => 'Data Science with Python',
+             'description' => 'Course description for Data Science with Python.',
+             'instructor_id' => $instructorIds[0], 'is_active' => true,
+             'course_category_id' => $catIndex('Data Science'),
+             'sections' => ['Setup', 'Data Wrangling', 'Visualization', 'Statistics', 'Final Project'],
+             'activities' => [
+                 'Setup' => [
+                     ['type' => 'material', 'title' => 'Python Environment Setup', 'visible' => true, 'completion_enabled' => true],
+                     ['type' => 'material', 'title' => 'Jupyter Notebooks Guide', 'visible' => true, 'completion_enabled' => false],
+                 ],
+                 'Data Wrangling' => [
+                     ['type' => 'material', 'title' => 'Pandas Fundamentals', 'visible' => true, 'completion_enabled' => true],
+                     ['type' => 'assignment', 'title' => 'Data Cleaning Exercise', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Visualization' => [
+                     ['type' => 'material', 'title' => 'Matplotlib & Seaborn', 'visible' => false, 'completion_enabled' => false],
+                     ['type' => 'quiz', 'title' => 'Data Wrangling Quiz', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Statistics' => [
+                     ['type' => 'material', 'title' => 'Descriptive Statistics', 'visible' => true, 'completion_enabled' => false],
+                     ['type' => 'quiz', 'title' => 'Statistics Fundamentals Quiz', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Final Project' => [
+                     ['type' => 'assignment', 'title' => 'Data Analysis Report', 'visible' => true, 'completion_enabled' => true],
+                 ],
+             ]],
+            ['name' => 'Mobile App Development',
+             'description' => 'Course description for Mobile App Development.',
+             'instructor_id' => $instructorIds[1], 'is_active' => true,
+             'course_category_id' => $catIndex('Programming'),
+             'sections' => ['Getting Started', 'UI Components', 'Navigation', 'Publishing'],
+             'activities' => [
+                 'Getting Started' => [
+                     ['type' => 'material', 'title' => 'Environment Setup', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'UI Components' => [
+                     ['type' => 'material', 'title' => 'Layouts & Views', 'visible' => true, 'completion_enabled' => true],
+                     ['type' => 'assignment', 'title' => 'Build a Login Screen', 'visible' => true, 'completion_enabled' => true],
+                     ['type' => 'quiz', 'title' => 'UI Components Quiz', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Navigation' => [
+                     ['type' => 'material', 'title' => 'Navigation Patterns', 'visible' => true, 'completion_enabled' => false],
+                     ['type' => 'assignment', 'title' => 'Multi-Screen App', 'visible' => false, 'completion_enabled' => false],
+                 ],
+                 'Publishing' => [
+                     ['type' => 'material', 'title' => 'App Store Deployment', 'visible' => true, 'completion_enabled' => false],
+                 ],
+             ]],
+            ['name' => 'Database Design & SQL',
+             'description' => 'Course description for Database Design & SQL.',
+             'instructor_id' => $instructorIds[1], 'is_active' => true,
+             'course_category_id' => $catIndex('Computer Science'),
+             'sections' => ['ER Modeling', 'Normalization', 'SELECT Queries', 'Joins', 'Indexes', 'Transactions'],
+             'activities' => [
+                 'ER Modeling' => [
+                     ['type' => 'material', 'title' => 'Entity-Relationship Diagrams', 'visible' => true, 'completion_enabled' => true],
+                     ['type' => 'assignment', 'title' => 'Design an ER Diagram', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Normalization' => [
+                     ['type' => 'material', 'title' => 'Normal Forms (1NF-3NF)', 'visible' => true, 'completion_enabled' => true],
+                     ['type' => 'quiz', 'title' => 'Normalization Quiz', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'SELECT Queries' => [
+                     ['type' => 'material', 'title' => 'Basic SELECT & WHERE', 'visible' => true, 'completion_enabled' => false],
+                     ['type' => 'assignment', 'title' => 'SQL Query Exercises', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Joins' => [
+                     ['type' => 'material', 'title' => 'INNER, LEFT, RIGHT, FULL Joins', 'visible' => true, 'completion_enabled' => false],
+                     ['type' => 'quiz', 'title' => 'Joins & Relationships Quiz', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Indexes' => [
+                     ['type' => 'material', 'title' => 'Indexing Strategies', 'visible' => true, 'completion_enabled' => false],
+                 ],
+                 'Transactions' => [
+                     ['type' => 'material', 'title' => 'ACID & Transactions', 'visible' => true, 'completion_enabled' => false],
+                 ],
+             ]],
+            ['name' => 'Machine Learning Foundations',
+             'description' => 'Course description for Machine Learning Foundations.',
+             'instructor_id' => $instructorIds[2], 'is_active' => true,
+             'course_category_id' => $catIndex('Data Science'),
+             'sections' => ['Intro', 'Regression', 'Classification', 'Clustering', 'Neural Networks', 'Evaluation', 'Capstone'],
+             'activities' => [
+                 'Intro' => [
+                     ['type' => 'material', 'title' => 'What is ML?', 'visible' => true, 'completion_enabled' => true],
+                     ['type' => 'quiz', 'title' => 'ML Concepts Quiz', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Regression' => [
+                     ['type' => 'material', 'title' => 'Linear Regression', 'visible' => true, 'completion_enabled' => true],
+                     ['type' => 'assignment', 'title' => 'Regression Analysis', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Classification' => [
+                     ['type' => 'material', 'title' => 'Logistic Regression & Decision Trees', 'visible' => true, 'completion_enabled' => false],
+                     ['type' => 'assignment', 'title' => 'Classification Task', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Clustering' => [
+                     ['type' => 'material', 'title' => 'K-Means & Hierarchical Clustering', 'visible' => true, 'completion_enabled' => false],
+                     ['type' => 'quiz', 'title' => 'Clustering Quiz', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Neural Networks' => [
+                     ['type' => 'material', 'title' => 'Neural Network Basics', 'visible' => false, 'completion_enabled' => false],
+                 ],
+                 'Evaluation' => [
+                     ['type' => 'material', 'title' => 'Model Evaluation Metrics', 'visible' => true, 'completion_enabled' => false],
+                 ],
+                 'Capstone' => [
+                     ['type' => 'assignment', 'title' => 'ML Capstone Project', 'visible' => true, 'completion_enabled' => true],
+                 ],
+             ]],
+            ['name' => 'Cloud Architecture',
+             'description' => 'Course description for Cloud Architecture.',
+             'instructor_id' => $instructorIds[2], 'is_active' => false,
+             'course_category_id' => $catIndex('Cloud Computing'),
+             'sections' => ['Overview', 'AWS Basics', 'Case Study'],
+             'activities' => [
+                 'Overview' => [['type' => 'material', 'title' => 'Cloud Computing Overview', 'visible' => true, 'completion_enabled' => false]],
+                 'AWS Basics' => [['type' => 'material', 'title' => 'AWS Core Services', 'visible' => true, 'completion_enabled' => false]],
+                 'Case Study' => [['type' => 'material', 'title' => 'Architecture Case Study', 'visible' => true, 'completion_enabled' => false]],
+             ]],
+            ['name' => 'Cybersecurity Essentials',
+             'description' => 'Course description for Cybersecurity Essentials.',
+             'instructor_id' => $instructorIds[3], 'is_active' => true,
+             'course_category_id' => $catIndex('Cybersecurity'),
+             'sections' => ['Threat Model', 'Network Security', 'Cryptography', 'Incident Response'],
+             'activities' => [
+                 'Threat Model' => [
+                     ['type' => 'material', 'title' => 'Threat Modeling Overview', 'visible' => true, 'completion_enabled' => true],
+                     ['type' => 'assignment', 'title' => 'Threat Model Document', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Network Security' => [
+                     ['type' => 'material', 'title' => 'Firewalls & IDS', 'visible' => true, 'completion_enabled' => false],
+                     ['type' => 'quiz', 'title' => 'Network Security Quiz', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Cryptography' => [
+                     ['type' => 'material', 'title' => 'Symmetric & Asymmetric Crypto', 'visible' => true, 'completion_enabled' => false],
+                     ['type' => 'assignment', 'title' => 'Implement a Caesar Cipher', 'visible' => false, 'completion_enabled' => false],
+                 ],
+                 'Incident Response' => [
+                     ['type' => 'material', 'title' => 'Incident Response Plan', 'visible' => true, 'completion_enabled' => false],
+                 ],
+             ]],
+            ['name' => 'UI/UX Design Principles',
+             'description' => 'Course description for UI/UX Design Principles.',
+             'instructor_id' => $instructorIds[3], 'is_active' => true,
+             'course_category_id' => $catIndex('UI/UX Design'),
+             'sections' => ['Design Thinking', 'Wireframing', 'Prototyping', 'User Testing', 'Portfolio'],
+             'activities' => [
+                 'Design Thinking' => [['type' => 'material', 'title' => 'Design Thinking Process', 'visible' => true, 'completion_enabled' => true]],
+                 'Wireframing' => [
+                     ['type' => 'material', 'title' => 'Wireframing Tools & Techniques', 'visible' => true, 'completion_enabled' => true],
+                     ['type' => 'assignment', 'title' => 'Create Wireframes', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Prototyping' => [
+                     ['type' => 'material', 'title' => 'Interactive Prototyping', 'visible' => true, 'completion_enabled' => false],
+                     ['type' => 'quiz', 'title' => 'UX Principles Quiz', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'User Testing' => [
+                     ['type' => 'material', 'title' => 'Conducting User Tests', 'visible' => true, 'completion_enabled' => false],
+                     ['type' => 'assignment', 'title' => 'Usability Test Report', 'visible' => false, 'completion_enabled' => false],
+                 ],
+                 'Portfolio' => [['type' => 'material', 'title' => 'Building Your Portfolio', 'visible' => true, 'completion_enabled' => false]],
+             ]],
+            ['name' => 'DevOps & CI/CD',
+             'description' => 'Course description for DevOps & CI/CD.',
+             'instructor_id' => $instructorIds[4], 'is_active' => true,
+             'course_category_id' => $catIndex('DevOps'),
+             'sections' => ['CI Fundamentals', 'Pipeline Setup', 'Monitoring'],
+             'activities' => [
+                 'CI Fundamentals' => [['type' => 'material', 'title' => 'Continuous Integration Concepts', 'visible' => true, 'completion_enabled' => true]],
+                 'Pipeline Setup' => [
+                     ['type' => 'material', 'title' => 'Building a CI Pipeline', 'visible' => true, 'completion_enabled' => true],
+                     ['type' => 'assignment', 'title' => 'GitHub Actions Pipeline', 'visible' => true, 'completion_enabled' => true],
+                     ['type' => 'quiz', 'title' => 'CI/CD Concepts Quiz', 'visible' => true, 'completion_enabled' => true],
+                 ],
+                 'Monitoring' => [['type' => 'material', 'title' => 'Application Monitoring', 'visible' => true, 'completion_enabled' => false]],
+             ]],
+            ['name' => 'Artificial Intelligence Intro',
+             'description' => 'Course description for Artificial Intelligence Intro.',
+             'instructor_id' => $instructorIds[4], 'is_active' => false,
+             'course_category_id' => $catIndex('Artificial Intelligence'),
+             'sections' => ['History', 'Tools', 'Ethics'],
+             'activities' => [
+                 'History' => [['type' => 'material', 'title' => 'History of AI', 'visible' => true, 'completion_enabled' => false]],
+                 'Tools' => [['type' => 'material', 'title' => 'AI Tools & Libraries', 'visible' => true, 'completion_enabled' => false]],
+                 'Ethics' => [['type' => 'material', 'title' => 'AI Ethics', 'visible' => true, 'completion_enabled' => false]],
+             ]],
         ];
-
-        return $all[$courseIdx] ?? [];
     }
 
-    /**
-     * Create a single activity (material/quiz/assignment) and its LearningModule wrapper.
-     */
-    private function createActivity(array $spec, Course $course, CourseSection $section, int $courseIdx, $createdGroups): void
+    private function generatedCourseDefs(array $instructorIds, array $categoryIds, int $count): array
     {
-        $type = $spec['type'];
-        $title = $spec['title'];
-        $visible = $spec['visible'] ?? true;
-        $completionEnabled = $spec['completion_enabled'] ?? false;
-        $availableFrom = $spec['available_from'] ?? null;
-        $availableUntil = $spec['available_until'] ?? null;
+        $topics = [
+            'Software Engineering', 'Algorithms', 'Operating Systems', 'Networking',
+            'Compiler Design', 'Computer Graphics', 'Parallel Computing', 'Distributed Systems',
+            'Embedded Systems', 'Blockchain', 'IoT Fundamentals', 'Quantum Computing',
+            'Robotics', 'Natural Language Processing', 'Computer Vision', 'Reinforcement Learning',
+            'Time Series Analysis', 'Bayesian Statistics', 'Optimization Methods', 'Numerical Computing',
+            'Agile Methodologies', 'Software Testing', 'Code Quality', 'API Design',
+            'Microservices', 'Event-Driven Architecture', 'System Design', 'Performance Engineering',
+            'Database Administration', 'Data Warehousing', 'Big Data Analytics', 'Data Engineering',
+            'Web Security', 'Penetration Testing', 'Digital Forensics', 'Privacy Engineering',
+            'Game Development', 'AR/VR Development', 'Cross-Platform Dev', 'Desktop Applications',
+        ];
+        $sectionPool = ['Fundamentals', 'Core Topics', 'Advanced Topics', 'Hands-On Lab', 'Final Project',
+                        'Theory', 'Practice', 'Case Studies', 'Review', 'Assessment'];
+        $activityTypes = ['material', 'quiz', 'assignment'];
 
-        $activity = null;
+        $defs = [];
+        mt_srand(999);
+        for ($i = 0; $i < $count; $i++) {
+            $topic = $topics[$i % count($topics)];
+            $instrId = $instructorIds[($i + 5) % count($instructorIds)];
+            $isActive = $i % 5 !== 0; // every 5th course is inactive
+            $catId = $categoryIds[array_rand($categoryIds)];
 
+            $numSections = mt_rand(3, 6);
+            $sectionNames = [];
+            for ($s = 0; $s < $numSections; $s++) {
+                $sectionNames[] = ($s < count($sectionPool)) ? $sectionPool[$s] : 'Module '.($s + 1);
+            }
+
+            $activities = [];
+            foreach ($sectionNames as $si => $sName) {
+                $numActs = mt_rand(1, 3);
+                $acts = [];
+                for ($ai = 0; $ai < $numActs; $ai++) {
+                    $atype = $activityTypes[array_rand($activityTypes)];
+                    $acts[] = [
+                        'type' => $atype,
+                        'title' => $topic.' - '.$sName.' '.($ai + 1),
+                        'visible' => true,
+                        'completion_enabled' => $atype !== 'material' || $ai === 0,
+                    ];
+                }
+                $activities[$sName] = $acts;
+            }
+
+            $defs[] = [
+                'name' => $topic,
+                'description' => 'Course description for '.$topic.'.',
+                'instructor_id' => $instrId,
+                'is_active' => $isActive,
+                'course_category_id' => $catId,
+                'sections' => $sectionNames,
+                'activities' => $activities,
+            ];
+        }
+        return $defs;
+    }
+
+    private function generateCourseDefs(array $instructorIds, array $categoryIds): array
+    {
+        // Deprecated — kept for interface compat; actual defs come from detailedCourseDefs() + generatedCourseDefs()
+        return [];
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  ACTIVITY INSERTION
+    // ═══════════════════════════════════════════════════════════════
+
+    private function insertActivity(string $type, string $title, int $courseId, bool $visible, array $spec): int
+    {
         if ($type === 'material') {
-            $activity = Material::create([
-                'course_id' => $course->id,
+            return DB::table('materials')->insertGetId([
+                'course_id' => $courseId,
                 'title' => $title,
                 'file_path' => 'materials/'.strtolower(str_replace(' ', '-', $title)).'.pdf',
-                'file_size' => rand(200000, 5000000),
+                'file_size' => mt_rand(200000, 5000000),
                 'type' => 'pdf',
                 'mime_type' => 'application/pdf',
                 'revision' => 1,
                 'checksum' => sha1($title),
                 'is_active' => $visible,
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
         } elseif ($type === 'quiz') {
-            $activity = Quiz::create([
-                'course_id' => $course->id,
+            $qid = DB::table('quizzes')->insertGetId([
+                'course_id' => $courseId,
                 'title' => $title,
                 'description' => 'Quiz: '.$title,
                 'time_limit' => 30,
                 'passing_score' => 60,
                 'is_active' => $visible,
-                'available_from' => $availableFrom,
-                'available_until' => $availableUntil,
+                'available_from' => $spec['available_from'] ?? null,
+                'available_until' => $spec['available_until'] ?? null,
                 'max_attempts' => 2,
                 'grading_method' => 'highest',
                 'grace_period' => 0,
                 'overdue_handling' => 'auto_submit',
                 'delay_between_attempts' => 0,
                 'review_visibility' => 'after_submission',
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
 
-            // Create questions for this quiz
+            // Questions (5 per quiz)
             for ($qi = 1; $qi <= 5; $qi++) {
-                $question = Question::create([
-                    'quiz_id' => $activity->id,
+                $questionId = DB::table('questions')->insertGetId([
+                    'quiz_id' => $qid,
                     'question_text' => 'Question '.$qi.': Sample question for '.$title.'?',
-                    'options' => ['A' => 'Option A', 'B' => 'Option B', 'C' => 'Option C', 'D' => 'Option D'],
+                    'options' => json_encode(['A' => 'Option A', 'B' => 'Option B', 'C' => 'Option C', 'D' => 'Option D']),
                     'correct_answer' => 'A',
                     'points' => 1,
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ]);
 
-                // Create quiz_question_slot
-                QuizQuestionSlot::create([
-                    'quiz_id' => $activity->id,
-                    'question_id' => $question->id,
+                DB::table('quiz_question_slots')->insert([
+                    'quiz_id' => $qid,
+                    'question_id' => $questionId,
                     'slot' => $qi,
                     'page' => 1,
-                    'max_points' => $question->points,
+                    'max_points' => 1,
                     'require_previous' => false,
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ]);
             }
+
+            return $qid;
         } elseif ($type === 'assignment') {
-            $activity = Assignment::create([
-                'course_id' => $course->id,
+            return DB::table('assignments')->insertGetId([
+                'course_id' => $courseId,
                 'title' => $title,
                 'description' => 'Assignment: '.$title,
                 'due_date' => now()->addDays(30),
@@ -1059,327 +1169,144 @@ class DatabaseSeeder extends Seeder
                 'max_attempts' => 1,
                 'allow_late_submission' => true,
                 'submission_type' => 'file',
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
         }
 
-        if (! $activity) {
-            return;
-        }
+        throw new \InvalidArgumentException("Unknown activity type: $type");
+    }
 
-        // Create the LearningModule wrapper
-        $module = LearningModule::create([
-            'course_id' => $course->id,
-            'course_section_id' => $section->id,
-            'module_type' => $type,
-            'module_id' => $activity->id,
-            'visible' => $visible,
-            'available_from' => $availableFrom,
-            'available_until' => $availableUntil,
-            'sort_order' => $spec['sort_order'] ?? 0,
-            'completion_enabled' => $completionEnabled,
-            'completion_rule' => $completionEnabled ? ($type === 'quiz' ? 'finish' : ($type === 'assignment' ? 'submit' : 'view')) : null,
-        ]);
+    // ═══════════════════════════════════════════════════════════════
+    //  AVAILABILITY RULES & COMPLETIONS
+    // ═══════════════════════════════════════════════════════════════
 
-        // Create module context
-        $courseCtx = Context::where('contextlevel', Context::LEVEL_COURSE)
-            ->where('instance_id', $course->id)
-            ->first();
-        if ($courseCtx) {
-            Context::create([
-                'contextlevel' => Context::LEVEL_MODULE,
-                'instance_id' => $module->id,
-                'path' => $courseCtx->path.'/'.$module->id,
-                'depth' => $courseCtx->depth + 1,
-            ]);
-        }
+    private function createAvailabilityRules(array $moduleIds, array $courseIds, array $courseDefs): void
+    {
+        // Only apply detailed rules for first 10 courses
+        foreach ($moduleIds as $ci => $mods) {
+            if ($ci >= 10) continue;
+            $courseId = $courseIds[$ci] ?? null;
+            if (!$courseId) continue;
 
-        // Availability rules for certain modules
+            // Build a title → module_id map for this course
+            $titleToModId = [];
+            foreach ($mods as $m) {
+                $titleToModId[$m['title']] = $m['id'];
+            }
 
-        // Course 0: Setup Guide requires completing Course Overview
-        if ($courseIdx === 0 && $title === 'Development Environment Setup') {
-            $prereq = LearningModule::where('course_id', $course->id)
-                ->where('module_type', 'material')
-                ->whereHas('material', function ($q) {
-                    $q->where('title', 'Course Overview');
-                })
-                ->first();
-            if ($prereq) {
-                ModuleAvailabilityRule::create([
-                    'learning_module_id' => $module->id,
-                    'rule_type' => 'completion',
-                    'required_module_id' => $prereq->id,
-                    'operator' => '==',
-                    'value' => 'complete',
-                ]);
+            // Course 0: Development Environment Setup requires Course Overview
+            if ($ci === 0) {
+                $target = $titleToModId['Development Environment Setup'] ?? null;
+                $required = $titleToModId['Course Overview'] ?? null;
+                if ($target && $required) {
+                    DB::table('module_availability_rules')->insert([
+                        'learning_module_id' => $target,
+                        'rule_type' => 'completion',
+                        'required_module_id' => $required,
+                        'operator' => '==',
+                        'value' => 'complete',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
+
+            // Course 1: Data Wrangling Quiz requires Data Cleaning Exercise
+            if ($ci === 1) {
+                $target = $titleToModId['Data Wrangling Quiz'] ?? null;
+                $required = $titleToModId['Data Cleaning Exercise'] ?? null;
+                if ($target && $required) {
+                    DB::table('module_availability_rules')->insert([
+                        'learning_module_id' => $target,
+                        'rule_type' => 'completion',
+                        'required_module_id' => $required,
+                        'operator' => '==',
+                        'value' => 'complete',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
+
+            // Course 3: SQL Query Exercises requires Normalization Quiz
+            if ($ci === 3) {
+                $target = $titleToModId['SQL Query Exercises'] ?? null;
+                $required = $titleToModId['Normalization Quiz'] ?? null;
+                if ($target && $required) {
+                    DB::table('module_availability_rules')->insert([
+                        'learning_module_id' => $target,
+                        'rule_type' => 'completion',
+                        'required_module_id' => $required,
+                        'operator' => '==',
+                        'value' => 'complete',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
             }
         }
+    }
 
-        // Course 1: Data Wrangling Quiz requires completing Data Cleaning Exercise
-        if ($courseIdx === 1 && $title === 'Data Wrangling Quiz') {
-            $prereq = LearningModule::where('course_id', $course->id)
-                ->where('module_type', 'assignment')
-                ->whereHas('assignment', function ($q) {
-                    $q->where('title', 'Data Cleaning Exercise');
-                })
-                ->first();
-            if ($prereq) {
-                ModuleAvailabilityRule::create([
-                    'learning_module_id' => $module->id,
-                    'rule_type' => 'completion',
-                    'required_module_id' => $prereq->id,
-                    'operator' => '==',
-                    'value' => 'complete',
+    private function createCourseCompletionCriteriaAll(array $courseIds, array $courseDefs, array $moduleIds, array $gradeItemIdsByCourse): void
+    {
+        // Set criteria for first 5 active courses
+        $targetCourses = [0, 1, 3, 7, 8];
+        foreach ($targetCourses as $ci) {
+            $courseId = $courseIds[$ci] ?? null;
+            if (!$courseId) continue;
+
+            $mods = $moduleIds[$ci] ?? [];
+
+            // Pick first completion-enabled module for module criterion
+            $compMod = null;
+            foreach ($mods as $m) {
+                if ($m['completion_enabled']) {
+                    $compMod = $m;
+                    break;
+                }
+            }
+            if ($compMod) {
+                DB::table('course_completion_criteria')->insert([
+                    'course_id' => $courseId,
+                    'criteriatype' => 'module',
+                    'module_instance_id' => $compMod['id'],
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ]);
             }
-        }
 
-        // Course 3: SQL Query Exercises requires completing Normalization Quiz
-        if ($courseIdx === 3 && $title === 'SQL Query Exercises') {
-            $prereq = LearningModule::where('course_id', $course->id)
-                ->where('module_type', 'quiz')
-                ->whereHas('quiz', function ($q) {
-                    $q->where('title', 'Normalization Quiz');
-                })
-                ->first();
-            if ($prereq) {
-                ModuleAvailabilityRule::create([
-                    'learning_module_id' => $module->id,
-                    'rule_type' => 'completion',
-                    'required_module_id' => $prereq->id,
-                    'operator' => '==',
-                    'value' => 'complete',
-                ]);
+            // Pick first quiz grade item for grade criterion
+            $quizGi = null;
+            foreach ($gradeItemIdsByCourse[$courseId] ?? [] as $key => $giId) {
+                if (str_starts_with($key, 'quiz_')) {
+                    $quizGi = $giId;
+                    break;
+                }
             }
-        }
-
-        // Course 6: Threat Model Document has group rule
-        if ($courseIdx === 6 && $title === 'Threat Model Document') {
-            $firstGroup = $createdGroups->first();
-            if ($firstGroup) {
-                ModuleAvailabilityRule::create([
-                    'learning_module_id' => $module->id,
-                    'rule_type' => 'group',
-                    'course_group_id' => $firstGroup->id,
-                    'operator' => '==',
-                    'value' => 'member',
-                ]);
-            }
-        }
-
-        // Course 7: Create Wireframes has date availability window
-        if ($courseIdx === 7 && $title === 'Create Wireframes') {
-            $module->update([
-                'available_from' => now()->subDays(15),
-                'available_until' => now()->addDays(45),
-            ]);
-        }
-
-        // Course 4: Nested availability rule on Classification Task
-        // (completion of Regression Analysis) OR (completion of Clustering Quiz)
-        // Group 1: completion of Regression Analysis (exists when Classification Task is created)
-        if ($courseIdx === 4 && $title === 'Classification Task') {
-            $regressionModule = LearningModule::where('course_id', $course->id)
-                ->where('module_type', 'assignment')
-                ->whereHas('assignment', fn ($q) => $q->where('title', 'Regression Analysis'))
-                ->first();
-
-            if ($regressionModule) {
-                ModuleAvailabilityRule::create([
-                    'learning_module_id' => $module->id,
-                    'rule_type' => 'completion',
-                    'required_module_id' => $regressionModule->id,
-                    'operator' => '==',
-                    'condition_group' => 1,
-                ]);
-            }
-        }
-
-        // Course 4: Add the Clustering Quiz branch to the nested availability rule
-        // (created when Clustering Quiz is processed, since Classification Task already exists)
-        if ($courseIdx === 4 && $title === 'Clustering Quiz') {
-            $classModule = LearningModule::where('course_id', $course->id)
-                ->where('module_type', 'assignment')
-                ->whereHas('assignment', fn ($q) => $q->where('title', 'Classification Task'))
-                ->first();
-
-            if ($classModule) {
-                ModuleAvailabilityRule::create([
-                    'learning_module_id' => $classModule->id,
-                    'rule_type' => 'completion',
-                    'required_module_id' => $module->id,
-                    'operator' => '==',
-                    'condition_group' => 2,
-                ]);
-
-                $this->command->info('  -> Added Clustering Quiz branch to nested availability rule for Classification Task');
-            }
-        }
-
-        // Create completion records for completion-enabled modules for some students
-        if ($completionEnabled) {
-            $enrolledIds = CourseEnrollment::where('course_id', $course->id)
-                ->where('role', 'student')
-                ->where('status', 'active')
-                ->pluck('user_id')
-                ->take(3);
-
-            foreach ($enrolledIds as $uid) {
-                $source = match ($type) {
-                    'material' => 'view',
-                    'quiz' => 'quiz_attempt',
-                    'assignment' => 'assignment_submission',
-                    default => 'view',
-                };
-                ModuleCompletion::create([
-                    'learning_module_id' => $module->id,
-                    'user_id' => $uid,
-                    'state' => 'complete',
-                    'completed_at' => now()->subDays(rand(1, 20)),
-                    'source' => $source,
-                    'override_by' => null,
+            if ($quizGi) {
+                DB::table('course_completion_criteria')->insert([
+                    'course_id' => $courseId,
+                    'criteriatype' => 'grade',
+                    'grade_item_id' => $quizGi,
+                    'pass_threshold' => 60,
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ]);
             }
         }
     }
 
-    /**
-     * Second pass: create min-grade availability rules that depend on grade items.
-     * These cannot be created during createActivity() because grade items are
-     * created after all activities.
-     */
-    private function createMinGradeRules(Course $course, int $courseIdx): void
+    private function preSeedCourseCompletionsBulk(int $courseId, array $gradeItemMap): void
     {
-        if ($courseIdx !== 4) {
-            return;
-        }
-
-        // Course 4: Regression Analysis requires min grade on ML Concepts Quiz
-        $module = LearningModule::query()
-            ->where('course_id', $course->id)
-            ->where('module_type', 'assignment')
-            ->whereHas('assignment', function ($q) {
-                $q->where('title', 'Regression Analysis');
-            })
-            ->first();
-
-        if (! $module) {
-            return;
-        }
-
-        $gradeItem = GradeItem::where('course_id', $course->id)
-            ->where('item_type', 'quiz')
-            ->get()
-            ->first(function ($gi) {
-                $q = Quiz::find($gi->item_id);
-
-                return $q && $q->title === 'ML Concepts Quiz';
-            });
-
-        if (! $gradeItem) {
-            return;
-        }
-
-        ModuleAvailabilityRule::create([
-            'learning_module_id' => $module->id,
-            'rule_type' => 'min_grade',
-            'grade_item_id' => $gradeItem->id,
-            'operator' => '>=',
-            'value' => '60',
-        ]);
-
-        $this->command->info('  -> Created min-grade rule for Regression Analysis (course '.$courseIdx.')');
-    }
-
-    /**
-     * Create course-level completion criteria for specific courses.
-     */
-    private function createCourseCompletionCriteria(Course $course, int $courseIdx): void
-    {
-        switch ($courseIdx) {
-            case 0: // Web Dev
-                $this->addModuleCriteriaForCourse($course, ['Course Overview', 'HTML & CSS Basics']);
-                $this->addGradeCriteriaForQuiz($course, 'HTML & CSS Basics Quiz', 60);
-                break;
-            case 1: // Data Science
-                $this->addModuleCriteriaForCourse($course, ['Python Basics', 'Data Cleaning Exercise', 'Data Wrangling Quiz']);
-                break;
-            case 3: // Database
-                $this->addModuleCriteriaForCourse($course, ['Entity-Relationship Diagrams']);
-                $this->addGradeCriteriaForQuiz($course, 'Normalization Quiz', 60);
-                break;
-            case 7: // UI/UX
-                $this->addModuleCriteriaForCourse($course, ['Design Thinking Process']);
-                $this->addGradeCriteriaForQuiz($course, 'UX Principles Quiz', 60);
-                break;
-            case 8: // DevOps
-                $this->addModuleCriteriaForCourse($course, ['Continuous Integration Concepts']);
-                $this->addGradeCriteriaForQuiz($course, 'CI/CD Concepts Quiz', 60);
-                break;
-        }
-    }
-
-    private function addModuleCriteriaForCourse(Course $course, array $titles): void
-    {
-        $modules = LearningModule::where('course_id', $course->id)
-            ->where(function ($q) use ($titles) {
-                $q->whereHas('material', fn ($q) => $q->whereIn('title', $titles))
-                    ->orWhereHas('quiz', fn ($q) => $q->whereIn('title', $titles))
-                    ->orWhereHas('assignment', fn ($q) => $q->whereIn('title', $titles));
-            })
+        $criteria = DB::table('course_completion_criteria')
+            ->where('course_id', $courseId)
             ->get();
 
-        foreach ($modules as $module) {
-            CourseCompletionCriterion::firstOrCreate([
-                'course_id' => $course->id,
-                'criteriatype' => 'module',
-                'module_instance_id' => $module->id,
-            ]);
-        }
-    }
+        if ($criteria->isEmpty()) return;
 
-    private function addGradeCriteriaForQuiz(Course $course, string $quizTitle, float $passThreshold): void
-    {
-        $quiz = Quiz::where('course_id', $course->id)->where('title', $quizTitle)->first();
-        if (! $quiz) {
-            return;
-        }
-
-        $gradeItem = GradeItem::where('course_id', $course->id)
-            ->where('item_type', 'quiz')
-            ->where('item_id', $quiz->id)
-            ->first();
-
-        if (! $gradeItem) {
-            return;
-        }
-
-        CourseCompletionCriterion::firstOrCreate([
-            'course_id' => $course->id,
-            'criteriatype' => 'grade',
-            'grade_item_id' => $gradeItem->id,
-            'pass_threshold' => $passThreshold,
-        ]);
-    }
-
-    /**
-     * Pre-seed course completions from existing module completions and grades.
-     *
-     * For each active student in the course, checks each criterion against existing
-     * completion and grade data. Creates criterion_completion records for matched
-     * criteria, and marks the course complete if all criteria are met.
-     */
-    private function preSeedCourseCompletions(Course $course): void
-    {
-        $criteria = CourseCompletionCriterion::query()
-            ->where('course_id', $course->id)
-            ->get();
-
-        if ($criteria->isEmpty()) {
-            return;
-        }
-
-        $activeStudentIds = CourseEnrollment::query()
-            ->where('course_id', $course->id)
+        $activeStudentIds = DB::table('course_enrollments')
+            ->where('course_id', $courseId)
             ->where('role', 'student')
             ->where('status', 'active')
             ->pluck('user_id');
@@ -1388,95 +1315,333 @@ class DatabaseSeeder extends Seeder
             $allMet = true;
 
             foreach ($criteria as $criterion) {
-                $met = match ($criterion->criteriatype) {
-                    'module' => $this->checkModuleCriterionMet($criterion, $userId),
-                    'grade' => $this->checkGradeCriterionMet($criterion, $userId),
-                    default => false,
-                };
+                $met = false;
+
+                if ($criterion->criteriatype === 'module' && $criterion->module_instance_id) {
+                    $met = DB::table('module_completions')
+                        ->where('learning_module_id', $criterion->module_instance_id)
+                        ->where('user_id', $userId)
+                        ->where('state', 'complete')
+                        ->exists();
+                } elseif ($criterion->criteriatype === 'grade' && $criterion->grade_item_id) {
+                    $grade = DB::table('grades')
+                        ->where('grade_item_id', $criterion->grade_item_id)
+                        ->where('user_id', $userId)
+                        ->first();
+                    $threshold = $criterion->pass_threshold ?? 0;
+                    $met = $grade && $grade->score !== null && (float) $grade->score >= (float) $threshold;
+                }
 
                 if ($met) {
-                    CourseCompletionCriterionCompletion::query()->firstOrCreate(
-                        [
-                            'course_completion_criterion_id' => $criterion->id,
-                            'user_id' => $userId,
-                        ],
-                        [
-                            'completed' => true,
-                            'completed_at' => now(),
-                        ]
-                    );
+                    DB::table('course_completion_criterion_completions')->insert([
+                        'course_completion_criterion_id' => $criterion->id,
+                        'user_id' => $userId,
+                        'completed' => true,
+                        'completed_at' => now(),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
                 } else {
                     $allMet = false;
                 }
             }
 
-            if ($allMet) {
-                CourseCompletion::query()->firstOrCreate(
-                    [
-                        'course_id' => $course->id,
-                        'user_id' => $userId,
-                    ],
-                    [
-                        'timeenrolled' => now()->subDays(60),
-                        'timestarted' => now()->subDays(30),
-                        'timecompleted' => now()->subDays(1),
-                        'reaggregate' => false,
-                    ]
-                );
-            } else {
-                // Ensure at least an incomplete record exists
-                CourseCompletion::query()->firstOrCreate(
-                    [
-                        'course_id' => $course->id,
-                        'user_id' => $userId,
-                    ],
-                    [
-                        'timeenrolled' => now()->subDays(60),
-                        'timestarted' => null,
-                        'timecompleted' => null,
-                        'reaggregate' => false,
-                    ]
-                );
+            DB::table('course_completions')->insert([
+                'course_id' => $courseId,
+                'user_id' => $userId,
+                'timeenrolled' => now()->subDays(60),
+                'timestarted' => $allMet ? now()->subDays(30) : null,
+                'timecompleted' => $allMet ? now()->subDays(1) : null,
+                'reaggregate' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  POST-SEED DATA
+    // ═══════════════════════════════════════════════════════════════
+
+    private function seedPostData(array $courseIds, array $courseDefs, array $gradeItemIdsByCourse): void
+    {
+        // Manager role assignment for first instructor
+        $firstInstructorId = $courseDefs[0]['instructor_id'] ?? null;
+        if ($firstInstructorId && isset($this->systemContextId)) {
+            DB::table('role_assignments')->insert([
+                'role_id' => $this->roleIdMap['manager'],
+                'context_id' => $this->systemContextId,
+                'user_id' => $firstInstructorId,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        // Lock one quiz grade item
+        $firstQuizGi = DB::table('grade_items')->where('item_type', 'quiz')->first();
+        if ($firstQuizGi) {
+            DB::table('grade_items')->where('id', $firstQuizGi->id)->update(['locked' => true]);
+        }
+
+        // Quiz override for first student on first quiz
+        $firstQuiz = DB::table('quizzes')->where('is_active', true)->first();
+        $sampleStudent = DB::table('users')->where('role', 'student')->first();
+        if ($firstQuiz && $sampleStudent) {
+            DB::table('quiz_overrides')->insert([
+                'quiz_id' => $firstQuiz->id,
+                'user_id' => $sampleStudent->id,
+                'max_attempts' => 5,
+                'time_limit' => 60,
+                'grace_period' => 5,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        // Assignment override for first student
+        $firstAssignment = DB::table('assignments')->where('is_active', true)->first();
+        if ($firstAssignment && $sampleStudent) {
+            DB::table('assignment_overrides')->insert([
+                'assignment_id' => $firstAssignment->id,
+                'user_id' => $sampleStudent->id,
+                'due_date' => now()->addDays(35),
+                'cutoff_date' => now()->addDays(40),
+                'max_attempts' => 5,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        // Quiz attempt detail rows (for all finished attempts without details)
+        DB::table('quiz_attempts')
+            ->where('status', 'finished')
+            ->whereNotExists(function ($q) {
+                $q->select(DB::raw(1))
+                  ->from('quiz_attempt_questions')
+                  ->whereColumn('quiz_attempt_questions.quiz_attempt_id', 'quiz_attempts.id');
+            })
+            ->orderBy('id')
+            ->chunk(200, function ($attempts) {
+                $qBatch = [];
+                $sBatch = [];
+                foreach ($attempts as $attempt) {
+                    $slots = DB::table('quiz_question_slots')
+                        ->where('quiz_id', $attempt->quiz_id)
+                        ->get();
+                    foreach ($slots as $slot) {
+                        $qBatch[] = [
+                            'quiz_attempt_id' => $attempt->id,
+                            'quiz_question_slot_id' => $slot->id,
+                            'question_id' => $slot->question_id,
+                            'slot' => $slot->slot,
+                            'max_points' => $slot->max_points,
+                            'score' => null,
+                            'state' => 'not_answered',
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ];
+                        if (count($qBatch) >= self::BATCH_SIZE) {
+                            DB::table('quiz_attempt_questions')->insert($qBatch);
+                            $qBatch = [];
+                        }
+                    }
+                }
+                if (!empty($qBatch)) {
+                    DB::table('quiz_attempt_questions')->insert($qBatch);
+                }
+
+                // Steps for the questions we just created
+                $questionIds = DB::table('quiz_attempt_questions')
+                    ->whereIn('quiz_attempt_id', $attempts->pluck('id'))
+                    ->pluck('id');
+                foreach ($questionIds as $qid) {
+                    $sBatch[] = [
+                        'quiz_attempt_question_id' => $qid,
+                        'sequence_number' => 0,
+                        'state' => 'not_answered',
+                        'user_id' => $attempts->first()->user_id,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                    if (count($sBatch) >= self::BATCH_SIZE) {
+                        DB::table('quiz_attempt_steps')->insert($sBatch);
+                        $sBatch = [];
+                    }
+                }
+                if (!empty($sBatch)) {
+                    DB::table('quiz_attempt_steps')->insert($sBatch);
+                }
+            });
+
+        // Quiz aggregate grades
+        DB::table('quiz_attempts')
+            ->where('status', 'finished')
+            ->whereNotNull('score')
+            ->orderBy('quiz_id')->orderBy('user_id')
+            ->chunk(200, function ($attempts) {
+                $grouped = [];
+                foreach ($attempts as $a) {
+                    $key = $a->quiz_id.'-'.$a->user_id;
+                    $grouped[$key][] = $a;
+                }
+                foreach ($grouped as $key => $userAttempts) {
+                    $first = $userAttempts[0];
+                    $maxScore = 100; // quizzes have max_score 100
+                    $scores = array_column($userAttempts, 'score');
+                    $grade = max($scores); // highest grading method
+                    $percentage = $maxScore > 0 ? ($grade / $maxScore) * 100 : 0;
+
+                    DB::table('quiz_grades')->updateOrInsert(
+                        ['quiz_id' => $first->quiz_id, 'user_id' => $first->user_id],
+                        [
+                            'grade' => $grade,
+                            'max_score' => $maxScore,
+                            'percentage' => $percentage,
+                            'grading_method' => 'highest',
+                            'attempt_count' => count($userAttempts),
+                            'last_attempt_id' => $userAttempts[count($userAttempts) - 1]->id,
+                            'graded_at' => now(),
+                            'updated_at' => now(),
+                            'created_at' => now(),
+                        ]
+                    );
+                }
+            });
+
+        // Marker allocations (first 3 assignments)
+        $assignments = DB::table('assignments')
+            ->join('courses', 'assignments.course_id', '=', 'courses.id')
+            ->select('assignments.*', 'courses.instructor_id as course_instructor_id')
+            ->where('assignments.is_active', true)
+            ->limit(3)
+            ->get();
+        $instructorIds = DB::table('users')->where('role', 'instructor')->pluck('id')->toArray();
+        foreach ($assignments as $assignment) {
+            DB::table('assignments')
+                ->where('id', $assignment->id)
+                ->update(['marking_allocation_enabled' => true, 'marker_count' => 2, 'multi_mark_method' => 'average']);
+
+            $submissions = DB::table('submissions')
+                ->where('assignment_id', $assignment->id)
+                ->limit(3)
+                ->get();
+
+            $otherInstructors = array_values(array_filter($instructorIds, fn($iid) => $iid !== $assignment->course_instructor_id));
+            $markers = array_slice($otherInstructors, 0, 2);
+
+            foreach ($submissions as $sub) {
+                foreach ($markers as $markerId) {
+                    DB::table('assignment_allocated_markers')->insert([
+                        'assignment_id' => $assignment->id,
+                        'submission_id' => $sub->id,
+                        'student_id' => $sub->user_id,
+                        'marker_id' => $markerId,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
             }
         }
+
+        // File records for materials
+        DB::table('materials')->orderBy('id')->chunk(200, function ($materials) {
+            $batch = [];
+            foreach ($materials as $m) {
+                $instructorId = DB::table('courses')->where('id', $m->course_id)->value('instructor_id') ?: 1;
+                $batch[] = [
+                    'owner_type' => 'material',
+                    'owner_id' => $m->id,
+                    'uploader_id' => $instructorId,
+                    'component' => 'material',
+                    'file_path' => $m->file_path,
+                    'mime_type' => $m->mime_type,
+                    'file_size' => $m->file_size,
+                    'checksum' => sha1($m->file_path),
+                    'revision' => $m->revision,
+                    'visible' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+                if (count($batch) >= self::BATCH_SIZE) {
+                    DB::table('file_records')->insert($batch);
+                    $batch = [];
+                }
+            }
+            if (!empty($batch)) {
+                DB::table('file_records')->insert($batch);
+            }
+        });
+
+        // File records for submissions
+        DB::table('submissions')->orderBy('id')->chunk(200, function ($submissions) {
+            $batch = [];
+            foreach ($submissions as $s) {
+                $batch[] = [
+                    'owner_type' => 'submission',
+                    'owner_id' => $s->id,
+                    'uploader_id' => $s->user_id,
+                    'component' => 'assignment_submission',
+                    'file_path' => $s->file_path,
+                    'mime_type' => 'application/pdf',
+                    'file_size' => rand(100000, 5000000),
+                    'checksum' => sha1($s->file_path),
+                    'revision' => 1,
+                    'visible' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+                if (count($batch) >= self::BATCH_SIZE) {
+                    DB::table('file_records')->insert($batch);
+                    $batch = [];
+                }
+            }
+            if (!empty($batch)) {
+                DB::table('file_records')->insert($batch);
+            }
+        });
     }
 
-    /**
-     * Check if a module-type criterion is met for a user.
-     */
-    private function checkModuleCriterionMet(CourseCompletionCriterion $criterion, int $userId): bool
-    {
-        if ($criterion->module_instance_id === null) {
-            return false;
-        }
+    // ═══════════════════════════════════════════════════════════════
+    //  HELPERS
+    // ═══════════════════════════════════════════════════════════════
 
-        return ModuleCompletion::query()
-            ->where('learning_module_id', $criterion->module_instance_id)
-            ->where('user_id', $userId)
-            ->where('state', 'complete')
-            ->exists();
+    private function getQuizTitle(int $quizId): string
+    {
+        return DB::table('quizzes')->where('id', $quizId)->value('title') ?? 'Quiz';
     }
 
-    /**
-     * Check if a grade-type criterion is met for a user.
-     */
-    private function checkGradeCriterionMet(CourseCompletionCriterion $criterion, int $userId): bool
+    private function getAssignmentTitle(int $assignmentId): string
     {
-        if ($criterion->grade_item_id === null) {
-            return false;
-        }
+        return DB::table('assignments')->where('id', $assignmentId)->value('title') ?? 'Assignment';
+    }
 
-        $grade = Grade::query()
-            ->where('grade_item_id', $criterion->grade_item_id)
-            ->where('user_id', $userId)
-            ->first();
+    private function getAssignmentMaxScore(int $assignmentId): int
+    {
+        return (int) (DB::table('assignments')->where('id', $assignmentId)->value('max_score') ?? 100);
+    }
 
-        if ($grade === null || $grade->score === null) {
-            return false;
-        }
+    // ═══════════════════════════════════════════════════════════════
+    //  SUMMARY
+    // ═══════════════════════════════════════════════════════════════
 
-        $threshold = $criterion->pass_threshold ?? 0;
-
-        return (float) $grade->score >= (float) $threshold;
+    private function printSummary(): void
+    {
+        $this->command->info('');
+        $this->command->info('Seeding complete!');
+        $this->command->info('- Users: '.DB::table('users')->count().' (100 instructors, 4900 students)');
+        $this->command->info('- Courses: '.DB::table('courses')->count());
+        $this->command->info('- Sections: '.DB::table('course_sections')->count());
+        $this->command->info('- Enrollments: '.DB::table('course_enrollments')->count());
+        $this->command->info('- Materials: '.DB::table('materials')->count());
+        $this->command->info('- Quizzes: '.DB::table('quizzes')->count());
+        $this->command->info('- Assignments: '.DB::table('assignments')->count());
+        $this->command->info('- Quiz Attempts: '.DB::table('quiz_attempts')->count());
+        $this->command->info('- Submissions: '.DB::table('submissions')->count());
+        $this->command->info('- Grade Items: '.DB::table('grade_items')->count());
+        $this->command->info('- Grades: '.DB::table('grades')->count());
+        $this->command->info('- Course Categories: '.DB::table('course_categories')->count());
+        $this->command->info('- Groups: '.DB::table('course_groups')->count());
+        $this->command->info('- Group Members: '.DB::table('course_group_members')->count());
+        $this->command->info('- File Records: '.DB::table('file_records')->count());
     }
 }
