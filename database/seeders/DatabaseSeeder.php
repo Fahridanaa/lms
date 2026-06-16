@@ -1057,11 +1057,13 @@ class DatabaseSeeder extends Seeder
             }
 
             $activities = [];
+            $hasType = ['material' => false, 'quiz' => false, 'assignment' => false];
             foreach ($sectionNames as $si => $sName) {
                 $numActs = mt_rand(1, 3);
                 $acts = [];
                 for ($ai = 0; $ai < $numActs; $ai++) {
                     $atype = $activityTypes[array_rand($activityTypes)];
+                    $hasType[$atype] = true;
                     $acts[] = [
                         'type' => $atype,
                         'title' => $topic.' - '.$sName.' '.($ai + 1),
@@ -1070,6 +1072,18 @@ class DatabaseSeeder extends Seeder
                     ];
                 }
                 $activities[$sName] = $acts;
+            }
+            // Ensure at least one of each type per course (fixture validation requires it)
+            $firstSection = array_key_first($activities);
+            foreach (['material', 'quiz', 'assignment'] as $requiredType) {
+                if (!$hasType[$requiredType] && $firstSection !== null) {
+                    $activities[$firstSection][] = [
+                        'type' => $requiredType,
+                        'title' => $topic.' - '.$requiredType,
+                        'visible' => true,
+                        'completion_enabled' => $requiredType === 'assignment',
+                    ];
+                }
             }
 
             $defs[] = [
