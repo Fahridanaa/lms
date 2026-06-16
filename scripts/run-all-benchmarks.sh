@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # ============================================================
-# Complete Benchmark Suite — Semua Strategi × Semua Skenario × 5 Iterasi
+# Complete Benchmark Suite — Semua Strategi × Semua Skenario × N Iterasi
 #
 # Usage  : ./scripts/run-all-benchmarks.sh [base_url]
 # Contoh : ./scripts/run-all-benchmarks.sh http://localhost
 #
-# Total run (sesuai proposal §3.4.4.4):
-#   4 strategi × 2 skenario × 5 iterasi × 7 VU levels = 280 individual k6 runs
-#   Estimasi waktu: ~50–60 jam (termasuk jeda, warm-up, dan restart antar iterasi)
+# Default: 3 iterasi (BENCHMARK_ITERATIONS=env untuk override)
+#   4 strategi × 2 skenario × 3 iterasi × 7 VU levels = 168 individual k6 runs
+#   Estimasi waktu: ~33 jam (termasuk jeda, warm-up, dan restart antar iterasi)
 #
 # Prosedur per iterasi (sesuai proposal §3.4.4.1):
 #   1. Restart container 'app' untuk menghilangkan state di memory
@@ -52,7 +52,9 @@ fi
 
 STRATEGIES=("no-cache" "cache-aside" "read-through" "write-through")
 SCENARIOS=("read-heavy" "write-heavy")
-ITERATIONS=5
+# Number of iterations per combination (configurable, default 3)
+# For development: BENCHMARK_ITERATIONS=1 ./scripts/run-all-benchmarks.sh
+ITERATIONS=${BENCHMARK_ITERATIONS:-3}
 
 # VU levels — configurable via VU_LEVELS env var
 if [ -n "${VU_LEVELS+x}" ]; then
