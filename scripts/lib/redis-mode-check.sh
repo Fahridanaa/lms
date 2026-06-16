@@ -52,7 +52,7 @@ _any_cluster_services_running() {
 # ─────────────────────────────────────────────
 _laravel_config() {
   local key=$1
-  docker compose exec -T app php -r "echo config('${key}');" 2>/dev/null | tr -d '\r\n'
+  docker compose exec -T app php -r "\$app = require 'bootstrap/app.php'; \$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap(); \$value = config('${key}'); if (is_array(\$value)) { echo json_encode(\$value); } elseif (is_bool(\$value)) { echo \$value ? 'true' : 'false'; } elseif (\$value !== null) { echo \$value; }" 2>/dev/null | tr -d '\r\n'
 }
 
 # ─────────────────────────────────────────────
