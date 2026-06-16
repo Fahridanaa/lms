@@ -290,29 +290,6 @@ warmup_cache() {
     return 1
   fi
 
-  # Log target file metadata
-  local generated_at
-  generated_at=$(node -e "var f=require('fs'); var d=JSON.parse(f.readFileSync('${targets_file}','utf8')); console.log(d._generatedAt||'unknown')" 2>/dev/null)
-  echo -e "${CYAN}[warm-up] Target file: ${targets_file} (generated: ${generated_at})${NC}"
-
-  # Wait for app to be ready (max 60s)
-  echo -e "${YELLOW}[warm-up] Waiting for app to be ready at ${BASE_URL}...${NC}"
-  local app_ready=0
-  for i in $(seq 1 60); do
-    local status
-    status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "${BASE_URL}/api/courses" 2>/dev/null || echo "000")
-    if [ "$status" != "502" ] && [ "$status" != "000" ]; then
-      echo -e "${GREEN}[warm-up] App ready (HTTP ${status}) after ${i}s${NC}"
-      app_ready=1
-      break
-    fi
-    sleep 1
-  done
-  if [ "${app_ready}" -eq 0 ]; then
-    >&2 echo -e "${RED}[warm-up] ✗ App not ready after 60s. Last status: ${status}${NC}"
-    return 1
-  fi
-
   local enrolled_count
   enrolled_count=$(node -e "var f=require('fs'); var d=JSON.parse(f.readFileSync('${targets_file}','utf8')); console.log(d.ENROLLED_PAIRS.length)" 2>/dev/null || echo "0")
   if [ "$enrolled_count" -eq 0 ]; then
@@ -324,6 +301,36 @@ warmup_cache() {
     echo -e "${RED}[warm-up] ✗ ENROLLED_PAIRS is empty. Cannot perform actor-aware warm-up.${NC}"
     echo -e "${RED}         Regenerate targets: node scripts/generate-warmup-targets.cjs${NC}"
     echo -e "${RED}         Force basic warm-up: ALLOW_BASIC_WARMUP=yes${NC}"
+    return 1
+  fi
+
+  # Log target file metadata
+  local generated_at
+  generated_at=$(node -e "var f=require('fs'); var d=JSON.parse(f.readFileSync('${targets_file}','utf8')); console.log(d._generatedAt||'unknown')" 2>/dev/null)
+  echo -e "${CYAN}[warm-up] Target file: ${targets_file} (generated: ${generated_at})${NC}"
+
+  # Wait for app to be ready using a real fixture-backed benchmark endpoint.
+  local readiness_student_id readiness_course_id readiness_url status
+  readiness_student_id=$(node -e "var f=require('fs'); var d=JSON.parse(f.readFileSync('${targets_file}','utf8')); console.log(d.ENROLLED_PAIRS[0].studentId)" 2>/dev/null)
+  readiness_course_id=$(node -e "var f=require('fs'); var d=JSON.parse(f.readFileSync('${targets_file}','utf8')); console.log(d.ENROLLED_PAIRS[0].courseId)" 2>/dev/null)
+  readiness_url="${BASE_URL}/api/courses/${readiness_course_id}/structure"
+
+  echo -e "${YELLOW}[warm-up] Waiting for app to be ready at ${readiness_url} (actor=${readiness_student_id})...${NC}"
+  local app_ready=0
+  for i in $(seq 1 60); do
+    status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 \
+      -H "X-Benchmark-Actor-Id: ${readiness_student_id}" \
+      "${readiness_url}" 2>/dev/null || true)
+    if [ "$status" = "200" ]; then
+      echo -e "${GREEN}[warm-up] App ready (HTTP ${status}) after ${i}s${NC}"
+      app_ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "${app_ready}" -eq 0 ]; then
+    >&2 echo -e "${RED}[warm-up] ✗ App not ready after 60s. Last status: ${status:-000}${NC}"
+    >&2 echo -e "${RED}         Probe: ${readiness_url} actor=${readiness_student_id}${NC}"
     return 1
   fi
 
@@ -441,7 +448,7 @@ warmup_cache() {
   # Compute summary
   local total_success total_fail
   if [ -f "${warmup_log}" ]; then
-    total_success=$(grep -c " STATUS=" "${warmup_log}" 2>/dev/null || echo "0")
+    total_success=$(grep -E "STATUS=([234][0-9][0-9])" "${warmup_log}" 2>/dev/null | wc -l | tr -d ' ')
     total_fail=$(grep -c " FAIL=" "${warmup_log}" 2>/dev/null || echo "0")
 
     echo -e "${GREEN}[warm-up] Selesai. ${req_count} requests (${total_success} ok, ${total_fail} fail)${NC}"

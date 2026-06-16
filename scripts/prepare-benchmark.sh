@@ -216,6 +216,16 @@ echo -e "${YELLOW}  Menunggu 30 detik agar app siap kembali...${NC}"
 sleep 30
 echo -e "${GREEN}✓ Container 'app' di-restart. State memory bersih.${NC}"
 
+echo -e "${YELLOW}  Restart container 'nginx' agar upstream app IP ter-refresh...${NC}"
+docker compose restart nginx
+
+if [ $? -ne 0 ]; then
+  echo -e "${RED}Error: Restart container 'nginx' gagal!${NC}"
+  exit 1
+fi
+
+echo -e "${GREEN}✓ Container 'nginx' di-restart. Upstream app sudah di-refresh.${NC}"
+
 # ─────────────────────────────────────────────
 # 6. Verifikasi jumlah data seeder
 # ─────────────────────────────────────────────

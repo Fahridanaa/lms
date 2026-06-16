@@ -279,10 +279,20 @@ reset_and_verify() {
   cd "${PROJECT_DIR}"
   docker compose restart app
   if [ $? -ne 0 ]; then
-    echo -e "${RED}Warning: Restart container gagal. Melanjutkan...${NC}"
+    echo -e "${RED}[iterasi ${iteration}] ✗ Restart container 'app' gagal.${NC}"
+    return 1
   else
     echo -e "${GREEN}[iterasi ${iteration}] ✓ Container 'app' di-restart.${NC}"
   fi
+
+  echo -e "${YELLOW}[iterasi ${iteration}] Restart container 'nginx' agar upstream app IP ter-refresh...${NC}"
+  docker compose restart nginx
+  if [ $? -ne 0 ]; then
+    echo -e "${RED}[iterasi ${iteration}] ✗ Restart container 'nginx' gagal.${NC}"
+    return 1
+  fi
+  echo -e "${GREEN}[iterasi ${iteration}] ✓ Container 'nginx' di-restart.${NC}"
+
   echo -e "${YELLOW}[iterasi ${iteration}] Menunggu 30 detik agar app siap kembali...${NC}"
   sleep 30
 }
@@ -299,7 +309,10 @@ for iteration in $(seq 1 ${ITERATIONS}); do
   echo -e "${CYAN}╚══════════════════════════════════════════════╝${NC}"
 
   # Restart container sebelum setiap iterasi (sesuai proposal §3.4.4.1)
-  reset_and_verify "${iteration}"
+  if ! reset_and_verify "${iteration}"; then
+    echo -e "${RED}✗ Reset container gagal. Benchmark dibatalkan.${NC}"
+    exit 1
+  fi
 
   for strategy in "${STRATEGIES[@]}"; do
     for scenario in "${SCENARIOS[@]}"; do
