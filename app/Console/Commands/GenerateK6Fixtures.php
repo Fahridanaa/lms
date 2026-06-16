@@ -30,16 +30,27 @@ use Illuminate\Console\Command;
 class GenerateK6Fixtures extends Command
 {
     protected $signature = 'benchmark:generate-k6-fixtures
-        {--output= : Output path for the generated fixtures file (default: tests/Benchmark/k6/fixtures.js)}';
+        {--output= : Output path for the generated fixtures file (default: tests/Benchmark/k6/fixtures.js)}
+        {--sampled : Generate a sampled fixture module with capped pools and SharedArray wrapping}
+        {--sampled-id-cap=1000 : Identity pool cap in sampled mode}
+        {--sampled-read-cap=1000 : Read target pool cap in sampled mode}
+        {--sampled-write-cap=500 : Write target pool cap in sampled mode}
+        {--sampled-failure-cap=300 : Controlled failure pool cap in sampled mode}';
 
     protected $description = 'Generate relationship-valid k6 fixture data from the seeded database';
 
     public function handle(): int
     {
+        $sampled = (bool) $this->option('sampled');
+
         $outputPath = $this->option('output')
-            ?: base_path('tests/Benchmark/k6/fixtures.js');
+            ?: base_path($sampled ? 'tests/Benchmark/k6/fixtures.sampled.js' : 'tests/Benchmark/k6/fixtures.js');
 
         $this->info('Generating k6 fixtures from database...');
+
+        if ($sampled) {
+            $this->info('Sampled mode enabled — pools will be capped before export.');
+        }
 
         $instructorRole = Role::where('shortname', 'instructor')->first();
         $studentRole = Role::where('shortname', 'student')->first();
@@ -321,6 +332,59 @@ class GenerateK6Fixtures extends Command
             return Command::FAILURE;
         }
 
+        // ─── Sampled Mode: Cap Pools ───────────────────────────────
+        if ($sampled) {
+            $idCap = max(1, (int) ($this->option('sampled-id-cap') ?? 1000));
+            $readCap = max(1, (int) ($this->option('sampled-read-cap') ?? 1000));
+            $writeCap = max(1, (int) ($this->option('sampled-write-cap') ?? 500));
+            $failureCap = max(1, (int) ($this->option('sampled-failure-cap') ?? 300));
+
+            // Identity pools
+            $instructorIds = $this->sampleArray($instructorIds, $idCap);
+            $studentIds = $this->sampleArray($studentIds, $idCap);
+            $allCourseIds = $this->sampleArray($allCourseIds, $idCap);
+            $activeCourseIds = $this->sampleArray($activeCourseIds, $idCap);
+
+            // Read target pools
+            $enrolledPairs = $this->sampleArray($enrolledPairs, $readCap);
+            $instructorCoursePairs = $this->sampleArray($instructorCoursePairs, $readCap);
+            $readableMaterialTargets = $this->sampleArray($readableMaterialTargets, $readCap);
+            $readableQuizTargets = $this->sampleArray($readableQuizTargets, $readCap);
+            $readableAssignmentTargets = $this->sampleArray($readableAssignmentTargets, $readCap);
+            $courseCompletionCheckTargets = $this->sampleArray($courseCompletionCheckTargets, $readCap);
+
+            // Write target pools
+            $writableMaterialDownloadTargets = $this->sampleArray($writableMaterialDownloadTargets, $writeCap);
+            $writableAssignmentSubmissionTargets = $this->sampleArray($writableAssignmentSubmissionTargets, $writeCap);
+            $writableQuizAttemptTargets = $this->sampleArray($writableQuizAttemptTargets, $writeCap);
+            $gradingTargets = $this->sampleArray($gradingTargets, $writeCap);
+            $gradeUpdateTargets = $this->sampleArray($gradeUpdateTargets, $writeCap);
+            $markerGradeTargets = $this->sampleArray($markerGradeTargets, $writeCap);
+
+            // Controlled failure pools
+            $unauthorizedGradeUpdateTargets = $this->sampleArray($unauthorizedGradeUpdateTargets, $failureCap);
+            $suspendedPairs = $this->sampleArray($suspendedPairs, $failureCap);
+            $nonEnrolledPairs = $this->sampleArray($nonEnrolledPairs, $failureCap);
+            $groupRestrictedModuleTargets = $this->sampleArray($groupRestrictedModuleTargets, $failureCap);
+            $prerequisiteLockedTargets = $this->sampleArray($prerequisiteLockedTargets, $failureCap);
+            $prerequisiteUnlockTargets = $this->sampleArray($prerequisiteUnlockTargets, $failureCap);
+            $minGradeLockedTargets = $this->sampleArray($minGradeLockedTargets, $failureCap);
+            $hiddenModuleTargets = $this->sampleArray($hiddenModuleTargets, $failureCap);
+            $lockedGradeTargets = $this->sampleArray($lockedGradeTargets, $failureCap);
+            $quizOverrideTargets = $this->sampleArray($quizOverrideTargets, $failureCap);
+            $assignmentOverrideTargets = $this->sampleArray($assignmentOverrideTargets, $failureCap);
+            $suspendedAccessTargets = $this->sampleArray($suspendedAccessTargets, $failureCap);
+            $nonEnrolledAccessTargets = $this->sampleArray($nonEnrolledAccessTargets, $failureCap);
+            $quizDetailAttemptTargets = $this->sampleArray($quizDetailAttemptTargets, $failureCap);
+            $quizAggregateGradeTargets = $this->sampleArray($quizAggregateGradeTargets, $failureCap);
+            $gradeCategoryReadTargets = $this->sampleArray($gradeCategoryReadTargets, $failureCap);
+            $groupingRestrictedModuleTargets = $this->sampleArray($groupingRestrictedModuleTargets, $failureCap);
+            $nestedAvailabilityLockedTargets = $this->sampleArray($nestedAvailabilityLockedTargets, $failureCap);
+            $nestedAvailabilityUnlockTargets = $this->sampleArray($nestedAvailabilityUnlockTargets, $failureCap);
+
+            $this->info('Sampled pools capped (identity='.$idCap.', read='.$readCap.', write='.$writeCap.', failure='.$failureCap.')');
+        }
+
         $js = $this->render(
             $instructorIds, $studentIds, $allCourseIds, $activeCourseIds,
             $enrolledPairs, $instructorCoursePairs,
@@ -337,7 +401,20 @@ class GenerateK6Fixtures extends Command
             $markerGradeTargets, $groupingRestrictedModuleTargets,
             $nestedAvailabilityLockedTargets, $nestedAvailabilityUnlockTargets,
             $courseCompletionCheckTargets,
+            sampled: $sampled,
         );
+
+        file_put_contents($outputPath, $js);
+
+        // ─── Sampled Mode: Post-process for SharedArray ──────────
+        if ($sampled) {
+            $js = $this->wrapInSharedArray($js);
+            $js .= "\n// Metadata\n";
+            $js .= "// Generated at: ".date('c')."\n";
+            $js .= "// Sampled caps: id=".($this->option('sampled-id-cap') ?? 1000).", read=".($this->option('sampled-read-cap') ?? 1000).", write=".($this->option('sampled-write-cap') ?? 500).", failure=".($this->option('sampled-failure-cap') ?? 300)."\n";
+            $js .= "// Source: GenerateK6Fixtures.php --sampled\n";
+            $js .= "// Regenerate: sail artisan db:seed --class=DatabaseSeeder && sail artisan benchmark:generate-k6-fixtures --sampled\n";
+        }
 
         file_put_contents($outputPath, $js);
 
@@ -1037,8 +1114,13 @@ class GenerateK6Fixtures extends Command
         array $groupingRestrictedModuleTargets = [], array $nestedAvailabilityLockedTargets = [],
         array $nestedAvailabilityUnlockTargets = [],
         array $courseCompletionCheckTargets = [],
+        bool $sampled = false,
     ): string {
         $j = fn ($v) => json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $regenerateCmd = $sampled
+            ? 'sail artisan db:seed --class=DatabaseSeeder && sail artisan benchmark:generate-k6-fixtures --sampled'
+            : 'sail artisan db:seed --class=DatabaseSeeder && sail artisan benchmark:generate-k6-fixtures';
 
         return <<<JS
 // ============================================================
@@ -1046,7 +1128,7 @@ class GenerateK6Fixtures extends Command
 //
 // AUTO-GENERATED by benchmark:generate-k6-fixtures
 // Source: deterministic DatabaseSeeder — do not edit by hand.
-// Regenerate: sail artisan db:seed --class=DatabaseSeeder && sail artisan benchmark:generate-k6-fixtures
+// Regenerate: {$regenerateCmd}
 // ============================================================
 
 // ─── Identity Pools ────────────────────────────────────────
@@ -1971,5 +2053,100 @@ JS;
         }
 
         return $targets;
+    }
+
+    /**
+     * Deterministic stride-based sampling.
+     *
+     * Returns a capped slice of $array using stable stride selection.
+     * Preserves diversity by taking evenly-spaced elements from the
+     * original ordering (which is already deterministic via ORDER BY id).
+     *
+     * When count($array) <= $cap, the array is returned unchanged.
+     */
+    private function sampleArray(array $array, int $cap): array
+    {
+        $cap = max(1, $cap);
+        $count = count($array);
+
+        if ($count <= $cap) {
+            return $array;
+        }
+
+        $stride = max(1, (int) floor($count / $cap));
+        $result = [];
+
+        for ($i = 0; $i < $count && count($result) < $cap; $i += $stride) {
+            $result[] = $array[$i];
+        }
+
+        // Ensure we have at least one element
+        if (empty($result) && $count > 0) {
+            $result[] = $array[0];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Post-process a rendered JS string to wrap eligible array constants
+     * in k6 SharedArray for memory-efficient VU runtime sharing.
+     *
+     * Only wraps flat array constants (not object maps like MATERIAL_BY_COURSE).
+     * Each const NAME = [...] becomes const NAME = new SharedArray('NAME', () => [...]).
+     */
+    private function wrapInSharedArray(string $js): string
+    {
+        // Inject the SharedArray import at the top
+        $js = "import { SharedArray } from 'k6/data';\n\n" . $js;
+
+        $sharedArrayNames = [
+            'INSTRUCTOR_IDS',
+            'STUDENT_IDS',
+            'COURSE_IDS',
+            'ACTIVE_COURSE_IDS',
+            'ENROLLED_PAIRS',
+            'INSTRUCTOR_COURSE_PAIRS',
+            'GRADING_TARGETS',
+            'GRADE_UPDATE_TARGETS',
+            'UNAUTHORIZED_GRADE_UPDATE_TARGETS',
+            'SUSPENDED_PAIRS',
+            'NON_ENROLLED_PAIRS',
+            'READABLE_MATERIAL_TARGETS',
+            'READABLE_QUIZ_TARGETS',
+            'READABLE_ASSIGNMENT_TARGETS',
+            'WRITABLE_MATERIAL_DOWNLOAD_TARGETS',
+            'WRITABLE_ASSIGNMENT_SUBMISSION_TARGETS',
+            'WRITABLE_QUIZ_ATTEMPT_TARGETS',
+            'GROUP_RESTRICTED_MODULE_TARGETS',
+            'PREREQUISITE_LOCKED_TARGETS',
+            'PREREQUISITE_UNLOCK_TARGETS',
+            'MIN_GRADE_LOCKED_TARGETS',
+            'HIDDEN_MODULE_TARGETS',
+            'LOCKED_GRADE_TARGETS',
+            'QUIZ_OVERRIDE_TARGETS',
+            'ASSIGNMENT_OVERRIDE_TARGETS',
+            'SUSPENDED_ACCESS_TARGETS',
+            'NON_ENROLLED_ACCESS_TARGETS',
+            'QUIZ_DETAIL_ATTEMPT_TARGETS',
+            'QUIZ_AGGREGATE_GRADE_TARGETS',
+            'GRADE_CATEGORY_READ_TARGETS',
+            'MARKER_GRADE_TARGETS',
+            'GROUPING_RESTRICTED_MODULE_TARGETS',
+            'NESTED_AVAILABILITY_LOCKED_TARGETS',
+            'NESTED_AVAILABILITY_UNLOCK_TARGETS',
+            'COURSE_COMPLETION_CHECK_TARGETS',
+        ];
+
+        foreach ($sharedArrayNames as $name) {
+            $escapedName = preg_quote($name, '/');
+            $js = preg_replace(
+                '/^(const ' . $escapedName . ' = )(\[[\s\S]*?\]);$/m',
+                '$1new SharedArray(\'' . $name . '\', () => $2);',
+                $js
+            );
+        }
+
+        return $js;
     }
 }

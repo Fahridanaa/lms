@@ -21,7 +21,7 @@ import {
   NON_ENROLLED_ACCESS_TARGETS,
   pick,
   activityPath,
-} from './fixtures.js';
+} from './fixtures.sampled.js';
 
 // ============================================================
 // READ-HEAVY SCENARIO (80% Read, 20% Write)

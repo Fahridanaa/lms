@@ -25,7 +25,7 @@ import {
   pick,
   activityPath,
   scoreWithinMax,
-} from './fixtures.js';
+} from './fixtures.sampled.js';
 
 // ============================================================
 // WRITE-HEAVY SCENARIO (40% Read, 60% Write)

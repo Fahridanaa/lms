@@ -2,10 +2,11 @@
 /**
  * Generate warm-up target pools from k6 fixtures.
  *
- * Reads tests/Benchmark/k6/fixtures.js, extracts the const array values
+ * Reads k6 fixture module, extracts the const/SharedArray values
  * (already JSON-parseable), and writes a warmup-targets.json file.
  *
- * Usage: node scripts/generate-warmup-targets.js
+ * Usage: node scripts/generate-warmup-targets.js [output]
+ *   K6_FIXTURE_FILE=path  Override fixture source (default: auto-detect)
  * Output: scripts/lib/warmup-targets.json (or first arg)
  */
 
@@ -14,14 +15,24 @@ const path = require('path');
 
 const scriptDir = path.dirname(process.argv[1]);
 const projectDir = path.resolve(scriptDir, '..');
-const fixtureFile = path.join(projectDir, 'tests/Benchmark/k6/fixtures.js');
+
+// Determine fixture source: env var > sampled.js > fixtures.js
+const k6Dir = path.join(projectDir, 'tests/Benchmark/k6');
+const fixtureFile = process.env.K6_FIXTURE_FILE
+  ? path.resolve(projectDir, process.env.K6_FIXTURE_FILE)
+  : (fs.existsSync(path.join(k6Dir, 'fixtures.sampled.js'))
+      ? path.join(k6Dir, 'fixtures.sampled.js')
+      : path.join(k6Dir, 'fixtures.js'));
+
 const outputFile = process.argv[2] || path.join(scriptDir, 'lib/warmup-targets.json');
 
 if (!fs.existsSync(fixtureFile)) {
-  console.error(`Error: fixtures.js not found at ${fixtureFile}`);
+  console.error(`Error: fixture file not found at ${fixtureFile}`);
   console.error('Run the database seeder + k6 fixture generator first.');
   process.exit(1);
 }
+
+console.error(`Warm-up source: ${fixtureFile}`);
 
 const content = fs.readFileSync(fixtureFile, 'utf-8');
 
@@ -50,17 +61,23 @@ const result = {};
 
 for (const name of targetNames) {
   // Build regex: find `const NAME =` and capture until `;` that ends the declaration
-  // This works because the arrays are already JSON-parseable.
+  // Handles both plain `const NAME = [...]` and `const NAME = new SharedArray('NAME', () => [...])
   const regex = new RegExp(`const\\s+${name}\\s*=\\s*([\\s\\S]*?);\\s*$`, 'm');
   const match = content.match(regex);
 
   if (!match) {
-    console.warn(`Warning: ${name} not found in fixtures.js`);
+    console.warn(`Warning: ${name} not found in ${fixtureFile}`);
     result[name] = [];
     continue;
   }
 
   let valueStr = match[1].trim();
+
+  // Strip SharedArray wrapper: `new SharedArray('NAME', () => [...]` → `[...]`
+  // Must handle trailing `)` from the constructor call
+  valueStr = valueStr.replace(/^new\s+SharedArray\(\s*'[^']+'\s*,\s*\(\)\s*=>\s*/, '');
+  // Remove SharedArray closing paren if present (trailing ) after array)
+  valueStr = valueStr.replace(/\)\s*$/, '');
 
   // Remove trailing semicolons and whitespace
   valueStr = valueStr.replace(/;+\s*$/, '').trim();
