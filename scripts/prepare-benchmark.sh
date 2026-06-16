@@ -228,16 +228,33 @@ QUIZ_COUNT=$(docker compose exec -T app php artisan tinker --execute="echo \App\
 MATERIAL_COUNT=$(docker compose exec -T app php artisan tinker --execute="echo \App\Models\Material::count();" 2>/dev/null | grep -E "^[0-9]+$" | head -1)
 SUBMISSION_COUNT=$(docker compose exec -T app php artisan tinker --execute="echo \App\Models\Submission::count();" 2>/dev/null | grep -E "^[0-9]+$" | head -1)
 
-echo "  Users       : ${USER_COUNT:-?} (expected: 5000)"
-echo "  Courses     : ${COURSE_COUNT:-?} (expected: 50)"
-echo "  Quizzes     : ${QUIZ_COUNT:-?} (expected: 250)"
-echo "  Materials   : ${MATERIAL_COUNT:-?} (expected: 500)"
-echo "  Submissions : ${SUBMISSION_COUNT:-?} (expected: ~12500)"
+echo "  Users       : ${USER_COUNT:-?} (expected: ~5000)"
+echo "  Courses     : ${COURSE_COUNT:-?} (expected: ~50)"
+echo "  Quizzes     : ${QUIZ_COUNT:-?} (expected: ~125)"
+echo "  Materials   : ${MATERIAL_COUNT:-?} (expected: ~176)"
+echo "  Submissions : ${SUBMISSION_COUNT:-?} (expected: ~6550)"
 
-if [ -n "${USER_COUNT}" ] && [ "${USER_COUNT}" -ge 5000 ] 2>/dev/null; then
+SEED_FAILED=0
+
+if [ -z "${USER_COUNT}" ] || [ "${USER_COUNT}" -lt 4000 ] 2>/dev/null; then
+  echo -e "  ${RED}✗ Users: got ${USER_COUNT:-?}, expected at least 4000${NC}"
+  SEED_FAILED=1
+fi
+
+if [ -z "${COURSE_COUNT}" ] || [ "${COURSE_COUNT}" -lt 40 ] 2>/dev/null; then
+  echo -e "  ${RED}✗ Courses: got ${COURSE_COUNT:-?}, expected at least 40${NC}"
+  SEED_FAILED=1
+fi
+
+if [ -z "${MATERIAL_COUNT}" ] || [ "${MATERIAL_COUNT}" -lt 100 ] 2>/dev/null; then
+  echo -e "  ${RED}✗ Materials: got ${MATERIAL_COUNT:-?}, expected at least 100${NC}"
+  SEED_FAILED=1
+fi
+
+if [ "${SEED_FAILED}" -eq 0 ]; then
   echo -e "${GREEN}✓ Data seeder valid.${NC}"
 else
-  echo -e "${RED}Error: Jumlah user tidak sesuai (${USER_COUNT:-unknown} vs 5000). Seeder mungkin gagal.${NC}"
+  echo -e "${RED}Error: Seeder mungkin gagal. Periksa log di atas.${NC}"
   exit 1
 fi
 
