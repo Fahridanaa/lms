@@ -78,7 +78,7 @@ echo -e "${GREEN}✓ Container aktif.${NC}"
 echo ""
 echo -e "${YELLOW}[2/6] Verifikasi koneksi database...${NC}"
 
-if ! docker compose exec -T app php artisan migrate:status --quiet > /dev/null 2>&1; then
+if ! docker compose exec -T app php artisan db:show --quiet 2>/dev/null; then
   echo -e "${RED}Error: Database tidak bisa diakses. Periksa .env dan container DB.${NC}"
   exit 1
 fi
