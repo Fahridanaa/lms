@@ -143,6 +143,7 @@ class GenerateK6Fixtures extends Command
             ->whereHas('assignment.course', fn ($q) => $q->where('is_active', true))
             ->with('assignment:id,course_id')
             ->orderBy('id')
+            ->limit(2000)
             ->get(['id', 'assignment_id', 'user_id'])
             ->map(function ($s) {
                 $course = Course::find($s->assignment->course_id);
@@ -168,6 +169,7 @@ class GenerateK6Fixtures extends Command
             ->whereHas('gradeItem', fn ($q) => $q->where('locked', false))
             ->with('gradeItem:id,course_id,locked')
             ->orderBy('id')
+            ->limit(2000)
             ->get(['id', 'course_id', 'user_id', 'grade_item_id', 'max_score'])
             ->map(function ($g) {
                 $course = Course::find($g->course_id);
