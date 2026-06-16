@@ -13,44 +13,23 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Feature\Benchmark\Concerns\BenchmarkFixtureSetup;
 use Tests\TestCase;
 
 class FixtureGeneratorGuardTest extends TestCase
 {
     use RefreshDatabase;
-
-    protected bool $seed = true;
-
-    private string $fixturesContent = '';
-
-    protected string $generatedFixturePath = '';
+    use BenchmarkFixtureSetup;
 
     protected function setUp(): void
     {
         parent::setUp();
-
-        $outputPath = tempnam(sys_get_temp_dir(), 'k6-fixtures-');
-        $exitCode = Artisan::call('benchmark:generate-k6-fixtures', ['--output' => $outputPath]);
-
-        if ($exitCode !== 0) {
-            $error = Artisan::output();
-            @unlink($outputPath);
-            $this->fail(
-                'benchmark:generate-k6-fixtures exited with code '.$exitCode
-                .' and output: '.substr($error, 0, 500)
-            );
-        }
-
-        $this->fixturesContent = file_get_contents($outputPath);
-        $this->generatedFixturePath = $outputPath;
+        $this->setUpBenchmarkFixtures();
     }
 
     protected function tearDown(): void
     {
-        if ($this->generatedFixturePath && file_exists($this->generatedFixturePath)) {
-            @unlink($this->generatedFixturePath);
-        }
-        $this->generatedFixturePath = '';
+        $this->tearDownBenchmarkFixtures();
         parent::tearDown();
     }
 

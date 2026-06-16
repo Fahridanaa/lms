@@ -17,6 +17,68 @@ class ModuleAvailabilityService
     ) {}
 
     /**
+     * Determine the availability state label for a non-available module.
+     */
+    protected function resolveState(string $reason): string
+    {
+        return match ($reason) {
+            'hidden' => 'hidden',
+            'not_yet_available' => 'not_yet_available',
+            'no_longer_available' => 'expired',
+            default => 'locked',
+        };
+    }
+
+    /**
+     * Get structured availability metadata for a user on a learning module.
+     *
+     * Returns a rich shape with state, reasons, and failed-rule details,
+     * designed for course structure responses.
+     *
+     * @return array{available: bool, reason: ?string, availability: array{state: string, primary_reason: ?string, visible_to_user: bool, failed_rules: array}}
+     */
+    public function structuredAvailabilityFor(User $actor, LearningModule $module, bool $isInstructor = false): array
+    {
+        // Instructors bypass availability rules unless we specifically want
+        // to show the availability metadata even for them (for instructor UIs).
+        if ($isInstructor) {
+            return [
+                'available' => true,
+                'reason' => null,
+                'availability' => [
+                    'state' => 'available',
+                    'primary_reason' => null,
+                    'visible_to_user' => true,
+                    'failed_rules' => [],
+                    'instructor_bypass' => true,
+                ],
+            ];
+        }
+
+        // Get base availability (flat result)
+        $flat = $this->availabilityForInternal($actor, $module, true);
+        $available = $flat['available'];
+        $reason = $flat['reason'];
+        $failedRules = $flat['_failed_rules'] ?? [];
+
+        $state = $available ? 'available' : $this->resolveState($reason ?? 'restricted');
+
+        // visible_to_user: hidden modules are invisible, everything else is visible
+        $visibleToUser = $reason !== 'hidden';
+
+        return [
+            'available' => $available,
+            'reason' => $reason,
+            'availability' => [
+                'state' => $state,
+                'primary_reason' => $reason,
+                'visible_to_user' => $visibleToUser,
+                'failed_rules' => $failedRules,
+            ],
+        ];
+    }
+
+    /**
      * Get availability state for a user on a learning module.
      *
      * Evaluates rules grouped by condition_group:
@@ -28,25 +90,71 @@ class ModuleAvailabilityService
      */
     public function availabilityFor(User $actor, LearningModule $module): array
     {
+        return $this->availabilityForInternal($actor, $module, false);
+    }
+
+    /**
+     * Internal availability check.
+     * When $collectFailedRules is true, returns additional _failed_rules metadata
+     * with structured details about each failing rule.
+     *
+     * @return array{available: bool, reason: ?string, _failed_rules?: array}
+     */
+    protected function availabilityForInternal(User $actor, LearningModule $module, bool $collectFailedRules = false): array
+    {
         // 1. Check basic visibility (visible flag)
         if (! $module->visible) {
-            return ['available' => false, 'reason' => 'hidden'];
+            $result = ['available' => false, 'reason' => 'hidden'];
+            if ($collectFailedRules) {
+                $result['_failed_rules'] = [];
+            }
+
+            return $result;
         }
 
         // 2. Check date window (available_from, available_until on the module itself)
         $now = now();
+        $failedRules = $collectFailedRules ? [] : null;
+
         if ($module->available_from && $module->available_from->gt($now)) {
-            return ['available' => false, 'reason' => 'not_yet_available'];
+            $result = ['available' => false, 'reason' => 'not_yet_available'];
+            if ($collectFailedRules) {
+                $result['_failed_rules'] = [
+                    [
+                        'type' => 'date',
+                        'operator' => 'after',
+                        'threshold' => $module->available_from->toIso8601String(),
+                    ],
+                ];
+            }
+
+            return $result;
         }
         if ($module->available_until && $module->available_until->lt($now)) {
-            return ['available' => false, 'reason' => 'no_longer_available'];
+            $result = ['available' => false, 'reason' => 'no_longer_available'];
+            if ($collectFailedRules) {
+                $result['_failed_rules'] = [
+                    [
+                        'type' => 'date',
+                        'operator' => 'before',
+                        'threshold' => $module->available_until->toIso8601String(),
+                    ],
+                ];
+            }
+
+            return $result;
         }
 
         // 3. Load and check availability rules with grouped condition evaluation
         $rules = $module->availabilityRules;
 
         if ($rules->isEmpty()) {
-            return ['available' => true, 'reason' => null];
+            $result = ['available' => true, 'reason' => null];
+            if ($collectFailedRules) {
+                $result['_failed_rules'] = [];
+            }
+
+            return $result;
         }
 
         // Group rules by condition_group
@@ -68,8 +176,31 @@ class ModuleAvailabilityService
             }
 
             if ($groupPassed) {
-                return ['available' => true, 'reason' => null];
+                $result = ['available' => true, 'reason' => null];
+                if ($collectFailedRules) {
+                    $result['_failed_rules'] = [];
+                }
+
+                return $result;
             }
+        }
+
+        // No group passed — collect failed rules or find first failure
+        if ($collectFailedRules) {
+            $allFailed = [];
+            foreach ($groups as $groupRules) {
+                foreach ($groupRules as $rule) {
+                    if (! $this->checkRule($actor, $module, $rule)) {
+                        $allFailed[] = $this->buildFailedRuleDetail($actor, $module, $rule);
+                    }
+                }
+            }
+
+            return [
+                'available' => false,
+                'reason' => $allFailed[0]['reason'] ?? 'restricted',
+                '_failed_rules' => $allFailed,
+            ];
         }
 
         // No group passed — find reason from the first failing group
@@ -82,6 +213,45 @@ class ModuleAvailabilityService
         }
 
         return ['available' => false, 'reason' => 'restricted'];
+    }
+
+    /**
+     * Build structured failed-rule detail for a single rule.
+     */
+    protected function buildFailedRuleDetail(User $actor, LearningModule $module, ModuleAvailabilityRule $rule): array
+    {
+        $detail = [
+            'type' => $rule->rule_type,
+            'reason' => $this->reasonFor($rule),
+        ];
+
+        if ($rule->operator) {
+            $detail['operator'] = $rule->operator;
+        }
+
+        if ($rule->value !== null) {
+            $detail['threshold'] = $rule->rule_type === 'date'
+                ? $rule->value
+                : (float) $rule->value;
+        }
+
+        if ($rule->rule_type === 'completion' && $rule->required_module_id) {
+            $detail['required_module_id'] = $rule->required_module_id;
+        }
+
+        if ($rule->rule_type === 'min_grade' && $rule->grade_item_id) {
+            $detail['grade_item_id'] = $rule->grade_item_id;
+        }
+
+        if ($rule->rule_type === 'group' && $rule->course_group_id) {
+            $detail['course_group_id'] = $rule->course_group_id;
+        }
+
+        if ($rule->rule_type === 'group' && $rule->course_grouping_id) {
+            $detail['course_grouping_id'] = $rule->course_grouping_id;
+        }
+
+        return $detail;
     }
 
     /**

@@ -2,9 +2,11 @@
 
 namespace App\Services;
 
+use App\Models\Capability;
 use App\Models\Context;
 use App\Models\Role;
 use App\Models\RoleAssignment;
+use App\Models\RoleCapability;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -124,14 +126,78 @@ class AuthorizationService
     }
 
     /**
+     * Check if a user has a specific capability at a context or any of its ancestors.
+     * This provides inherited capability resolution (e.g., instructor at course context
+     * means instructor capabilities apply at module context).
+     */
+    public function userHasCapabilityAt(User $user, string $capability, Context $context): bool
+    {
+        $cacheKey = "auth:cap_check:{$capability}:{$context->id}:{$user->id}";
+
+        return Cache::remember($cacheKey, 3600, function () use ($user, $capability, $context) {
+            // Check exact context
+            if ($this->userHasCapabilityAtContext($user, $capability, $context)) {
+                return true;
+            }
+
+            // Check ancestors
+            $ancestors = $this->contextService->ancestors($context);
+            foreach ($ancestors as $ancestor) {
+                if ($this->userHasCapabilityAtContext($user, $capability, $ancestor)) {
+                    return true;
+                }
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * Check if a user has a specific capability at exactly this context (no ancestor walk).
+     */
+    public function userHasCapabilityAtContext(User $user, string $capability, Context $context): bool
+    {
+        $cacheKey = "auth:cap_check_exact:{$capability}:{$context->id}:{$user->id}";
+
+        return Cache::remember($cacheKey, 3600, function () use ($user, $capability, $context) {
+            // Find the capability
+            $cap = Capability::query()->where('shortname', $capability)->first();
+
+            if ($cap === null) {
+                return false;
+            }
+
+            // Find roles that have this capability
+            $roleIds = RoleCapability::query()
+                ->where('capability_id', $cap->id)
+                ->pluck('role_id');
+
+            if ($roleIds->isEmpty()) {
+                return false;
+            }
+
+            // Check if user has any of these roles at this exact context
+            return RoleAssignment::query()
+                ->whereIn('role_id', $roleIds)
+                ->where('context_id', $context->id)
+                ->where('user_id', $user->id)
+                ->exists();
+        });
+    }
+
+    /**
      * Invalidate cache entries related to a role check for a user at a context.
      * Also invalidates for descendant contexts that may have inherited the role.
+     * Also clears capability cache entries.
      * Uses explicit key forget instead of tags for broader cache driver support.
      */
     public function invalidateRoleCache(Context $context, User $user): void
     {
         // Build the list of roles to invalidate
         $roleShortnames = Role::pluck('shortname')->all();
+
+        // Build the list of capabilities to invalidate
+        $capShortnames = Capability::pluck('shortname')->all();
 
         // Flush cache for this context and all descendant contexts
         $contexts = [$context];
@@ -143,11 +209,15 @@ class AuthorizationService
 
         $contexts = array_merge($contexts, $descendants->all());
 
-        foreach ($roleShortnames as $shortname) {
-            /** @var Context $ctx */
-            foreach ($contexts as $ctx) {
+        /** @var Context $ctx */
+        foreach ($contexts as $ctx) {
+            foreach ($roleShortnames as $shortname) {
                 Cache::forget("auth:role_check:{$shortname}:{$ctx->id}:{$user->id}");
                 Cache::forget("auth:role_check_exact:{$shortname}:{$ctx->id}:{$user->id}");
+            }
+            foreach ($capShortnames as $shortname) {
+                Cache::forget("auth:cap_check:{$shortname}:{$ctx->id}:{$user->id}");
+                Cache::forget("auth:cap_check_exact:{$shortname}:{$ctx->id}:{$user->id}");
             }
         }
     }

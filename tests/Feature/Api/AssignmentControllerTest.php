@@ -841,4 +841,263 @@ class AssignmentControllerTest extends TestCase
 
         $this->assertEquals([60, 85, 50], $marks->values()->all(), 'Ordering must be: newest mark first, then by id desc within same updated_at');
     }
+
+    /* ──────────────────────────────────────────────
+     * Plan 04: Assignment Return and Reopen
+     * ────────────────────────────────────────────── */
+
+    #[Test]
+    public function instructor_can_return_submitted_submission(): void
+    {
+        $submission = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+            'status' => 'submitted',
+        ]);
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$submission->id}/return", [
+                'reason' => 'Please revise the introduction',
+            ]);
+
+        $response->assertStatus(200);
+
+        $submission->refresh();
+        $this->assertEquals('returned', $submission->status);
+        $this->assertNotNull($submission->returned_at);
+        $this->assertEquals('Please revise the introduction', $submission->feedback);
+    }
+
+    #[Test]
+    public function instructor_can_return_graded_submission(): void
+    {
+        $submission = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+            'status' => 'graded',
+            'score' => 85,
+        ]);
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$submission->id}/return");
+
+        $response->assertStatus(200);
+
+        $submission->refresh();
+        $this->assertEquals('returned', $submission->status);
+        $this->assertNotNull($submission->returned_at);
+    }
+
+    #[Test]
+    public function student_cannot_return_submission(): void
+    {
+        $submission = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+            'status' => 'submitted',
+        ]);
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->putJson("/api/submissions/{$submission->id}/return", [
+                'reason' => 'Student trying to return',
+            ]);
+
+        $response->assertStatus(403);
+        $submission->refresh();
+        $this->assertEquals('submitted', $submission->status);
+    }
+
+    #[Test]
+    public function student_cannot_reopen_submission(): void
+    {
+        $submission = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+            'status' => 'returned',
+        ]);
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->putJson("/api/submissions/{$submission->id}/reopen");
+
+        $response->assertStatus(403);
+        $submission->refresh();
+        $this->assertEquals('returned', $submission->status);
+    }
+
+    #[Test]
+    public function instructor_can_reopen_returned_submission(): void
+    {
+        $submission = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+            'status' => 'returned',
+            'score' => 70,
+            'returned_at' => now()->subDay(),
+        ]);
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$submission->id}/reopen", [
+                'reason' => 'You may resubmit for a better grade',
+            ]);
+
+        $response->assertStatus(200);
+
+        $submission->refresh();
+        $this->assertEquals('reopened', $submission->status);
+        $this->assertNotNull($submission->reopened_at);
+        // Score should be cleared for fresh attempt
+        $this->assertNull($submission->score);
+    }
+
+    #[Test]
+    public function reopened_submission_allows_new_attempt(): void
+    {
+        // First submission
+        $firstSubmission = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+            'status' => 'returned',
+            'is_latest' => true,
+            'attempt_number' => 1,
+        ]);
+
+        // Reopen
+        $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$firstSubmission->id}/reopen")
+            ->assertStatus(200);
+
+        // Student resubmits — should create a new submission (attempt 2)
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->postJson("/api/assignments/{$this->assignment->id}/submissions", [
+                'file_path' => '/storage/submissions/resubmission.pdf',
+            ]);
+
+        $response->assertStatus(201);
+
+        $this->assertDatabaseHas('submissions', [
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+            'attempt_number' => 2,
+            'is_latest' => true,
+            'status' => 'submitted',
+        ]);
+
+        // Original submission should no longer be is_latest
+        $firstSubmission->refresh();
+        $this->assertFalse($firstSubmission->is_latest);
+    }
+
+    #[Test]
+    public function cannot_return_submission_in_invalid_state(): void
+    {
+        // draft submissions cannot be returned
+        $submission = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+            'status' => 'draft',
+        ]);
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$submission->id}/return");
+
+        $response->assertStatus(400);
+    }
+
+    #[Test]
+    public function cannot_reopen_non_returned_submission(): void
+    {
+        $submission = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+            'status' => 'submitted',
+        ]);
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$submission->id}/reopen");
+
+        $response->assertStatus(400);
+    }
+
+    #[Test]
+    public function unrelated_instructor_cannot_return_submission(): void
+    {
+        $otherInstructor = User::factory()->create(['role' => 'instructor']);
+
+        $submission = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+            'status' => 'submitted',
+        ]);
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $otherInstructor->id)
+            ->putJson("/api/submissions/{$submission->id}/return");
+
+        $response->assertStatus(403);
+    }
+
+    #[Test]
+    public function reopened_submission_marks_gradebook_stale(): void
+    {
+        $submission = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+            'status' => 'returned',
+            'score' => 75,
+            'returned_at' => now()->subDay(),
+        ]);
+
+        $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$submission->id}/reopen")
+            ->assertStatus(200);
+
+        // Gradebook should be marked stale for the course
+        $this->assertDatabaseHas('gradebook_recalculations', [
+            'course_id' => $this->assignment->course_id,
+            'source_type' => 'submission',
+            'source_id' => $submission->id,
+        ]);
+
+        $recalc = \App\Models\GradebookRecalculation::query()
+            ->where('course_id', $this->assignment->course_id)
+            ->first();
+
+        $this->assertNotNull($recalc);
+        $this->assertEquals('submission_reopened', $recalc->reason);
+        $this->assertNull($recalc->recalculated_at);
+    }
+
+    #[Test]
+    public function max_attempts_still_applies_after_reopen(): void
+    {
+        $this->assignment->update(['max_attempts' => 2]);
+
+        // Create first submission (attempt 1) — returned and reopened
+        $first = Submission::factory()->create([
+            'assignment_id' => $this->assignment->id,
+            'user_id' => $this->user->id,
+            'is_latest' => false,
+            'attempt_number' => 1,
+            'status' => 'returned',
+        ]);
+
+        // Reopen
+        $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/submissions/{$first->id}/reopen")
+            ->assertStatus(200);
+
+        // Submit attempt 2
+        $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->postJson("/api/assignments/{$this->assignment->id}/submissions", [
+                'file_path' => '/attempt2.pdf',
+            ])
+            ->assertStatus(201);
+
+        // Attempt 3 should be blocked by max_attempts
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->postJson("/api/assignments/{$this->assignment->id}/submissions", [
+                'file_path' => '/attempt3.pdf',
+            ]);
+
+        $response->assertStatus(400);
+    }
 }

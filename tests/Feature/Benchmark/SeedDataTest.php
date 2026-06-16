@@ -21,20 +21,19 @@ use App\Models\QuizQuestionSlot;
 use App\Models\Submission;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Cache;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Feature\Benchmark\Concerns\BenchmarkSeedSetup;
 use Tests\TestCase;
 
 class SeedDataTest extends TestCase
 {
     use RefreshDatabase;
-
-    protected bool $seed = true;
+    use BenchmarkSeedSetup;
 
     protected function setUp(): void
     {
         parent::setUp();
-        Cache::flush();
+        $this->setUpBenchmarkSeed();
     }
 
     #[Test]
@@ -100,6 +99,9 @@ class SeedDataTest extends TestCase
     #[Test]
     public function seed_availability_and_completion_are_valid(): void
     {
+        $this->assertGreaterThan(0, ModuleAvailabilityRule::count(), 'No availability rules found — empty seed');
+        $this->assertGreaterThan(0, ModuleCompletion::count(), 'No module completions found — empty seed');
+
         ModuleAvailabilityRule::all()->each(function ($rule) {
             $this->assertNotNull($rule->learningModule);
         });
@@ -118,6 +120,11 @@ class SeedDataTest extends TestCase
     #[Test]
     public function seed_quiz_and_submission_data_are_valid(): void
     {
+        $this->assertGreaterThan(0, QuizAttempt::count(), 'No quiz attempts found — empty seed');
+        $this->assertGreaterThan(0, Submission::count(), 'No submissions found — empty seed');
+        $this->assertGreaterThan(0, Question::count(), 'No questions found — empty seed');
+        $this->assertGreaterThan(0, QuizQuestionSlot::count(), 'No quiz question slots found — empty seed');
+
         QuizAttempt::all()->each(function ($attempt) {
             $this->assertNotNull(Quiz::find($attempt->quiz_id));
             $this->assertNotNull(User::find($attempt->user_id));

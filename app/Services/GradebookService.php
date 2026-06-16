@@ -76,6 +76,10 @@ class GradebookService
         return $this->cacheStrategy
             ->tags(['gradebook', "course:{$courseId}"])
             ->get("course:{$courseId}:gradebook:{$visibilityMode}", function () use ($courseId, $actor, $isStudent) {
+                // Clear gradebook stale marker on instructor read (acts as implicit recalculation)
+                if (! $isStudent) {
+                    app(\App\Services\GradebookRecalculationService::class)->markRecalculated($courseId);
+                }
                 $activeStudentIds = $this->activeStudentIds($courseId);
 
                 if ($activeStudentIds === []) {
@@ -333,6 +337,10 @@ class GradebookService
         $this->recordGradeHistory($grade, 'updated', $actor, $data);
 
         $updatedGrade = $this->gradeRepository->update($gradeId, $data);
+
+        // Mark gradebook stale after direct grade update
+        app(\App\Services\GradebookRecalculationService::class)
+            ->markCourseStale($grade->course_id, 'direct_grade_update', 'grade', $gradeId);
 
         $flushTags = [
             'gradebook',

@@ -16,47 +16,27 @@ use App\Services\CourseAccessService;
 use App\Services\ModuleAvailabilityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Cache;
+use Tests\Feature\Benchmark\Concerns\BenchmarkFixtureSetup;
 use Tests\TestCase;
 
 class FixtureValidityTest extends TestCase
 {
     use RefreshDatabase;
-
-    protected bool $seed = true;
+    use BenchmarkFixtureSetup;
 
     private array $fixtures = [];
-
-    protected string $generatedFixturePath = '';
 
     protected function setUp(): void
     {
         parent::setUp();
-        Cache::flush();
-
-        $fixturesPath = tempnam(sys_get_temp_dir(), 'k6-fixtures-');
-        $exitCode = Artisan::call('benchmark:generate-k6-fixtures', ['--output' => $fixturesPath]);
-
-        if ($exitCode !== 0) {
-            $error = Artisan::output();
-            @unlink($fixturesPath);
-            $this->fail(
-                'benchmark:generate-k6-fixtures exited with code '.$exitCode
-                .' and output: '.substr($error, 0, 500)
-            );
-        }
-
-        $this->fixtures = $this->parseFixtures($fixturesPath);
-        $this->generatedFixturePath = $fixturesPath;
+        $this->setUpBenchmarkFixtures();
+        $this->fixtures = $this->parseFixtures($this->generatedFixturePath);
     }
 
     protected function tearDown(): void
     {
-        if ($this->generatedFixturePath && file_exists($this->generatedFixturePath)) {
-            @unlink($this->generatedFixturePath);
-        }
-        $this->generatedFixturePath = '';
+        $this->tearDownBenchmarkFixtures();
+        $this->fixtures = [];
         parent::tearDown();
     }
 

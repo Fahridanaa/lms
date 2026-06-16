@@ -162,7 +162,18 @@ class AssignmentService
             ->where('user_id', $userId)
             ->count();
 
-        if ($attemptCount >= $effectiveDeadlines['max_attempts']) {
+        // Check if the latest submission was reopened by an instructor.
+        // An instructor-granted reopen explicitly permits another attempt
+        // even if max_attempts would otherwise block it.
+        $latestSubmission = Submission::query()
+            ->where('assignment_id', $assignmentId)
+            ->where('user_id', $userId)
+            ->where('is_latest', true)
+            ->first();
+
+        $isReopened = $latestSubmission !== null && $latestSubmission->status === 'reopened';
+
+        if (! $isReopened && $attemptCount >= $effectiveDeadlines['max_attempts']) {
             throw new BusinessException(AssignmentMessage::ALREADY_SUBMITTED, 400);
         }
 
@@ -364,6 +375,10 @@ class AssignmentService
                 User::query()->findOrFail($submission->user_id)
             );
 
+            // Mark gradebook stale after marker grading finalizes
+            app(\App\Services\GradebookRecalculationService::class)
+                ->markCourseStale($assignment->course_id, 'marker_grading', 'submission', $submissionId);
+
             $this->cacheStrategy->flushTags([
                 "assignment:{$submission->assignment_id}:submissions",
                 "user:{$submission->user_id}:submissions",
@@ -400,6 +415,88 @@ class AssignmentService
             'latest' => $marks->first(),
             default => $marks->first(),
         };
+    }
+
+    /**
+     * Return a submission to the student for revision.
+     * Transitions status: submitted -> returned.
+     * The submission remains visible to both instructor and student.
+     */
+    public function returnSubmission(int $submissionId, ?string $reason = null, ?User $actor = null): Submission
+    {
+        $submission = $this->submissionRepository->findWithAssignment($submissionId);
+
+        if (! $submission->assignment) {
+            throw new BusinessException(AssignmentMessage::NOT_FOUND, 404);
+        }
+
+        // Only submitted or graded submissions can be returned
+        if (! in_array($submission->status, ['submitted', 'graded'])) {
+            throw new BusinessException('Submission cannot be returned in its current state', 400);
+        }
+
+        $updatedSubmission = $this->submissionRepository->update($submissionId, [
+            'status' => 'returned',
+            'feedback' => $reason ?? $submission->feedback,
+            'returned_at' => now(),
+        ]);
+
+        // If a graded submission is returned, also mark gradebook stale
+        // because the grade may change on resubmission
+        if ($submission->status === 'graded') {
+            app(\App\Services\GradebookRecalculationService::class)
+                ->markCourseStale($submission->assignment->course_id, 'submission_returned', 'submission', $submissionId);
+        }
+
+        $this->cacheStrategy->flushTags([
+            "assignment:{$submission->assignment_id}:submissions",
+            "user:{$submission->user_id}:submissions",
+            "course:{$submission->assignment->course_id}",
+        ]);
+
+        return $updatedSubmission;
+    }
+
+    /**
+     * Reopen a returned submission for another attempt.
+     * Transitions status: returned -> reopened.
+     * Clears the previous grade/score to signal a fresh attempt is expected.
+     * Marks gradebook stale because the grade may change.
+     */
+    public function reopenSubmission(int $submissionId, ?string $reason = null, ?User $actor = null): Submission
+    {
+        $submission = $this->submissionRepository->findWithAssignment($submissionId);
+
+        if (! $submission->assignment) {
+            throw new BusinessException(AssignmentMessage::NOT_FOUND, 404);
+        }
+
+        // Only returned submissions can be reopened
+        if ($submission->status !== 'returned') {
+            throw new BusinessException('Only returned submissions can be reopened', 400);
+        }
+
+        $updatedSubmission = $this->submissionRepository->update($submissionId, [
+            'status' => 'reopened',
+            'feedback' => $reason ?? $submission->feedback,
+            'reopened_at' => now(),
+            'score' => null,  // Clear previous score — fresh attempt expected
+        ]);
+
+        // Mark gradebook stale — reopening can change final grade
+        app(\App\Services\GradebookRecalculationService::class)
+            ->markCourseStale($submission->assignment->course_id, 'submission_reopened', 'submission', $submissionId);
+
+        $this->cacheStrategy->flushTags([
+            "assignment:{$submission->assignment_id}:submissions",
+            "user:{$submission->user_id}:submissions",
+            'gradebook',
+            "course:{$submission->assignment->course_id}",
+            "user:{$submission->user_id}:grades",
+            "submission:{$submissionId}:marks",
+        ]);
+
+        return $updatedSubmission;
     }
 
     /**
@@ -486,6 +583,10 @@ class AssignmentService
             $updatedSubmission,
             User::query()->findOrFail($submission->user_id)
         );
+
+        // Mark gradebook stale after grading
+        app(\App\Services\GradebookRecalculationService::class)
+            ->markCourseStale($assignment->course_id, 'assignment_grading', 'submission', $submissionId);
 
         // Warm cache dengan entity terbaru (Write-Through: cache + DB sync)
         $this->cacheStrategy->put(

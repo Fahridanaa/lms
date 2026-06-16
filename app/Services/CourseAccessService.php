@@ -64,8 +64,14 @@ class CourseAccessService
             return false;
         }
 
-        return $this->isActiveEnrollee($actor, $course)
-            || $this->isInstructorForCourse($actor, $course);
+        // Use capability check when context exists, fallback to role-based check
+        $courseContext = $this->contextService->find(\App\Models\Context::LEVEL_COURSE, $course->id);
+        if ($courseContext === null) {
+            return $this->isActiveEnrollee($actor, $course)
+                || $this->isInstructorForCourse($actor, $course);
+        }
+
+        return $this->authorizationService->userHasCapabilityAt($actor, 'course:view', $courseContext);
     }
 
     /**
@@ -75,9 +81,23 @@ class CourseAccessService
     {
         $course = $module->course;
 
-        // Instructors can see all modules in their course, including hidden ones
-        if ($this->isInstructorForCourse($actor, $course)) {
-            return true;
+        // Users with module:ignore-availability capability can see all modules
+        $moduleContext = $this->contextService->find(\App\Models\Context::LEVEL_MODULE, $module->id);
+        if ($moduleContext !== null) {
+            if ($this->authorizationService->userHasCapabilityAt($actor, 'module:ignore-availability', $moduleContext)) {
+                return true;
+            }
+        } else {
+            // Fallback: module context may not exist (e.g., test factories)
+            // Check capability via course context or old role-based check
+            $courseContext = $this->contextService->find(\App\Models\Context::LEVEL_COURSE, $course->id);
+            if ($courseContext !== null) {
+                if ($this->authorizationService->userHasCapabilityAt($actor, 'module:ignore-availability', $courseContext)) {
+                    return true;
+                }
+            } elseif ($this->isInstructorForCourse($actor, $course)) {
+                return true;
+            }
         }
 
         if (! $module->visible) {
@@ -174,18 +194,18 @@ class CourseAccessService
             return false;
         }
 
-        $enrollment = $this->enrollment($actor, $course);
+        $courseContext = $this->contextService->find(\App\Models\Context::LEVEL_COURSE, $course->id);
+        if ($courseContext === null) {
+            $enrollment = $this->enrollment($actor, $course);
 
-        if ($enrollment === null || ! $enrollment->isActive()) {
-            return false;
+            if ($enrollment === null || ! $enrollment->isActive()) {
+                return false;
+            }
+
+            return $enrollment->role === 'student';
         }
 
-        // Only students can submit
-        if ($enrollment->role !== 'student') {
-            return false;
-        }
-
-        return true;
+        return $this->authorizationService->userHasCapabilityAt($actor, 'assignment:submit', $courseContext);
     }
 
     /**
@@ -199,13 +219,18 @@ class CourseAccessService
             return false;
         }
 
-        $enrollment = $this->enrollment($actor, $course);
+        $courseContext = $this->contextService->find(\App\Models\Context::LEVEL_COURSE, $course->id);
+        if ($courseContext === null) {
+            $enrollment = $this->enrollment($actor, $course);
 
-        if ($enrollment === null || ! $enrollment->isActive()) {
-            return false;
+            if ($enrollment === null || ! $enrollment->isActive()) {
+                return false;
+            }
+
+            return $enrollment->role === 'student';
         }
 
-        return $enrollment->role === 'student';
+        return $this->authorizationService->userHasCapabilityAt($actor, 'quiz:attempt', $courseContext);
     }
 
     /**
@@ -213,13 +238,17 @@ class CourseAccessService
      */
     public function canReadGradebook(User $actor, Course $course): bool
     {
-        // Instructors can read gradebooks for courses they teach
-        if ($this->isInstructorForCourse($actor, $course)) {
-            return true;
+        // Check gradebook:view capability
+        $courseContext = $this->contextService->find(\App\Models\Context::LEVEL_COURSE, $course->id);
+        if ($courseContext === null) {
+            if ($this->isInstructorForCourse($actor, $course)) {
+                return true;
+            }
+
+            return false;
         }
 
-        // Students can read their own grades (but not the full gradebook)
-        return false;
+        return $this->authorizationService->userHasCapabilityAt($actor, 'gradebook:view', $courseContext);
     }
 
     /**
@@ -256,7 +285,12 @@ class CourseAccessService
     {
         $course = $submission->assignment->course;
 
-        return $this->isInstructorForCourse($actor, $course);
+        $courseContext = $this->contextService->find(\App\Models\Context::LEVEL_COURSE, $course->id);
+        if ($courseContext === null) {
+            return $this->isInstructorForCourse($actor, $course);
+        }
+
+        return $this->authorizationService->userHasCapabilityAt($actor, 'assignment:grade', $courseContext);
     }
 
     /* ──────────────────────────────────────────────
@@ -309,10 +343,24 @@ class CourseAccessService
 
         $this->doAssertModuleReadable($actor, $module);
 
-        // Instructors may inspect activities in their own course even when
-        // student availability rules (prerequisite, min-grade, date windows)
-        // would block them. Only enforce full availability for students.
-        if ($this->isInstructorForCourse($actor, $module->course)) {
+        // Users with module:ignore-availability capability may inspect activities
+        // even when student availability rules (prerequisite, min-grade, date windows)
+        // would block them. Only enforce full availability for others.
+        $bypassAvailable = false;
+        $moduleContext = $this->contextService->find(\App\Models\Context::LEVEL_MODULE, $module->id);
+        if ($moduleContext !== null) {
+            $bypassAvailable = $this->authorizationService->userHasCapabilityAt($actor, 'module:ignore-availability', $moduleContext);
+        } else {
+            // Fallback for factory-created modules without context
+            $courseContext = $this->contextService->find(\App\Models\Context::LEVEL_COURSE, $module->course->id);
+            if ($courseContext !== null) {
+                $bypassAvailable = $this->authorizationService->userHasCapabilityAt($actor, 'module:ignore-availability', $courseContext);
+            } else {
+                $bypassAvailable = $this->isInstructorForCourse($actor, $module->course);
+            }
+        }
+
+        if ($bypassAvailable) {
             return;
         }
 
@@ -382,12 +430,37 @@ class CourseAccessService
      * ────────────────────────────────────────────── */
 
     /**
+     * Check if there is at least one active enrolment method for the course.
+     * This replicates Moodle's check that a plugin-based enrolment method
+     * must be active for user enrolments to be valid.
+     */
+    public function hasActiveEnrolmentMethod(Course $course): bool
+    {
+        return \App\Models\CourseEnrolmentMethod::query()
+            ->where('course_id', $course->id)
+            ->where('status', 'active')
+            ->where(function ($q) {
+                $q->whereNull('starts_at')->orWhere('starts_at', '<=', now());
+            })
+            ->where(function ($q) {
+                $q->whereNull('ends_at')->orWhere('ends_at', '>=', now());
+            })
+            ->exists();
+    }
+
+    /**
      * Whether the actor has an active student enrolment in the course.
      * Uses context-based authorization: checks if the user has the 'student'
-     * role at the course context.
+     * role at the course context. Also checks that the course has at least
+     * one active enrolment method (Plan 05).
      */
     public function isActiveEnrollee(User $actor, Course $course): bool
     {
+        // First check the course has an active enrolment method
+        if (! $this->hasActiveEnrolmentMethod($course)) {
+            return false;
+        }
+
         $courseContext = $this->contextService->find(
             \App\Models\Context::LEVEL_COURSE,
             $course->id

@@ -283,6 +283,16 @@ class DatabaseSeeder extends Seeder
                 }
             }
 
+            // Create a default manual enrolment method for this course
+            \App\Models\CourseEnrolmentMethod::create([
+                'course_id' => $course->id,
+                'method' => 'manual',
+                'status' => 'active',
+                'default_role' => 'student',
+                'starts_at' => now()->subYears(1),
+                'ends_at' => null,
+            ]);
+
             // Enroll instructor as instructor-role enrollment too
             CourseEnrollment::create([
                 'user_id' => $instructors[$def['instructor_idx']]->id,

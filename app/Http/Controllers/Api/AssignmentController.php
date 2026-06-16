@@ -7,11 +7,14 @@ use App\Exceptions\BusinessException;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponseTrait;
 use App\Http\Controllers\Traits\ResolvesActor;
+use App\Http\Requests\AssignmentReopenRequest;
+use App\Http\Requests\AssignmentReturnRequest;
 use App\Http\Requests\GradeSubmissionAssignmentRequest;
 use App\Http\Requests\MarkerGradeAssignmentRequest;
 use App\Http\Requests\SubmitAssignmentRequest;
 use App\Models\Assignment;
 use App\Models\Course;
+use App\Models\Submission;
 use App\Services\ActorResolver;
 use App\Services\AssignmentService;
 use App\Services\CourseAccessService;
@@ -110,6 +113,48 @@ class AssignmentController extends Controller
         $submissions = $this->assignmentService->getPendingSubmissions($id);
 
         return $this->success($submissions);
+    }
+
+    /**
+     * PUT /api/submissions/{id}/return
+     *
+     * Return a submission to the student for revision (submitted/graded -> returned).
+     */
+    public function returnSubmission(AssignmentReturnRequest $request, int $id)
+    {
+        $validated = $request->validated();
+        $actor = $this->resolveActor($request);
+
+        $submission = Submission::with('assignment.course')->findOrFail($id);
+
+        if (! $this->courseAccessService->canGradeSubmission($actor, $submission)) {
+            throw new BusinessException('You do not have permission to return this submission', 403);
+        }
+
+        $returned = $this->assignmentService->returnSubmission($id, $validated['reason'] ?? null, $actor);
+
+        return $this->success($returned, 'Submission returned for revision');
+    }
+
+    /**
+     * PUT /api/submissions/{id}/reopen
+     *
+     * Reopen a returned submission for another attempt (returned -> reopened).
+     */
+    public function reopenSubmission(AssignmentReopenRequest $request, int $id)
+    {
+        $validated = $request->validated();
+        $actor = $this->resolveActor($request);
+
+        $submission = Submission::with('assignment.course')->findOrFail($id);
+
+        if (! $this->courseAccessService->canGradeSubmission($actor, $submission)) {
+            throw new BusinessException('You do not have permission to reopen this submission', 403);
+        }
+
+        $reopened = $this->assignmentService->reopenSubmission($id, $validated['reason'] ?? null, $actor);
+
+        return $this->success($reopened, 'Submission reopened for another attempt');
     }
 
     /**

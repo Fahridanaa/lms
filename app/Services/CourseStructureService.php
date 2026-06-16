@@ -138,10 +138,16 @@ class CourseStructureService
 
                 // Availability and completion only for students (instructors see everything)
                 if ($isStudent) {
-                    $availability = $this->moduleAvailabilityService->availabilityFor($actor, $module);
-                    $moduleData['available'] = $availability['available'];
-                    $moduleData['reason'] = $availability['reason'];
+                    $structured = $this->moduleAvailabilityService->structuredAvailabilityFor($actor, $module, false);
+                    $moduleData['available'] = $structured['available'];
+                    $moduleData['reason'] = $structured['reason'];
+                    $moduleData['availability'] = $structured['availability'];
                     $moduleData['completion'] = $this->moduleCompletionService->completionFor($actor, $module);
+                } elseif ($isInstructor) {
+                    // Instructors see structured metadata with bypass info
+                    // but no top-level available/reason (backward compatible)
+                    $structured = $this->moduleAvailabilityService->structuredAvailabilityFor($actor, $module, true);
+                    $moduleData['availability'] = $structured['availability'];
                 }
 
                 $modules[] = $moduleData;

@@ -347,6 +347,10 @@ class QuizService
         // Pass the updated attempt so pass-grade checks see the actual score
         $this->moduleCompletionService->completeForQuizAttempt($attempt->quiz, $updatedAttempt, $actor);
 
+        // Mark gradebook stale after quiz submission grade update
+        app(\App\Services\GradebookRecalculationService::class)
+            ->markCourseStale($attempt->quiz->course_id, 'quiz_submission', 'quiz_attempt', $attempt->id);
+
         $this->cacheStrategy->flushTags([
             "user:{$attempt->user_id}:attempts",
             "quiz:{$attempt->quiz_id}:attempts",

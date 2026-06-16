@@ -50,6 +50,10 @@ Route::prefix('assignments')->group(function () {
 // Submission grading
 Route::put('/submissions/{id}/grade', [AssignmentController::class, 'gradeSubmission']);
 
+// Submission return and reopen (Plan 04)
+Route::put('/submissions/{id}/return', [AssignmentController::class, 'returnSubmission']);
+Route::put('/submissions/{id}/reopen', [AssignmentController::class, 'reopenSubmission']);
+
 // Marker grading
 Route::put('/submissions/{id}/marker-grade', [AssignmentController::class, 'markerGrade']);
 
