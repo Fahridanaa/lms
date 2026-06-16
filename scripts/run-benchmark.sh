@@ -249,19 +249,19 @@ generate_warmup_targets() {
 
 # ─────────────────────────────────────────────
 # Pick a random element from an array in the warmup JSON
-# Uses jq (required, checked in preflight)
+# Uses node (avoids jq OOM on large files)
 # ─────────────────────────────────────────────
 _warmup_pick() {
   local json_file=$1
   local key=$2
-  local count
-  count=$(jq -r "${key} | length" "${json_file}" 2>/dev/null)
-  if [ -z "$count" ] || [ "$count" -eq 0 ]; then
-    echo "Error: ${key} is empty or not found"
-    return 1
-  fi
-  local idx=$(( RANDOM % count ))
-  jq -c "${key}[${idx}]" "${json_file}" 2>/dev/null
+  node -e "
+    var f=require('fs');
+    var d=JSON.parse(f.readFileSync('${json_file}','utf8'));
+    var arr=d['${key}'];
+    if(!arr||arr.length===0){process.exit(1)}
+    var idx=Math.floor(Math.random()*arr.length);
+    if(typeof arr[idx]==='object'){console.log(JSON.stringify(arr[idx]))}else{console.log(arr[idx])}
+  " 2>/dev/null
 }
 
 # ─────────────────────────────────────────────
@@ -292,11 +292,11 @@ warmup_cache() {
 
   # Log target file metadata
   local generated_at
-  generated_at=$(jq -r '._generatedAt // "unknown"' "${targets_file}" 2>/dev/null)
+  generated_at=$(node -e "var f=require('fs'); var d=JSON.parse(f.readFileSync('${targets_file}','utf8')); console.log(d._generatedAt||'unknown')" 2>/dev/null)
   echo -e "${CYAN}[warm-up] Target file: ${targets_file} (generated: ${generated_at})${NC}"
 
   local enrolled_count
-  enrolled_count=$(jq -r 'ENROLLED_PAIRS | length' "${targets_file}" 2>/dev/null || echo "0")
+  enrolled_count=$(node -e "var f=require('fs'); var d=JSON.parse(f.readFileSync('${targets_file}','utf8')); console.log(d.ENROLLED_PAIRS.length)" 2>/dev/null || echo "0")
   if [ "$enrolled_count" -eq 0 ]; then
     if [ "${ALLOW_BASIC_WARMUP:-}" = "yes" ]; then
       echo -e "${YELLOW}[warm-up] Empty ENROLLED_PAIRS — falling back to basic warm-up (ALLOW_BASIC_WARMUP=yes)${NC}"
@@ -322,21 +322,36 @@ warmup_cache() {
 
   while [ $(date +%s) -lt ${end_time} ]; do
     local pair
-    pair=$(jq -c "ENROLLED_PAIRS[$(( idx % enrolled_count ))]" "${targets_file}" 2>/dev/null)
+    pair=$(node -e "var f=require('fs'); var d=JSON.parse(f.readFileSync('${targets_file}','utf8')); var e=d.ENROLLED_PAIRS[${idx}%${enrolled_count}]; if(e)console.log(JSON.stringify(e))" 2>/dev/null)
     if [ -z "$pair" ] || [ "$pair" = "null" ]; then
-      pair=$(jq -c "ENROLLED_PAIRS[0]" "${targets_file}" 2>/dev/null)
+      pair=$(node -e "var f=require('fs'); var d=JSON.parse(f.readFileSync('${targets_file}','utf8')); if(d.ENROLLED_PAIRS[0])console.log(JSON.stringify(d.ENROLLED_PAIRS[0]))" 2>/dev/null)
     fi
     local student_id course_id
-    student_id=$(echo "$pair" | jq -r '.studentId' 2>/dev/null)
-    course_id=$(echo "$pair" | jq -r '.courseId' 2>/dev/null)
+    student_id=$(node -e "var p=${pair:-null}; if(p)console.log(p.studentId)" 2>/dev/null)
+    course_id=$(node -e "var p=${pair:-null}; if(p)console.log(p.courseId)" 2>/dev/null)
 
     # Cycle through activity IDs from the pair
     local mat_id
-    mat_id=$(jq -r "READABLE_MATERIAL_TARGETS | map(select(.courseId == ${course_id} and .studentId == ${student_id})) | .[$(( idx % 3 ))] // empty | .activityId" "${targets_file}" 2>/dev/null || echo "")
+    mat_id=$(node -e "
+      var f=require('fs');
+      var d=JSON.parse(f.readFileSync('${targets_file}','utf8'));
+      var arr=d.READABLE_MATERIAL_TARGETS.filter(function(x){return x.courseId==${course_id}&&x.studentId==${student_id}});
+      if(arr[${idx}%3])console.log(arr[${idx}%3].activityId)
+    " 2>/dev/null || echo "")
     local quiz_id
-    quiz_id=$(jq -r "READABLE_QUIZ_TARGETS | map(select(.courseId == ${course_id} and .studentId == ${student_id})) | .[0] // empty | .activityId" "${targets_file}" 2>/dev/null || echo "")
+    quiz_id=$(node -e "
+      var f=require('fs');
+      var d=JSON.parse(f.readFileSync('${targets_file}','utf8'));
+      var arr=d.READABLE_QUIZ_TARGETS.filter(function(x){return x.courseId==${course_id}&&x.studentId==${student_id}});
+      if(arr[0])console.log(arr[0].activityId)
+    " 2>/dev/null || echo "")
     local assign_id
-    assign_id=$(jq -r "READABLE_ASSIGNMENT_TARGETS | map(select(.courseId == ${course_id} and .studentId == ${student_id})) | .[0] // empty | .activityId" "${targets_file}" 2>/dev/null || echo "")
+    assign_id=$(node -e "
+      var f=require('fs');
+      var d=JSON.parse(f.readFileSync('${targets_file}','utf8'));
+      var arr=d.READABLE_ASSIGNMENT_TARGETS.filter(function(x){return x.courseId==${course_id}&&x.studentId==${student_id}});
+      if(arr[0])console.log(arr[0].activityId)
+    " 2>/dev/null || echo "")
 
     # Course structure (always valid for enrolled student)
     if [ -n "$course_id" ] && [ "$course_id" != "null" ]; then
@@ -365,14 +380,14 @@ warmup_cache() {
     # Gradebook (use instructor, not student)
     local instructor_pair
     local instructor_count
-    instructor_count=$(jq -r 'INSTRUCTOR_COURSE_PAIRS | length' "${targets_file}" 2>/dev/null || echo "0")
+    instructor_count=$(node -e "var f=require('fs'); var d=JSON.parse(f.readFileSync('${targets_file}','utf8')); console.log(d.INSTRUCTOR_COURSE_PAIRS.length)" 2>/dev/null || echo "0")
     if [ "$instructor_count" -gt 0 ]; then
       local inst_idx=$(( idx % instructor_count ))
-      instructor_pair=$(jq -c "INSTRUCTOR_COURSE_PAIRS[${inst_idx}]" "${targets_file}" 2>/dev/null)
+      instructor_pair=$(node -e "var f=require('fs'); var d=JSON.parse(f.readFileSync('${targets_file}','utf8')); if(d.INSTRUCTOR_COURSE_PAIRS[${inst_idx}])console.log(JSON.stringify(d.INSTRUCTOR_COURSE_PAIRS[${inst_idx}]))" 2>/dev/null)
       if [ -n "$instructor_pair" ] && [ "$instructor_pair" != "null" ]; then
         local instructor_id inst_course_id
-        instructor_id=$(echo "$instructor_pair" | jq -r '.instructorId')
-        inst_course_id=$(echo "$instructor_pair" | jq -r '.courseId')
+        instructor_id=$(node -e "var p=${instructor_pair:-null}; if(p)console.log(p.instructorId)" 2>/dev/null)
+        inst_course_id=$(node -e "var p=${instructor_pair:-null}; if(p)console.log(p.courseId)" 2>/dev/null)
         _warmup_request "GET" "${BASE_URL}/api/courses/${inst_course_id}/gradebook" "${instructor_id}" "gradebook" "${warmup_log}"
         req_count=$(( req_count + 1 ))
       fi
@@ -380,11 +395,16 @@ warmup_cache() {
 
     # Course completion check
     local completion_target
-    completion_target=$(jq -c "COURSE_COMPLETION_CHECK_TARGETS[$(( idx % $(jq -r 'COURSE_COMPLETION_CHECK_TARGETS | length' "${targets_file}" 2>/dev/null || echo 1) ))]" "${targets_file}" 2>/dev/null)
+    completion_target=$(node -e "
+      var f=require('fs');
+      var d=JSON.parse(f.readFileSync('${targets_file}','utf8'));
+      var arr=d.COURSE_COMPLETION_CHECK_TARGETS;
+      if(arr&&arr.length>0){var i=${idx}%arr.length;console.log(JSON.stringify(arr[i]))}
+    " 2>/dev/null)
     if [ -n "$completion_target" ] && [ "$completion_target" != "null" ]; then
       local comp_student_id comp_course_id
-      comp_student_id=$(echo "$completion_target" | jq -r '.studentId')
-      comp_course_id=$(echo "$completion_target" | jq -r '.courseId')
+      comp_student_id=$(node -e "var p=${completion_target:-null}; if(p)console.log(p.studentId)" 2>/dev/null)
+      comp_course_id=$(node -e "var p=${completion_target:-null}; if(p)console.log(p.courseId)" 2>/dev/null)
       _warmup_request "GET" "${BASE_URL}/api/courses/${comp_course_id}/completion" "${comp_student_id}" "completion" "${warmup_log}"
       req_count=$(( req_count + 1 ))
     fi
