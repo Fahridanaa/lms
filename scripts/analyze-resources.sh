@@ -49,10 +49,28 @@ echo "strategy,scenario,concurrent_users,cpu_avg_pct,cpu_max_pct,mem_avg_mb,mem_
 # ─────────────────────────────────────────────
 # Parse setiap resources CSV
 # ─────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# Resolve VU levels: metadata > env > default
+# ─────────────────────────────────────────────
+_vu_levels_file="${RESULTS_DIR}/.vu-levels"
+_vu_env="${VU_LEVELS:-}"
+VU_LEVELS=()
+if [ -f "${_vu_levels_file}" ]; then
+  while IFS= read -r line; do
+    [ -n "$line" ] && VU_LEVELS+=("$line")
+  done < "${_vu_levels_file}"
+  echo -e "${GREEN}[config] VU levels from .vu-levels metadata: ${VU_LEVELS[*]}${NC}"
+elif [ -n "${_vu_env}" ]; then
+  IFS=' ' read -ra VU_LEVELS <<< "${_vu_env}"
+  echo -e "${YELLOW}[config] VU levels from VU_LEVELS env: ${VU_LEVELS[*]}${NC}"
+else
+  VU_LEVELS=(100 250 500 750 1000 1500 2000)
+  echo -e "${YELLOW}[config] VU levels default: ${VU_LEVELS[*]}${NC}"
+fi
+
 FOUND=0
 STRATEGIES=("no-cache" "cache-aside" "read-through" "write-through")
 SCENARIOS=("read-heavy" "write-heavy")
-VU_LEVELS=(100 250 500 750 1000 1500 2000)
 
 for strategy in "${STRATEGIES[@]}"; do
   for scenario in "${SCENARIOS[@]}"; do

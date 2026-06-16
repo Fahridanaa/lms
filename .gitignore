@@ -24,3 +24,6 @@ Homestead.yaml
 Thumbs.db
 /benchmark-results
 /md
+
+# Generated benchmark artifacts
+/scripts/lib/warmup-targets.json

@@ -113,23 +113,37 @@ docker compose exec -T app php artisan config:clear --quiet 2>/dev/null || true
 docker compose exec -T app php artisan route:clear  --quiet 2>/dev/null || true
 docker compose exec -T app php artisan view:clear   --quiet 2>/dev/null || true
 
-# FLUSHALL pada single Redis, atau semua cluster nodes
-flushed=false
-if docker compose exec -T redis redis-cli FLUSHALL > /dev/null 2>&1; then
-  flushed=true
-else
-  # Coba FLUSHALL pada semua cluster nodes
-  for node in redis-c1 redis-c2 redis-c3 redis-c4 redis-c5 redis-c6; do
-    if docker compose exec -T "$node" redis-cli FLUSHALL > /dev/null 2>&1; then
-      flushed=true
-    fi
-  done
+# FLUSHALL — mode-aware, no silent fallback
+# Check .env to determine which Redis to flush
+REDIS_CLUSTER_ENABLED=false
+if grep -q "^REDIS_CLUSTER_MODE=true" "${PROJECT_DIR}/.env" 2>/dev/null; then
+  REDIS_CLUSTER_ENABLED=true
 fi
 
-if [ "$flushed" = true ]; then
-  echo -e "${GREEN}  Redis FLUSHALL: OK${NC}"
+if [ "$REDIS_CLUSTER_ENABLED" = "true" ]; then
+  for node in redis-c1 redis-c2 redis-c3 redis-c4 redis-c5 redis-c6; do
+    if docker compose ps --services --filter "status=running" 2>/dev/null | grep -qF "$node"; then
+      docker compose exec -T "$node" redis-cli FLUSHALL > /dev/null 2>&1 || {
+        echo -e "${RED}  Error: FLUSHALL failed on ${node}${NC}"
+        exit 1
+      }
+    else
+      echo -e "${RED}  Error: Cluster node ${node} is not running${NC}"
+      exit 1
+    fi
+  done
+  echo -e "${GREEN}  Redis Cluster FLUSHALL: OK (6 nodes)${NC}"
 else
-  echo -e "${YELLOW}  Warning: Redis FLUSHALL gagal (lanjut)${NC}"
+  # Single node mode
+  if ! docker compose exec -T redis redis-cli PING > /dev/null 2>&1; then
+    echo -e "${RED}  Error: Single Redis not reachable (PING failed)${NC}"
+    exit 1
+  fi
+  docker compose exec -T redis redis-cli FLUSHALL > /dev/null 2>&1 || {
+    echo -e "${RED}  Error: Single Redis FLUSHALL failed${NC}"
+    exit 1
+  }
+  echo -e "${GREEN}  Single Redis FLUSHALL: OK${NC}"
 fi
 
 echo -e "${GREEN}✓ Semua cache bersih.${NC}"

@@ -147,8 +147,18 @@ cluster_up() {
     echo ""
     echo -e "${YELLOW}[4/4] Mengupdate .env untuk cluster mode...${NC}"
 
-    # Backup .env
-    cp "${ENV_FILE}" "${ENV_FILE}.cluster-backup"
+    # Check current state before backup
+    local current_mode
+    current_mode=$(grep "^REDIS_CLUSTER_MODE=" "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2 | tr -d ' ')
+
+    if [ "$current_mode" = "true" ]; then
+        # Already in cluster mode — do NOT overwrite the single-node backup
+        echo -e "  ${YELLOW}Already in cluster mode (REDIS_CLUSTER_MODE=true). Skipping backup.${NC}"
+    else
+        # Backup current single-node .env with clear name
+        cp "${ENV_FILE}" "${ENV_FILE}.single-backup"
+        echo -e "${GREEN}  ✓ Single-node .env backed up: ${ENV_FILE}.single-backup${NC}"
+    fi
 
     # Set cluster mode vars
     if grep -q "^REDIS_CLUSTER_MODE=" "${ENV_FILE}"; then
@@ -169,7 +179,6 @@ cluster_up() {
 
     echo -e "${GREEN}  ✓ .env diupdate: REDIS_CLUSTER_MODE=true${NC}"
     echo -e "${GREEN}  ✓ .env diupdate: REDIS_CLUSTER_HOST_1, REDIS_CLUSTER_HOST_2, REDIS_CLUSTER_HOST_3${NC}"
-    echo -e "${YELLOW}  Backup .env: ${ENV_FILE}.cluster-backup${NC}"
 
     # ─────────────────────────────────────────
     # 5. Tampilkan info cluster
@@ -212,15 +221,20 @@ cluster_down() {
     cd "${PROJECT_DIR}" || exit 1
 
     # ─────────────────────────────────────────
-    # 1. Hentikan cluster nodes
+    # 1. Hentikan cluster nodes only
+    #    Stop only redis-c1..redis-c6 + redis-cluster-init
+    #    Do NOT stop app, nginx, mysql, or single redis
     # ─────────────────────────────────────────
-    echo -e "${YELLOW}[1/2] Menghentikan cluster nodes...${NC}"
-    docker compose --profile redis-cluster down
+    echo -e "${YELLOW}[1/2] Menghentikan cluster nodes saja (tidak menyentuh app/nginx/mysql)...${NC}"
 
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}Error: Gagal menghentikan cluster.${NC}"
-        exit 1
-    fi
+    cluster_services=("redis-c1" "redis-c2" "redis-c3" "redis-c4" "redis-c5" "redis-c6" "redis-cluster-init")
+    for svc in "${cluster_services[@]}"; do
+      if docker compose ps --services 2>/dev/null | grep -qF "$svc"; then
+        echo -e "  Stopping ${svc}..."
+        docker compose rm -sf "$svc" 2>/dev/null || docker compose stop "$svc" 2>/dev/null || true
+      fi
+    done
+
     echo -e "${GREEN}✓ Cluster nodes dihentikan.${NC}"
 
     # ─────────────────────────────────────────
@@ -229,20 +243,28 @@ cluster_down() {
     echo ""
     echo -e "${YELLOW}[2/2] Merestore .env ke single-node mode...${NC}"
 
-    if [ -f "${ENV_FILE}.cluster-backup" ]; then
-        # Restore dari backup yang diambil saat cluster_up
+    if [ -f "${ENV_FILE}.single-backup" ]; then
+        # Restore dari backup yang diambil saat cluster_up (sekarang bernama .single-backup)
+        cp "${ENV_FILE}.single-backup" "${ENV_FILE}"
+        echo -e "${GREEN}  ✓ .env di-restore dari .single-backup.${NC}"
+    elif [ -f "${ENV_FILE}.cluster-backup" ]; then
+        # Fallback: legacy backup name
         cp "${ENV_FILE}.cluster-backup" "${ENV_FILE}"
-        echo -e "${GREEN}  ✓ .env di-restore dari backup.${NC}"
+        echo -e "${YELLOW}  ⚠  Restore dari legacy backup (.cluster-backup).${NC}"
     else
         # Manual restore
         if grep -q "^REDIS_CLUSTER_MODE=" "${ENV_FILE}"; then
             sed -i "s/^REDIS_CLUSTER_MODE=.*/REDIS_CLUSTER_MODE=false/" "${ENV_FILE}"
         fi
-        echo -e "${GREEN}  ✓ .env di-set ke REDIS_CLUSTER_MODE=false${NC}"
+        # Remove cluster host entries
+        for i in 1 2 3; do
+            sed -i "/^REDIS_CLUSTER_HOST_${i}=/d" "${ENV_FILE}"
+        done
+        echo -e "${GREEN}  ✓ .env di-set ke REDIS_CLUSTER_MODE=false (manual)${NC}"
     fi
 
     echo ""
-    echo -e "${GREEN}✓ Redis Cluster dihentikan.${NC}"
+    echo -e "${GREEN}✓ Redis Cluster dihentikan. Single-node siap.${NC}"
     echo ""
     echo "Langkah selanjutnya:"
     echo "  Restart app container: docker compose restart app"
