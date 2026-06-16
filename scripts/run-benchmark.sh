@@ -295,6 +295,24 @@ warmup_cache() {
   generated_at=$(node -e "var f=require('fs'); var d=JSON.parse(f.readFileSync('${targets_file}','utf8')); console.log(d._generatedAt||'unknown')" 2>/dev/null)
   echo -e "${CYAN}[warm-up] Target file: ${targets_file} (generated: ${generated_at})${NC}"
 
+  # Wait for app to be ready (max 60s)
+  echo -e "${YELLOW}[warm-up] Waiting for app to be ready at ${BASE_URL}...${NC}"
+  local app_ready=0
+  for i in $(seq 1 60); do
+    local status
+    status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "${BASE_URL}/api/courses" 2>/dev/null || echo "000")
+    if [ "$status" != "502" ] && [ "$status" != "000" ]; then
+      echo -e "${GREEN}[warm-up] App ready (HTTP ${status}) after ${i}s${NC}"
+      app_ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "${app_ready}" -eq 0 ]; then
+    >&2 echo -e "${RED}[warm-up] ✗ App not ready after 60s. Last status: ${status}${NC}"
+    return 1
+  fi
+
   local enrolled_count
   enrolled_count=$(node -e "var f=require('fs'); var d=JSON.parse(f.readFileSync('${targets_file}','utf8')); console.log(d.ENROLLED_PAIRS.length)" 2>/dev/null || echo "0")
   if [ "$enrolled_count" -eq 0 ]; then
