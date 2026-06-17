@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Constants\Messages\QuizMessage;
 use App\Contracts\CacheStrategyInterface;
 use App\Exceptions\BusinessException;
-use App\Models\CourseGroupMember;
 use App\Models\Grade;
 use App\Models\GradeItem;
 use App\Models\LearningModule;
@@ -14,9 +13,9 @@ use App\Models\QuizAttempt;
 use App\Models\QuizAttemptQuestion;
 use App\Models\QuizGrade;
 use App\Models\QuizAttemptStep;
-use App\Models\QuizAttemptStepData;
 use App\Models\QuizOverride;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use App\Repositories\QuizAttemptRepository;
 use App\Repositories\QuizRepository;
 use Illuminate\Support\Facades\App;
@@ -33,16 +32,27 @@ class QuizService
     ) {}
 
     /**
-     * Get all quizzes (cached)
+     * Get all quizzes (cached), optionally paginated.
+     *
+     * @param int|null $perPage Number of items per page (null = no pagination)
+     * @param int $page Page number when paginated
+     * @return mixed Collection or LengthAwarePaginator
      */
-    public function getAllQuizzes()
+    public function getAllQuizzes(?int $perPage = null, int $page = 1): mixed
     {
+        $cacheKey = $perPage !== null
+            ? "quizzes:all:page:{$page}:per:{$perPage}"
+            : 'quizzes:all';
+
         return $this->cacheStrategy
             ->tags(['quizzes'])
-            ->get(
-                'quizzes:all',
-                fn () => $this->quizRepository->getAllWithCourse()
-            );
+            ->get($cacheKey, function () use ($perPage, $page) {
+                if ($perPage !== null) {
+                    return $this->quizRepository->getAllWithCoursePaginated($perPage, $page);
+                }
+
+                return $this->quizRepository->getAllWithCourse();
+            });
     }
 
     /**
@@ -81,35 +91,50 @@ class QuizService
     }
 
     /**
+     * @var array<string, array> Request-scoped cache for effective quiz overrides
+     */
+    private array $overrideCache = [];
+
+    /**
      * Get the effective override values for a quiz for a user, considering overrides.
+     * Uses an in-memory request-scoped cache to prevent repeated DB queries.
      */
     protected function effectiveQuizOverrides(Quiz $quiz, User $actor): array
     {
-        $override = QuizOverride::query()
-            ->where('quiz_id', $quiz->id)
-            ->where('user_id', $actor->id)
-            ->first();
+        $cacheKey = "quiz_override:{$quiz->id}:{$actor->id}";
 
-        if (! $override) {
-            $groupIds = CourseGroupMember::query()
-                ->where('user_id', $actor->id)
-                ->pluck('course_group_id');
-
-            if ($groupIds->isNotEmpty()) {
-                $override = QuizOverride::query()
-                    ->where('quiz_id', $quiz->id)
-                    ->whereIn('course_group_id', $groupIds)
-                    ->first();
-            }
+        if (isset($this->overrideCache[$cacheKey])) {
+            return $this->overrideCache[$cacheKey];
         }
 
-        return [
+        // Single query: try user-specific override first, then group-based
+        $override = QuizOverride::query()
+            ->where('quiz_id', $quiz->id)
+            ->where(function ($query) use ($actor) {
+                $query->where('user_id', $actor->id)
+                    ->orWhere(function ($q) use ($actor) {
+                        $q->whereNull('user_id')
+                            ->whereIn('course_group_id', function ($subQuery) use ($actor) {
+                                $subQuery->select('course_group_id')
+                                    ->from('course_group_members')
+                                    ->where('user_id', $actor->id);
+                            });
+                    });
+            })
+            ->orderByRaw('CASE WHEN user_id IS NOT NULL THEN 0 ELSE 1 END')
+            ->first();
+
+        $result = [
             'max_attempts' => $override?->max_attempts ?? $quiz->max_attempts,
             'time_limit' => $override?->time_limit ?? $quiz->time_limit,
             'available_from' => $override?->available_from ?? $quiz->available_from,
             'available_until' => $override?->available_until ?? $quiz->available_until,
             'grace_period' => $override?->grace_period ?? $quiz->grace_period,
         ];
+
+        $this->overrideCache[$cacheKey] = $result;
+
+        return $result;
     }
 
     /**
@@ -174,25 +199,44 @@ class QuizService
         }
 
         // Create attempt-question rows for each slot (Plan 001: normalized detail)
-        $quiz->load(['questionSlots.question']);
+        // Using bulk INSERT to avoid N+1 (was 2N queries for N slots)
+        // questionSlots.question is already eager-loaded by findWithQuestionsAndCourse
+        $attemptQuestionsData = [];
+        $now = now();
+
         foreach ($quiz->questionSlots as $slot) {
-            $attemptQuestion = QuizAttemptQuestion::query()->create([
+            $attemptQuestionsData[] = [
                 'quiz_attempt_id' => $attempt->id,
                 'quiz_question_slot_id' => $slot->id,
                 'question_id' => $slot->question_id,
                 'slot' => $slot->slot,
                 'max_points' => $slot->max_points ?? (float) $slot->question?->points ?? 0,
                 'state' => 'not_answered',
-            ]);
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
 
-            // Initial step row for review-path realism
-            QuizAttemptStep::query()->create([
-                'quiz_attempt_question_id' => $attemptQuestion->id,
+        DB::table('quiz_attempt_questions')->insert($attemptQuestionsData);
+
+        // Reload inserted questions to get their IDs for step rows
+        $insertedQuestions = QuizAttemptQuestion::query()
+            ->where('quiz_attempt_id', $attempt->id)
+            ->get();
+
+        $attemptStepsData = [];
+        foreach ($insertedQuestions as $question) {
+            $attemptStepsData[] = [
+                'quiz_attempt_question_id' => $question->id,
                 'sequence_number' => 0,
                 'state' => 'not_answered',
                 'user_id' => $actor->id,
-            ]);
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
         }
+
+        DB::table('quiz_attempt_steps')->insert($attemptStepsData);
 
         $this->cacheStrategy->flushTags(["user:{$actor->id}:attempts"]);
 
@@ -249,11 +293,6 @@ class QuizService
             }
         }
 
-        // Load attempt questions for normalized detail writes (Plan 001)
-        $attempt->load(['attemptQuestions' => function ($q) {
-            $q->with(['question', 'steps']);
-        }]);
-
         $scoringResult = $this->quizScoringService->calculate($attempt->quiz, $answers);
 
         $updatedAttempt = $this->quizAttemptRepository->update($attemptId, [
@@ -265,7 +304,12 @@ class QuizService
         ]);
 
         // Write per-question attempt detail (Plan 001: write fan-out)
+        // Using bulk INSERT for steps and step data to avoid N+1 (was 6N queries for N questions)
         $answeredQuestionIds = array_keys($answers);
+        $stepsData = [];
+        $answeredQuestionResults = [];
+        $now = now();
+
         foreach ($attempt->attemptQuestions as $attemptQuestion) {
             $questionId = $attemptQuestion->question_id;
 
@@ -273,45 +317,84 @@ class QuizService
                 $userAnswer = $answers[$questionId];
                 $result = $this->quizScoringService->scoreQuestion($attemptQuestion->question, $userAnswer);
 
-                // Update the attempt-question row
+                // Update the attempt-question row (individual UPDATE, 1 per question)
                 $attemptQuestion->update([
                     'score' => $result['score'],
                     'state' => 'graded',
                 ]);
 
-                // Insert a submit step
-                $step = QuizAttemptStep::query()->create([
+                // Collect step data for bulk insert
+                $stepsData[] = [
                     'quiz_attempt_question_id' => $attemptQuestion->id,
                     'sequence_number' => $attemptQuestion->steps->count(),
                     'state' => 'graded',
                     'score' => $result['score'],
                     'user_id' => $actor->id,
-                ]);
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
 
-                // Insert step data rows
-                QuizAttemptStepData::query()->create([
-                    'quiz_attempt_step_id' => $step->id,
-                    'name' => 'answer',
-                    'value' => is_array($userAnswer) ? json_encode($userAnswer) : (string) $userAnswer,
-                ]);
-                QuizAttemptStepData::query()->create([
-                    'quiz_attempt_step_id' => $step->id,
-                    'name' => 'is_correct',
-                    'value' => $result['is_correct'] ? '1' : '0',
-                ]);
-                QuizAttemptStepData::query()->create([
-                    'quiz_attempt_step_id' => $step->id,
-                    'name' => 'raw_score',
-                    'value' => (string) $result['score'],
-                ]);
-                QuizAttemptStepData::query()->create([
-                    'quiz_attempt_step_id' => $step->id,
-                    'name' => 'max_points',
-                    'value' => (string) $result['max'],
-                ]);
+                // Store result for step-data building after bulk insert
+                $answeredQuestionResults[$attemptQuestion->id] = [
+                    'user_answer' => $userAnswer,
+                    'is_correct' => $result['is_correct'],
+                    'score' => $result['score'],
+                    'max' => $result['max'],
+                ];
             }
-            // Unanswered slots stay 'not_answered' — no duplicate step inserted
         }
+
+        // Bulk insert steps
+        DB::table('quiz_attempt_steps')->insert($stepsData);
+
+        // Reload inserted steps to get their IDs for step data
+        $attemptQuestionIds = $attempt->attemptQuestions->pluck('id')->toArray();
+        $insertedSteps = QuizAttemptStep::query()
+            ->whereIn('quiz_attempt_question_id', $attemptQuestionIds)
+            ->where('sequence_number', '>', 0)
+            ->where('user_id', $actor->id)
+            ->get();
+
+        // Build step data rows for bulk insert
+        $stepDataRows = [];
+        foreach ($insertedSteps as $step) {
+            $aqResult = $answeredQuestionResults[$step->quiz_attempt_question_id] ?? null;
+            if ($aqResult === null) {
+                continue;
+            }
+
+            $stepDataRows[] = [
+                'quiz_attempt_step_id' => $step->id,
+                'name' => 'answer',
+                'value' => is_array($aqResult['user_answer']) ? json_encode($aqResult['user_answer']) : (string) $aqResult['user_answer'],
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+            $stepDataRows[] = [
+                'quiz_attempt_step_id' => $step->id,
+                'name' => 'is_correct',
+                'value' => $aqResult['is_correct'] ? '1' : '0',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+            $stepDataRows[] = [
+                'quiz_attempt_step_id' => $step->id,
+                'name' => 'raw_score',
+                'value' => (string) $aqResult['score'],
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+            $stepDataRows[] = [
+                'quiz_attempt_step_id' => $step->id,
+                'name' => 'max_points',
+                'value' => (string) $aqResult['max'],
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        // Bulk insert step data
+        DB::table('quiz_attempt_step_data')->insert($stepDataRows);
 
         $maxScore = (float) $attempt->quiz->questions->sum('points');
 

@@ -9,6 +9,10 @@ use App\Models\Grade;
 use App\Models\GradeCategory;
 use App\Models\GradeItem;
 use App\Models\Quiz;
+use App\Models\Context;
+use App\Models\Role;
+use App\Services\AuthorizationService;
+use App\Services\ContextService;
 use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Cache;
@@ -959,5 +963,84 @@ class GradebookControllerTest extends TestCase
         // Assert: empty because active status includes date range check
         $response->assertOk();
         $this->assertCount(0, $response->json('data'));
+    }
+
+    #[Test]
+    public function instructor_via_role_assignment_can_read_student_grades(): void
+    {
+        /** @var \App\Models\User $roleInstructor */
+        $roleInstructor = User::factory()->create();
+
+        // Create a course where the user is NOT the owner
+        $otherCourse = Course::factory()->create([
+            'instructor_id' => $this->instructor->id,
+        ]);
+        CourseEnrollment::factory()->create([
+            'course_id' => $otherCourse->id,
+            'user_id' => $this->user->id,
+            'role' => 'student',
+            'status' => 'active',
+        ]);
+
+        // Create a grade in that course
+        Grade::factory()->create([
+            'user_id' => $this->user->id,
+            'course_id' => $otherCourse->id,
+            'status' => 'final',
+        ]);
+
+        // Assign the instructor role via role_assignments (not via course ownership)
+        $contextService = app(ContextService::class);
+        $authService = app(AuthorizationService::class);
+        $courseContext = $contextService->resolveOrCreate(Context::LEVEL_COURSE, $otherCourse->id);
+        $instructorRole = Role::where('shortname', 'instructor')->firstOrFail();
+        $authService->assignRole($roleInstructor, $instructorRole, $courseContext);
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $roleInstructor->id)
+            ->getJson("/api/users/{$this->user->id}/grades");
+
+        $response->assertOk();
+        $gradeIds = collect($response->json('data'))->pluck('course_id')->all();
+        $this->assertContains($otherCourse->id, $gradeIds,
+            'Instructor via role_assignment should see grades from the course'
+        );
+    }
+
+    #[Test]
+    public function student_role_assignment_does_not_grant_instructor_access(): void
+    {
+        /** @var \App\Models\User $studentUser */
+        $studentUser = User::factory()->create();
+
+        // Create a course where the user is NOT the owner
+        $otherCourse = Course::factory()->create([
+            'instructor_id' => $this->instructor->id,
+        ]);
+        CourseEnrollment::factory()->create([
+            'course_id' => $otherCourse->id,
+            'user_id' => $this->user->id,
+            'role' => 'student',
+            'status' => 'active',
+        ]);
+
+        // Create a grade in that course
+        Grade::factory()->create([
+            'user_id' => $this->user->id,
+            'course_id' => $otherCourse->id,
+            'status' => 'final',
+        ]);
+
+        // Assign the STUDENT role (not instructor) via role_assignments
+        $contextService = app(ContextService::class);
+        $authService = app(AuthorizationService::class);
+        $courseContext = $contextService->resolveOrCreate(Context::LEVEL_COURSE, $otherCourse->id);
+        $studentRole = Role::where('shortname', 'student')->firstOrFail();
+        $authService->assignRole($studentUser, $studentRole, $courseContext);
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $studentUser->id)
+            ->getJson("/api/users/{$this->user->id}/grades");
+
+        // A non-instructor should not be able to access other users' grades
+        $response->assertStatus(403);
     }
 }

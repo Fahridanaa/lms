@@ -14,11 +14,19 @@ class QuizAttemptRepository extends BaseRepository
     }
 
     /**
-     * Find attempt with quiz and questions
+     * Find attempt with quiz, questions, and normalized attempt-question detail.
+     * Eager-loads attempt questions with their question and steps
+     * to avoid a separate $attempt->load() call in the service layer.
      */
     public function findWithQuizAndQuestions(int $id): Model
     {
-        return $this->findOrFail($id, ['quiz.questions', 'quiz.course', 'quiz.learningModule']);
+        return $this->findOrFail($id, [
+            'quiz.questions',
+            'quiz.course',
+            'quiz.learningModule',
+            'attemptQuestions.question',
+            'attemptQuestions.steps',
+        ]);
     }
 
     /**

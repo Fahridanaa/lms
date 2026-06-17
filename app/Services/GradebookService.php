@@ -6,6 +6,7 @@ use App\Constants\Messages\GradeMessage;
 use App\Contracts\CacheStrategyInterface;
 use App\Exceptions\BusinessException;
 use App\Models\Course;
+use App\Models\Context;
 use App\Models\CourseEnrollment;
 use App\Models\Grade;
 use App\Models\GradeCategory;
@@ -68,9 +69,9 @@ class GradebookService
      */
     public function getCourseGradebook(int $courseId, User $actor): array
     {
-        Course::query()->findOrFail($courseId);
+        $course = Course::query()->findOrFail($courseId);
 
-        $isStudent = $this->courseAccessService->isActiveEnrollee($actor, Course::find($courseId));
+        $isStudent = $this->courseAccessService->isActiveEnrollee($actor, $course);
         $visibilityMode = $isStudent ? 'student-visible' : 'instructor';
 
         return $this->cacheStrategy
@@ -225,11 +226,28 @@ class GradebookService
         }
 
         // Instructor view: scope to taught courses, include instructor id in cache key
+        // Uses a single JOIN query instead of per-course authorization checks (was N+1 query)
         $taughtCourseIds = Course::query()
-            ->where('is_active', true)
-            ->get()
-            ->filter(fn ($course) => $this->courseAccessService->isInstructorForCourse($actor, $course))
-            ->pluck('id');
+            ->from('courses')
+            ->where('courses.is_active', true)
+            ->where(function ($query) use ($actor) {
+                // Course owner
+                $query->where('courses.instructor_id', $actor->id)
+                    // OR has instructor role via role_assignments + contexts
+                    ->orWhere(function ($q) use ($actor) {
+                        $q->whereExists(function ($subQuery) use ($actor) {
+                            $subQuery->select(\Illuminate\Support\Facades\DB::raw(1))
+                                ->from('role_assignments')
+                                ->join('contexts', 'role_assignments.context_id', '=', 'contexts.id')
+                                ->join('roles', 'role_assignments.role_id', '=', 'roles.id')
+                                ->where('role_assignments.user_id', $actor->id)
+                                ->where('roles.shortname', 'instructor')
+                                ->where('contexts.contextlevel', Context::LEVEL_COURSE)
+                                ->whereColumn('contexts.instance_id', 'courses.id');
+                        });
+                    });
+            })
+            ->pluck('courses.id');
 
         if ($taughtCourseIds->isEmpty()) {
             return collect();

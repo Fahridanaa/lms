@@ -37,11 +37,26 @@ class QuizController extends Controller
     public function index(Request $request)
     {
         $actor = $this->resolveActor($request);
-        $quizzes = $this->quizService->getAllQuizzes();
+        $perPage = min((int) $request->query('per_page', 50), 100);
+        $quizzes = $this->quizService->getAllQuizzes($perPage);
+
+        // Get items (works for both Collection and LengthAwarePaginator)
+        $items = $quizzes instanceof \Illuminate\Pagination\LengthAwarePaginator
+            ? $quizzes->items()
+            : $quizzes;
+
+        // Batch-load all courses once to avoid N+1
+        $courseIds = collect($items)->pluck('course_id')->unique()->filter();
+        $courses = Course::query()
+            ->whereIn('id', $courseIds)
+            ->get()
+            ->keyBy('id');
 
         // Filter to only quizzes the actor has access to
-        $quizzes = collect($quizzes)->filter(function ($quiz) use ($actor) {
-            $course = Course::query()->find($quiz['course_id'] ?? $quiz->course_id ?? null);
+        $filtered = collect($items)->filter(function ($quiz) use ($actor, $courses) {
+            $courseId = is_array($quiz) ? ($quiz['course_id'] ?? null) : $quiz->course_id;
+            $course = $courses->get($courseId);
+
             if (! $course) {
                 return false;
             }
@@ -49,7 +64,7 @@ class QuizController extends Controller
             return $this->courseAccessService->canReadCourse($actor, $course);
         })->values();
 
-        return $this->success($quizzes);
+        return $this->success($filtered);
     }
 
     /**
@@ -144,8 +159,9 @@ class QuizController extends Controller
 
         // Actor must own the attempt or be instructor for the course
         if (($result['user_id'] ?? null) !== $actor->id) {
-            $quiz = Quiz::query()->with('course')->findOrFail($quizId);
-            if (! $this->courseAccessService->isInstructorForCourse($actor, $quiz->course)) {
+            // Use cached quiz lookup instead of direct query
+            $quiz = $this->quizService->getQuizById($quizId);
+            if (! $quiz || ! $this->courseAccessService->isInstructorForCourse($actor, $quiz->course)) {
                 throw new BusinessException('You do not have permission to view this result', 403);
             }
         }

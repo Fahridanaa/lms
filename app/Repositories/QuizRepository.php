@@ -5,6 +5,7 @@ namespace App\Repositories;
 use App\Models\Quiz;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class QuizRepository extends BaseRepository
 {
@@ -24,6 +25,18 @@ class QuizRepository extends BaseRepository
             ->get()
             ->filter(fn (Quiz $quiz): bool => $quiz->course?->is_active && $quiz->learningModule?->isAvailable())
             ->values();
+    }
+
+    /**
+     * Get all quizzes with course relationship, paginated.
+     */
+    public function getAllWithCoursePaginated(int $perPage = 50, int $page = 1): LengthAwarePaginator
+    {
+        return $this->model->newQuery()
+            ->with(['course', 'learningModule'])
+            ->where('is_active', true)
+            ->whereHas('course', fn ($q) => $q->where('is_active', true))
+            ->paginate($perPage, ['*'], 'page', $page);
     }
 
     /**

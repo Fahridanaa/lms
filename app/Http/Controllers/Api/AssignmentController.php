@@ -15,6 +15,7 @@ use App\Http\Requests\SubmitAssignmentRequest;
 use App\Models\Assignment;
 use App\Models\Course;
 use App\Models\Submission;
+use App\Models\User;
 use App\Services\ActorResolver;
 use App\Services\AssignmentService;
 use App\Services\CourseAccessService;
@@ -82,20 +83,29 @@ class AssignmentController extends Controller
     }
 
     /**
+     * Load assignment by ID and verify the actor is an instructor for its course.
+     * Reusable helper across instructor-scoped assignment endpoints.
+     */
+    private function loadAssignmentAndAuth(int $id, User $actor): Assignment
+    {
+        $assignment = Assignment::query()->with('course')->findOrFail($id);
+
+        if (! $this->courseAccessService->isInstructorForCourse($actor, $assignment->course)) {
+            throw new BusinessException('You do not have permission to access this assignment', 403);
+        }
+
+        return $assignment;
+    }
+
+    /**
      * GET /api/assignments/{id}/submissions
      */
     public function submissions(Request $request, int $id)
     {
         $actor = $this->resolveActor($request);
-        $assignment = Assignment::query()->with('course')->findOrFail($id);
+        $this->loadAssignmentAndAuth($id, $actor);
 
-        if (! $this->courseAccessService->isInstructorForCourse($actor, $assignment->course)) {
-            throw new BusinessException('You do not have permission to view submissions', 403);
-        }
-
-        $submissions = $this->assignmentService->getAssignmentSubmissions($id) ?? [];
-
-        return $this->success($submissions);
+        return $this->success($this->assignmentService->getAssignmentSubmissions($id) ?? []);
     }
 
     /**
@@ -104,15 +114,9 @@ class AssignmentController extends Controller
     public function pendingSubmissions(Request $request, int $id)
     {
         $actor = $this->resolveActor($request);
-        $assignment = Assignment::query()->with('course')->findOrFail($id);
+        $this->loadAssignmentAndAuth($id, $actor);
 
-        if (! $this->courseAccessService->isInstructorForCourse($actor, $assignment->course)) {
-            throw new BusinessException('You do not have permission to view pending submissions', 403);
-        }
-
-        $submissions = $this->assignmentService->getPendingSubmissions($id);
-
-        return $this->success($submissions);
+        return $this->success($this->assignmentService->getPendingSubmissions($id));
     }
 
     /**
@@ -202,14 +206,8 @@ class AssignmentController extends Controller
     public function statistics(Request $request, int $id)
     {
         $actor = $this->resolveActor($request);
-        $assignment = Assignment::query()->with('course')->findOrFail($id);
+        $this->loadAssignmentAndAuth($id, $actor);
 
-        if (! $this->courseAccessService->isInstructorForCourse($actor, $assignment->course)) {
-            throw new BusinessException('You do not have permission to view assignment statistics', 403);
-        }
-
-        $statistics = $this->assignmentService->getAssignmentStatistics($id);
-
-        return $this->success($statistics);
+        return $this->success($this->assignmentService->getAssignmentStatistics($id));
     }
 }

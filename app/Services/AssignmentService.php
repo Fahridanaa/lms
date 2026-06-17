@@ -11,7 +11,6 @@ use App\Models\AssignmentAllocatedMarker;
 use App\Models\AssignmentMark;
 use App\Models\AssignmentOverride;
 use App\Models\Course;
-use App\Models\CourseGroupMember;
 use App\Models\FileRecord;
 use App\Models\Grade;
 use App\Models\GradeItem;
@@ -81,36 +80,49 @@ class AssignmentService
     }
 
     /**
+     * @var array<string, array> Request-scoped cache for effective assignment deadlines
+     */
+    private array $deadlineCache = [];
+
+    /**
      * Get the effective due_date and cutoff_date for a user, considering overrides.
+     * Uses an in-memory request-scoped cache to prevent repeated DB queries.
      */
     protected function effectiveAssignmentDeadlines(Assignment $assignment, User $actor): array
     {
-        // Check user-specific override first
-        $override = AssignmentOverride::query()
-            ->where('assignment_id', $assignment->id)
-            ->where('user_id', $actor->id)
-            ->first();
+        $cacheKey = "assignment_deadline:{$assignment->id}:{$actor->id}";
 
-        if (! $override) {
-            // Check group-based override
-            $groupIds = CourseGroupMember::query()
-                ->where('user_id', $actor->id)
-                ->pluck('course_group_id');
-
-            if ($groupIds->isNotEmpty()) {
-                $override = AssignmentOverride::query()
-                    ->where('assignment_id', $assignment->id)
-                    ->whereIn('course_group_id', $groupIds)
-                    ->first();
-            }
+        if (isset($this->deadlineCache[$cacheKey])) {
+            return $this->deadlineCache[$cacheKey];
         }
 
-        return [
+        // Single query: try user-specific override first, then group-based
+        $override = AssignmentOverride::query()
+            ->where('assignment_id', $assignment->id)
+            ->where(function ($query) use ($actor) {
+                $query->where('user_id', $actor->id)
+                    ->orWhere(function ($q) use ($actor) {
+                        $q->whereNull('user_id')
+                            ->whereIn('course_group_id', function ($subQuery) use ($actor) {
+                                $subQuery->select('course_group_id')
+                                    ->from('course_group_members')
+                                    ->where('user_id', $actor->id);
+                            });
+                    });
+            })
+            ->orderByRaw('CASE WHEN user_id IS NOT NULL THEN 0 ELSE 1 END')
+            ->first();
+
+        $result = [
             'due_date' => $override?->due_date ?? $assignment->due_date,
             'cutoff_date' => $override?->cutoff_date ?? $assignment->cutoff_date,
             'max_attempts' => $override?->max_attempts ?? $assignment->max_attempts,
             'available_from' => $override?->available_from ?? $assignment->available_from,
         ];
+
+        $this->deadlineCache[$cacheKey] = $result;
+
+        return $result;
     }
 
     /**

@@ -3,11 +3,14 @@
 namespace App\Services;
 
 use App\Models\CourseGroupMember;
+use App\Models\CourseGrouping;
+use App\Models\CourseGroupingGroup;
 use App\Models\Grade;
 use App\Models\LearningModule;
 use App\Models\ModuleAvailabilityRule;
 use App\Models\ModuleCompletion;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Carbon\Carbon;
 
 class ModuleAvailabilityService
@@ -383,5 +386,290 @@ class ModuleAvailabilityService
             'group' => 'group_restriction',
             default => 'restricted',
         };
+    }
+
+    // ---- Batch (pre-loaded data) methods ----
+
+    /**
+     * Structured availability check using pre-loaded batch data.
+     * Does NOT query the database for rule evaluation — all data is passed in.
+     *
+     * @param Collection<string, array{completed: bool, state: string}> $completionStates keyed by learning_module_id
+     * @param Collection<int, Grade> $grades keyed by grade_item_id
+     * @param Collection<int, int> $groupMembershipIds course_group_id values
+     *
+     * @return array{available: bool, reason: ?string, availability: array}
+     */
+    public function batchStructuredAvailabilityFor(
+        User $actor,
+        LearningModule $module,
+        bool $isInstructor,
+        Collection $completionStates,
+        Collection $grades,
+        Collection $groupMembershipIds,
+        Collection $groupingGroupMap,
+    ): array {
+        // Instructors bypass all availability rules
+        if ($isInstructor) {
+            return [
+                'available' => true,
+                'reason' => null,
+                'availability' => [
+                    'state' => 'available',
+                    'primary_reason' => null,
+                    'visible_to_user' => true,
+                    'failed_rules' => [],
+                    'instructor_bypass' => true,
+                ],
+            ];
+        }
+
+        // 1. Basic visibility
+        if (! $module->visible) {
+            return [
+                'available' => false,
+                'reason' => 'hidden',
+                'availability' => [
+                    'state' => 'hidden',
+                    'primary_reason' => 'hidden',
+                    'visible_to_user' => false,
+                    'failed_rules' => [],
+                ],
+            ];
+        }
+
+        // 2. Date window
+        $now = now();
+        if ($module->available_from && $module->available_from->gt($now)) {
+            return [
+                'available' => false,
+                'reason' => 'not_yet_available',
+                'availability' => [
+                    'state' => 'not_yet_available',
+                    'primary_reason' => 'not_yet_available',
+                    'visible_to_user' => true,
+                    'failed_rules' => [
+                        [
+                            'type' => 'date',
+                            'operator' => 'after',
+                            'threshold' => $module->available_from->toIso8601String(),
+                        ],
+                    ],
+                ],
+            ];
+        }
+        if ($module->available_until && $module->available_until->lt($now)) {
+            return [
+                'available' => false,
+                'reason' => 'no_longer_available',
+                'availability' => [
+                    'state' => 'expired',
+                    'primary_reason' => 'no_longer_available',
+                    'visible_to_user' => true,
+                    'failed_rules' => [
+                        [
+                            'type' => 'date',
+                            'operator' => 'before',
+                            'threshold' => $module->available_until->toIso8601String(),
+                        ],
+                    ],
+                ],
+            ];
+        }
+
+        // 3. Availability rules (with batch data)
+        $rules = $module->availabilityRules;
+
+        if ($rules->isEmpty()) {
+            return [
+                'available' => true,
+                'reason' => null,
+                'availability' => [
+                    'state' => 'available',
+                    'primary_reason' => null,
+                    'visible_to_user' => true,
+                    'failed_rules' => [],
+                ],
+            ];
+        }
+
+        // Group rules by condition_group (OR between groups, AND within each group)
+        $groups = $rules->groupBy(function ($rule) {
+            return $rule->condition_group ?? 'singleton_'.$rule->id;
+        });
+
+        foreach ($groups as $groupRules) {
+            $groupPassed = true;
+
+            foreach ($groupRules as $rule) {
+                if (! $this->checkRuleWithBatchData($rule, $completionStates, $grades, $groupMembershipIds, $groupingGroupMap)) {
+                    $groupPassed = false;
+                    break;
+                }
+            }
+
+            if ($groupPassed) {
+                return [
+                    'available' => true,
+                    'reason' => null,
+                    'availability' => [
+                        'state' => 'available',
+                        'primary_reason' => null,
+                        'visible_to_user' => true,
+                        'failed_rules' => [],
+                    ],
+                ];
+            }
+        }
+
+        // No group passed — collect all failed rules
+        $allFailed = [];
+        foreach ($groups as $groupRules) {
+            foreach ($groupRules as $rule) {
+                if (! $this->checkRuleWithBatchData($rule, $completionStates, $grades, $groupMembershipIds, $groupingGroupMap)) {
+                    $allFailed[] = $this->buildBatchFailedRuleDetail($rule);
+                }
+            }
+        }
+
+        return [
+            'available' => false,
+            'reason' => $allFailed[0]['reason'] ?? 'restricted',
+            'availability' => [
+                'state' => $this->resolveState($allFailed[0]['reason'] ?? 'restricted'),
+                'primary_reason' => $allFailed[0]['reason'] ?? 'restricted',
+                'visible_to_user' => true,
+                'failed_rules' => $allFailed,
+            ],
+        ];
+    }
+
+    /**
+     * Check a single rule using pre-loaded batch data.
+     */
+    private function checkRuleWithBatchData(
+        ModuleAvailabilityRule $rule,
+        Collection $completionStates,
+        Collection $grades,
+        Collection $groupMembershipIds,
+        Collection $groupingGroupMap,
+    ): bool {
+        return match ($rule->rule_type) {
+            'date' => $this->checkDateRule($rule),
+            'completion' => $this->checkCompletionRuleBatch($rule, $completionStates),
+            'min_grade' => $this->checkMinGradeRuleBatch($rule, $grades),
+            'group' => $this->checkGroupRuleBatch($rule, $groupMembershipIds, $groupingGroupMap),
+            default => true,
+        };
+    }
+
+    /**
+     * Check a completion rule using pre-loaded completion states.
+     */
+    private function checkCompletionRuleBatch(ModuleAvailabilityRule $rule, Collection $completionStates): bool
+    {
+        if (! $rule->required_module_id) {
+            return true;
+        }
+
+        $state = $completionStates->get($rule->required_module_id);
+
+        if (! $state) {
+            return false;
+        }
+
+        return match ($rule->operator) {
+            '==' => $state['state'] !== 'incomplete',
+            '>=' => in_array($state['state'], ['complete', 'complete_passed']),
+            default => $state['state'] !== 'incomplete',
+        };
+    }
+
+    /**
+     * Check a min_grade rule using pre-loaded grades.
+     */
+    private function checkMinGradeRuleBatch(ModuleAvailabilityRule $rule, Collection $grades): bool
+    {
+        if (! $rule->grade_item_id) {
+            return true;
+        }
+
+        $grade = $grades->get($rule->grade_item_id);
+
+        if (! $grade) {
+            return false;
+        }
+
+        $threshold = $rule->value ? (float) $rule->value : 0;
+
+        return match ($rule->operator) {
+            '>=' => ($grade->percentage ?? 0) >= $threshold,
+            '<=' => ($grade->percentage ?? 0) <= $threshold,
+            '>' => ($grade->percentage ?? 0) > $threshold,
+            '<' => ($grade->percentage ?? 0) < $threshold,
+            default => ($grade->percentage ?? 0) >= $threshold,
+        };
+    }
+
+    /**
+     * Check a group rule using pre-loaded group membership IDs.
+     */
+    private function checkGroupRuleBatch(ModuleAvailabilityRule $rule, Collection $groupMembershipIds, Collection $groupingGroupMap): bool
+    {
+        if ($rule->course_group_id) {
+            return $groupMembershipIds->contains($rule->course_group_id);
+        }
+
+        if ($rule->course_grouping_id) {
+            // Use pre-loaded grouping→group map (no DB queries)
+            $groupIdsInGrouping = $groupingGroupMap->get($rule->course_grouping_id);
+
+            if (! $groupIdsInGrouping || $groupIdsInGrouping->isEmpty()) {
+                return false;
+            }
+
+            return $groupIdsInGrouping->contains(fn ($gid) => $groupMembershipIds->contains($gid));
+        }
+
+        return true;
+    }
+
+    /**
+     * Build structured failed-rule detail for a single rule (batch variant).
+     */
+    private function buildBatchFailedRuleDetail(ModuleAvailabilityRule $rule): array
+    {
+        $detail = [
+            'type' => $rule->rule_type,
+            'reason' => $this->reasonFor($rule),
+        ];
+
+        if ($rule->operator) {
+            $detail['operator'] = $rule->operator;
+        }
+
+        if ($rule->value !== null) {
+            $detail['threshold'] = $rule->rule_type === 'date'
+                ? $rule->value
+                : (float) $rule->value;
+        }
+
+        if ($rule->rule_type === 'completion' && $rule->required_module_id) {
+            $detail['required_module_id'] = $rule->required_module_id;
+        }
+
+        if ($rule->rule_type === 'min_grade' && $rule->grade_item_id) {
+            $detail['grade_item_id'] = $rule->grade_item_id;
+        }
+
+        if ($rule->rule_type === 'group' && $rule->course_group_id) {
+            $detail['course_group_id'] = $rule->course_group_id;
+        }
+
+        if ($rule->rule_type === 'group' && $rule->course_grouping_id) {
+            $detail['course_grouping_id'] = $rule->course_grouping_id;
+        }
+
+        return $detail;
     }
 }

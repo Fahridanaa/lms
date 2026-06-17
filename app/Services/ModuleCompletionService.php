@@ -12,6 +12,7 @@ use App\Models\Quiz;
 use App\Models\QuizAttempt;
 use App\Models\Submission;
 use App\Models\User;
+use Illuminate\Support\Collection;
 
 class ModuleCompletionService
 {
@@ -205,6 +206,37 @@ class ModuleCompletionService
         $this->invalidateCaches($module, $actor);
 
         return $completion;
+    }
+
+    /**
+     * Get completion states for a user across multiple modules (batch).
+     *
+     * @param Collection<int, LearningModule> $modules
+     * @return Collection<string, array{completed: bool, state: string, completed_at: ?\Illuminate\Support\Carbon}> keyed by learning_module_id
+     */
+    public function completionsForUser(User $actor, Collection $modules): Collection
+    {
+        $moduleIds = $modules->pluck('id');
+
+        $completions = ModuleCompletion::query()
+            ->whereIn('learning_module_id', $moduleIds)
+            ->where('user_id', $actor->id)
+            ->get()
+            ->keyBy('learning_module_id');
+
+        return $modules->mapWithKeys(function (LearningModule $module) use ($completions) {
+            $completion = $completions->get($module->id);
+
+            return [
+                $module->id => $completion
+                    ? [
+                        'completed' => $completion->state !== 'incomplete',
+                        'state' => $completion->state,
+                        'completed_at' => $completion->completed_at,
+                    ]
+                    : ['completed' => false, 'state' => 'incomplete'],
+            ];
+        });
     }
 
     /**

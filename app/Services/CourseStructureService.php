@@ -6,12 +6,18 @@ use App\Contracts\CacheStrategyInterface;
 use App\Exceptions\BusinessException;
 use App\Models\Assignment;
 use App\Models\Course;
+use App\Models\CourseGroupMember;
+use App\Models\CourseGrouping;
+use App\Models\CourseGroupingGroup;
+use App\Models\Grade;
 use App\Models\LearningModule;
 use App\Models\Material;
+use App\Models\ModuleCompletion;
 use App\Models\Quiz;
 use App\Models\QuizAttempt;
 use App\Models\Submission;
 use App\Models\User;
+use Illuminate\Support\Collection;
 
 class CourseStructureService
 {
@@ -101,6 +107,103 @@ class CourseStructureService
                 ->keyBy('assignment_id');
         }
 
+        // ---- Batch-load availability + completion data before the foreach ----
+        $moduleCompletionStates = collect();
+        $prerequisiteCompletions = collect();
+        $grades = collect();
+        $groupMembershipIds = collect();
+        $groupingGroupMap = collect();
+
+        if ($isStudent) {
+            // 1. Batch-load ModuleCompletion states for all course modules
+            $moduleCompletionStates = $this->moduleCompletionService->completionsForUser($actor, $allModules);
+
+            // 2. Collect all availability rules and batch-load prerequisite data
+            $allRules = $allModules->flatMap(fn ($m) => $m->availabilityRules);
+
+            // 3. Pre-requisite module completions (for completion-type rules)
+            $prerequisiteModuleIds = $allRules
+                ->where('rule_type', 'completion')
+                ->pluck('required_module_id')
+                ->unique()
+                ->filter();
+
+            $allCompletionStates = $moduleCompletionStates;
+
+            if ($prerequisiteModuleIds->isNotEmpty()) {
+                $prereqCompletions = ModuleCompletion::query()
+                    ->whereIn('learning_module_id', $prerequisiteModuleIds)
+                    ->where('user_id', $actor->id)
+                    ->get()
+                    ->keyBy('learning_module_id')
+                    ->map(fn ($c) => [
+                        'completed' => $c->state !== 'incomplete',
+                        'state' => $c->state,
+                        'completed_at' => $c->completed_at,
+                    ]);
+
+                $prerequisiteCompletions = $prereqCompletions;
+                $allCompletionStates = $allCompletionStates->union($prereqCompletions);
+            }
+
+            // 4. Batch-load grades (for min_grade-type rules)
+            $gradeItemIds = $allRules
+                ->where('rule_type', 'min_grade')
+                ->pluck('grade_item_id')
+                ->unique()
+                ->filter();
+
+            $grades = $gradeItemIds->isNotEmpty()
+                ? Grade::query()
+                    ->whereIn('grade_item_id', $gradeItemIds)
+                    ->where('user_id', $actor->id)
+                    ->where('status', 'final')
+                    ->get()
+                    ->keyBy('grade_item_id')
+                : collect();
+
+            // 5. Batch-load group memberships (for group-type rules)
+            $groupIds = $allRules
+                ->where('rule_type', 'group')
+                ->pluck('course_group_id')
+                ->unique()
+                ->filter();
+
+            $groupMembershipIds = $groupIds->isNotEmpty()
+                ? CourseGroupMember::query()
+                    ->whereIn('course_group_id', $groupIds)
+                    ->where('user_id', $actor->id)
+                    ->pluck('course_group_id')
+                : collect();
+
+            // 6. Batch-load grouping data (for grouping-based group rules)
+            $groupingIds = $allRules
+                ->where('rule_type', 'group')
+                ->pluck('course_grouping_id')
+                ->unique()
+                ->filter();
+
+            $groupingGroupMap = collect();  // grouping_id => Collection of active group IDs
+            if ($groupingIds->isNotEmpty()) {
+                // Load groupings and their group mappings in 2 queries
+                $groupings = CourseGrouping::query()
+                    ->whereIn('id', $groupingIds)
+                    ->where('active', true)
+                    ->get()
+                    ->keyBy('id');
+
+                if ($groupings->isNotEmpty()) {
+                    $groupingGroups = CourseGroupingGroup::query()
+                        ->whereIn('course_grouping_id', $groupings->keys())
+                        ->get()
+                        ->groupBy('course_grouping_id')
+                        ->map(fn ($groups) => $groups->pluck('course_group_id'));
+
+                    $groupingGroupMap = $groupingGroups;
+                }
+            }
+        }
+
         $data = [
             'course_id' => $course->id,
             'sections' => [],
@@ -138,11 +241,14 @@ class CourseStructureService
 
                 // Availability and completion only for students (instructors see everything)
                 if ($isStudent) {
-                    $structured = $this->moduleAvailabilityService->structuredAvailabilityFor($actor, $module, false);
+                    // Use pre-loaded batch data instead of per-module DB queries
+                    $structured = $this->moduleAvailabilityService->batchStructuredAvailabilityFor(
+                        $actor, $module, false, $moduleCompletionStates, $grades, $groupMembershipIds, $groupingGroupMap,
+                    );
                     $moduleData['available'] = $structured['available'];
                     $moduleData['reason'] = $structured['reason'];
                     $moduleData['availability'] = $structured['availability'];
-                    $moduleData['completion'] = $this->moduleCompletionService->completionFor($actor, $module);
+                    $moduleData['completion'] = $moduleCompletionStates->get($module->id, ['completed' => false, 'state' => 'incomplete']);
                 } elseif ($isInstructor) {
                     // Instructors see structured metadata with bypass info
                     // but no top-level available/reason (backward compatible)

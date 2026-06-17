@@ -39,6 +39,9 @@ class CourseCompletionService
             $criteria = $this->getCriteria($courseId);
             $criteriaTotal = $criteria->count();
 
+            // Eager-load module + activity relationships to avoid N+1 in getCriterionTitle
+            $criteria->loadMissing(['module.material', 'module.quiz', 'module.assignment', 'gradeItem']);
+
             if ($criteriaTotal === 0) {
                 return [
                     'criteria_met' => 0,
@@ -49,16 +52,20 @@ class CourseCompletionService
                 ];
             }
 
+            // Batch load all completions for this user on this course's criteria
+            $completions = CourseCompletionCriterionCompletion::query()
+                ->whereIn('course_completion_criterion_id', $criteria->pluck('id'))
+                ->where('user_id', $userId)
+                ->get()
+                ->keyBy('course_completion_criterion_id');
+
             $criteriaList = [];
             $met = 0;
 
             foreach ($criteria as $criterion) {
-                $completion = CourseCompletionCriterionCompletion::query()
-                    ->where('course_completion_criterion_id', $criterion->id)
-                    ->where('user_id', $userId)
-                    ->first();
-
+                $completion = $completions->get($criterion->id);
                 $isMet = $completion !== null && $completion->completed;
+
                 if ($isMet) {
                     $met++;
                 }
@@ -113,8 +120,25 @@ class CourseCompletionService
             return false;
         }
 
+        // Batch load all criterion completions to avoid N+1
+        $completions = CourseCompletionCriterionCompletion::query()
+            ->whereIn('course_completion_criterion_id', $criteria->pluck('id'))
+            ->where('user_id', $userId)
+            ->get()
+            ->keyBy('course_completion_criterion_id');
+
+        // Batch load all relevant grades for grade-type criteria to avoid N+1
+        $gradeItemIds = $criteria->where('criteriatype', 'grade')->pluck('grade_item_id')->unique();
+        $grades = $gradeItemIds->isNotEmpty()
+            ? Grade::query()
+                ->whereIn('grade_item_id', $gradeItemIds)
+                ->where('user_id', $userId)
+                ->get()
+                ->keyBy('grade_item_id')
+            : collect();
+
         foreach ($criteria as $criterion) {
-            if (! $this->evaluateCriterion($criterion->id, $userId)) {
+            if (! $this->evaluateCriterionWithBatchData($criterion, $completions, $grades)) {
                 return false; // ALL mode — first failure stops
             }
         }
@@ -130,8 +154,10 @@ class CourseCompletionService
      */
     public function onModuleCompletion(LearningModule $module, User $user): void
     {
+        $courseId = $module->course_id;
+
         $moduleCriteria = CourseCompletionCriterion::query()
-            ->where('course_id', $module->course_id)
+            ->where('course_id', $courseId)
             ->where('criteriatype', 'module')
             ->where('module_instance_id', $module->id)
             ->get();
@@ -148,12 +174,14 @@ class CourseCompletionService
                     'completed_at' => now(),
                 ]
             );
-
-            // Check if this triggers course completion
-            $this->evaluateAll($criterion->course_id, $user->id);
         }
 
-        $this->invalidateProgressCache($module->course_id, $user->id);
+        // Check if this triggers course completion (once per course, not per criterion)
+        if ($moduleCriteria->isNotEmpty()) {
+            $this->evaluateAll($courseId, $user->id);
+        }
+
+        $this->invalidateProgressCache($courseId, $user->id);
     }
 
     /**
@@ -177,12 +205,14 @@ class CourseCompletionService
                         'completed_at' => now(),
                     ]
                 );
-
-                // Check if this triggers course completion
-                $this->evaluateAll($criterion->course_id, $userId);
             }
+        }
 
-            $this->invalidateProgressCache($criterion->course_id, $userId);
+        // Check completion once per unique course
+        $courseIds = $gradeCriteria->pluck('course_id')->unique();
+        foreach ($courseIds as $courseId) {
+            $this->evaluateAll($courseId, $userId);
+            $this->invalidateProgressCache($courseId, $userId);
         }
     }
 
@@ -219,6 +249,61 @@ class CourseCompletionService
             'date' => 'Course completed by '.($criterion->time_end?->toDateString() ?? 'specified date'),
             default => $criterion->criteriatype,
         };
+    }
+
+    /**
+     * Evaluate a criterion using pre-loaded completions and grades (batch-friendly).
+     * No individual DB queries — all data is passed in.
+     */
+    private function evaluateCriterionWithBatchData(
+        CourseCompletionCriterion $criterion,
+        \Illuminate\Support\Collection $completions,
+        \Illuminate\Support\Collection $grades,
+    ): bool {
+        return match ($criterion->criteriatype) {
+            'module' => $this->evaluateModuleCriterionWithData($criterion, $completions),
+            'grade' => $this->evaluateGradeCriterionWithData($criterion, $grades),
+            'date' => $this->evaluateDateCriterion($criterion, $criterion->course_id),
+            default => false,
+        };
+    }
+
+    /**
+     * Evaluate a module-type criterion using pre-loaded completions.
+     */
+    private function evaluateModuleCriterionWithData(
+        CourseCompletionCriterion $criterion,
+        \Illuminate\Support\Collection $completions
+    ): bool {
+        if ($criterion->module_instance_id === null) {
+            return false;
+        }
+
+        $completion = $completions->get($criterion->id);
+
+        return $completion !== null && $completion->completed;
+    }
+
+    /**
+     * Evaluate a grade-type criterion using pre-loaded grades.
+     */
+    private function evaluateGradeCriterionWithData(
+        CourseCompletionCriterion $criterion,
+        \Illuminate\Support\Collection $grades
+    ): bool {
+        if ($criterion->grade_item_id === null) {
+            return false;
+        }
+
+        $grade = $grades->get($criterion->grade_item_id);
+
+        if ($grade === null || $grade->score === null) {
+            return false;
+        }
+
+        $threshold = $criterion->pass_threshold ?? 0;
+
+        return $grade->score >= $threshold;
     }
 
     /**
