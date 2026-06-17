@@ -354,7 +354,7 @@ cmd_prepare() {
 
   # 10. Generate k6 fixtures
   echo "[prepare] Generating k6 fixtures..."
-  if ! docker compose exec -T app php artisan benchmark:generate-k6-fixtures --sampled --quiet; then
+  if ! docker compose exec -T app php artisan benchmark:generate-k6-fixtures --quiet; then
     echo -e "${RED}[prepare] Fixture generation failed${NC}" >&2
     return 1
   fi
