@@ -122,13 +122,25 @@ lms_ssh() {
 }
 
 # ─────────────────────────────────────────────
+# SSH helper — fire-and-forget (detached, no stdout capture)
+# Uses -n -f to fork SSH to background immediately.
+# ─────────────────────────────────────────────
+lms_ssh_detach() {
+  # -n:  prevent stdin reading
+  # -f:  fork SSH to background before executing remote command
+  # The remote command is backgrounded with output to /dev/null so
+  # the SSH session can close immediately.
+  ssh -n -f ${SSH_OPTS:-} "${LMS_SSH_HOST}" "cd ${LMS_PROJECT_DIR} && $* >/dev/null 2>&1 &"
+}
+
+# ─────────────────────────────────────────────
 # Rsync helper — copy from LMS VPS to local
 # ─────────────────────────────────────────────
 lms_rsync_pull() {
   local remote_path="$1"
   local local_path="$2"
   rsync -az ${RSYNC_OPTS:-} "${LMS_SSH_HOST}:${remote_path}" "${local_path}"
-}
+} 
 
 # ─────────────────────────────────────────────
 # Preflight checks (both hosts)
@@ -546,14 +558,28 @@ run_k6_for_level_remote() {
 
   # ── 8. SSH LMS: start resource monitor ─────────────
   echo -e "${YELLOW}[${vu_count}vu] [remote] Starting resource monitor...${NC}"
-  local monitor_pid
-  if ! monitor_pid=$(lms_ssh "bash '${LMS_PROJECT_DIR}/scripts/benchmark-lms.sh' start-resource-monitor '${remote_resource_csv}'" 2>/dev/null | tail -1); then
-    echo -e "${RED}[${vu_count}vu] ✗ SSH command to start resource monitor failed${NC}"
+  local monitor_pid=
+
+  # Use detached SSH (forks to background) to avoid any hang from background processes
+  lms_ssh_detach "bash '${LMS_PROJECT_DIR}/scripts/benchmark-lms.sh' start-resource-monitor '${remote_resource_csv}'" || {
+    echo -e "${RED}[${vu_count}vu] ✗ Failed to launch detached resource monitor${NC}"
     return 1
-  fi
+  }
+
+  # Wait briefly then retrieve PID from remote PID file
+  local pid_file_remote="/tmp/.lms-resource-monitor-pid-$(basename "${remote_resource_csv}" .csv)"
+  local pid_attempt=0
+  for pid_attempt in 1 2 3 4 5; do
+    sleep 1
+    monitor_pid=$(lms_ssh "cat '${pid_file_remote}'" 2>/dev/null | head -1)
+    if [ -n "${monitor_pid}" ] && [[ "${monitor_pid}" =~ ^[0-9]+$ ]]; then
+      break
+    fi
+    monitor_pid=
+  done
 
   if [ -z "${monitor_pid}" ]; then
-    echo -e "${RED}[${vu_count}vu] ✗ Resource monitor returned empty PID — monitor did not start${NC}"
+    echo -e "${RED}[${vu_count}vu] ✗ Resource monitor PID not found after 5s${NC}"
     return 1
   fi
 
@@ -587,7 +613,8 @@ run_k6_for_level_remote() {
   # ── 11. SSH LMS: stop resource monitor ──────────────
   if [ -n "${monitor_pid:-}" ]; then
     echo -e "${YELLOW}[${vu_count}vu] [remote] Stopping resource monitor...${NC}"
-    lms_ssh "bash '${LMS_PROJECT_DIR}/scripts/benchmark-lms.sh' stop-resource-monitor '${monitor_pid}'" || true
+    local stop_pid_file="/tmp/.lms-resource-monitor-pid-$(basename "${remote_resource_csv}" .csv)"
+    lms_ssh "bash '${LMS_PROJECT_DIR}/scripts/benchmark-lms.sh' stop-resource-monitor '${monitor_pid}' '${stop_pid_file}'" || true
   fi
 
   # ── 12. SSH LMS: capture Redis after + stats ───────

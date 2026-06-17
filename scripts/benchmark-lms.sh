@@ -536,6 +536,7 @@ cmd_redis_counters() {
 # ─────────────────────────────────────────────
 cmd_start_resource_monitor() {
   local output_csv="${1:?Error: output CSV path required}"
+  local pid_file="/tmp/.lms-resource-monitor-pid-$(basename "${output_csv}" .csv)"
 
   mkdir -p "$(dirname "${output_csv}")"
 
@@ -608,9 +609,16 @@ MONEOF
 
   chmod +x /tmp/lms-resource-monitor.sh
 
-  # Start in background, record PID
-  /tmp/lms-resource-monitor.sh "${output_csv}" </dev/null >/dev/null 2>&1 &
-  local pid=$!
+  # Double-fork + full detach: SSH cannot block on this child
+  (
+    /tmp/lms-resource-monitor.sh "${output_csv}" </dev/null >/dev/null 2>&1 &
+    local bg_pid=$!
+    echo "${bg_pid}" > "${pid_file}"
+  ) &
+  wait $! 2>/dev/null || true
+
+  local pid
+  pid=$(cat "${pid_file}" 2>/dev/null || echo "")
   echo "${pid}"
   echo -e "${GREEN}[resource-monitor] Started (PID ${pid}), writing to ${output_csv}${NC}" >&2
 }
@@ -620,10 +628,21 @@ MONEOF
 # ─────────────────────────────────────────────
 cmd_stop_resource_monitor() {
   local pid="${1:-}"
+  local pid_file="${2:-}"
+
+  # If PID not provided, try reading from pid_file
+  if [ -z "${pid}" ] && [ -n "${pid_file}" ]; then
+    pid=$(cat "${pid_file}" 2>/dev/null || echo "")
+  fi
 
   if [ -z "${pid}" ]; then
-    echo "Error: PID required" >&2
-    return 1
+    # Try to find any lms-resource-monitor process
+    pid=$(pgrep -f "lms-resource-monitor" 2>/dev/null | head -1 || echo "")
+  fi
+
+  if [ -z "${pid}" ]; then
+    echo -e "${YELLOW}[resource-monitor] No running resource monitor found${NC}"
+    return 0
   fi
 
   if kill -0 "${pid}" 2>/dev/null; then
