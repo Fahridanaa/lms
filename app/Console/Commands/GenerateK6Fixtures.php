@@ -41,6 +41,8 @@ class GenerateK6Fixtures extends Command
 
     public function handle(): int
     {
+        ini_set('memory_limit', '512M');
+
         $sampled = (bool) $this->option('sampled');
 
         $outputPath = $this->option('output')
@@ -2143,15 +2145,29 @@ JS;
             'COURSE_COMPLETION_CHECK_TARGETS',
         ];
 
-        foreach ($sharedArrayNames as $name) {
-            $escapedName = preg_quote($name, '/');
-            $js = preg_replace(
-                '/^(const ' . $escapedName . ' = )(\[[\s\S]*?\]);$/m',
-                '$1new SharedArray(\'' . $name . '\', () => $2);',
-                $js
-            );
+        // Process line-by-line to avoid PCRE memory blowup on large strings.
+        // Each generated const array is on a single JSON line (no pretty-print).
+        $lines = explode("\n", $js);
+
+        foreach ($lines as $i => $line) {
+            foreach ($sharedArrayNames as $name) {
+                $prefix = "const {$name} = ";
+                if (!str_starts_with($line, $prefix)) {
+                    continue;
+                }
+
+                // Line format: const NAME = [...];
+                // Strip trailing semicolon, wrap in SharedArray constructor.
+                $inner = substr($line, strlen($prefix));
+                if (str_ends_with($inner, ';')) {
+                    $inner = substr($inner, 0, -1);
+                }
+
+                $lines[$i] = $prefix . "new SharedArray('{$name}', () => {$inner});";
+                break;
+            }
         }
 
-        return $js;
+        return implode("\n", $lines);
     }
 }
