@@ -274,21 +274,21 @@ fi
 echo ""
 echo -e "${YELLOW}[6b/8] Generating k6 fixtures from seeded data...${NC}"
 
-# docker compose exec -T app php artisan benchmark:generate-k6-fixtures --quiet 2>/dev/null
-# if [ $? -ne 0 ]; then
-#   echo -e "${RED}Error: benchmark:generate-k6-fixtures gagal!${NC}"
-#   exit 1
-# fi
-
-# echo -e "${GREEN}✓ k6 fixtures regenerated.${NC}"
-
-docker compose exec -T app php artisan benchmark:generate-k6-fixtures --sampled --quiet 2>/dev/null
+docker compose exec -T app php artisan benchmark:generate-k6-fixtures --quiet 2>/dev/null
 if [ $? -ne 0 ]; then
-  echo -e "${RED}Error: benchmark:generate-k6-fixtures --sampled gagal!${NC}"
+  echo -e "${RED}Error: benchmark:generate-k6-fixtures gagal!${NC}"
   exit 1
 fi
 
-echo -e "${GREEN}✓ k6 sampled fixtures regenerated.${NC}"
+echo -e "${GREEN}✓ k6 fixtures regenerated.${NC}"
+
+# docker compose exec -T app php artisan benchmark:generate-k6-fixtures --sampled --quiet 2>/dev/null
+# if [ $? -ne 0 ]; then
+#   echo -e "${RED}Error: benchmark:generate-k6-fixtures --sampled gagal!${NC}"
+#   exit 1
+# fi
+
+# echo -e "${GREEN}✓ k6 sampled fixtures regenerated.${NC}"
 
 # ─────────────────────────────────────────────
 # 7. Verifikasi semua strategi caching dapat di-load
