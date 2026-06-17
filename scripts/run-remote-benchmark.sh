@@ -209,15 +209,45 @@ cmd_preflight() {
   echo ""
   echo -e "${CYAN}--- LMS Host Readiness ---${NC}"
 
-  echo "  Running LMS preflight (CLUSTER_MODE=${CLUSTER_MODE})..."
-  lms_ssh "CLUSTER_MODE=${CLUSTER_MODE} REMOTE_ARTIFACT_DIR=${REMOTE_ARTIFACT_DIR} bash '${LMS_PROJECT_DIR}/scripts/benchmark-lms.sh' preflight" || {
+  # Propagate page cache policy to LMS-side preflight
+  local page_cache_env=""
+  if [ "${SKIP_PAGE_CACHE:-false}" = "true" ]; then
+    page_cache_env="SKIP_PAGE_CACHE=true"
+  elif [ "${CLEAR_PAGE_CACHE:-false}" = "true" ]; then
+    page_cache_env="CLEAR_PAGE_CACHE=true"
+  fi
+  echo "  Running LMS preflight (CLUSTER_MODE=${CLUSTER_MODE}, page_cache=${page_cache_env:-default})..."
+
+  # Capture LMS preflight output to extract machine-readable PAGE_CACHE_RESULT
+  local lms_output
+  lms_output=$(lms_ssh "${page_cache_env} CLUSTER_MODE=${CLUSTER_MODE} REMOTE_ARTIFACT_DIR=${REMOTE_ARTIFACT_DIR} bash '${LMS_PROJECT_DIR}/scripts/benchmark-lms.sh' preflight" 2>&1) || {
     echo -e "${RED}  LMS preflight failed${NC}" >&2
     exit_code=1
   }
+  echo "${lms_output}"
+
+  # Extract machine-readable page-cache result emitted by benchmark-lms.sh
+  local page_cache_result
+  page_cache_result=$(echo "${lms_output}" | grep "^PAGE_CACHE_RESULT=" | tail -1 | cut -d= -f2)
 
   # Write preflight evidence file
   local preflight_file="${RESULTS_DIR}/preflight-$(date +%Y%m%d_%H%M%S)-remote-preflight.txt"
   mkdir -p "${RESULTS_DIR}"
+
+  # Determine page-cache policy for evidence
+  local page_cache_policy=""
+  local page_cache_status=""
+  if [ "${SKIP_PAGE_CACHE:-false}" = "true" ]; then
+    page_cache_policy="skipped-explicit"
+    page_cache_status="${page_cache_result:-skip}"
+  elif [ "${CLEAR_PAGE_CACHE:-false}" = "true" ]; then
+    page_cache_policy="clear-required"
+    page_cache_status="${page_cache_result:-attempted}"
+  else
+    page_cache_policy="skipped-default"
+    page_cache_status="${page_cache_result:-skip}"
+  fi
+
   {
     echo "=== Remote Preflight Evidence ==="
     echo "Timestamp        : $(date -Iseconds)"
@@ -229,10 +259,53 @@ cmd_preflight() {
     echo "Redis mode       : $([ "${CLUSTER_MODE}" = "true" ] && echo 'cluster' || echo 'single')"
     echo "Result dir       : ${RESULTS_DIR}"
     echo "Remote artifact  : ${REMOTE_ARTIFACT_DIR}"
+    echo "Page cache policy : ${page_cache_policy}"
+    echo "Page cache status : ${page_cache_status}"
     echo "Exit code        : ${exit_code}"
     echo "Status           : $([ $exit_code -eq 0 ] && echo 'PASS' || echo 'FAIL')"
   } > "${preflight_file}"
   echo -e "${BLUE}[preflight] Evidence: ${preflight_file}${NC}"
+
+  # ── Host capacity snapshot ──
+  local snapshot_file="${RESULTS_DIR}/preflight-$(date +%Y%m%d_%H%M%S)-host-capacity.txt"
+  mkdir -p "${RESULTS_DIR}"
+  {
+    echo "============================================="
+    echo " Remote Preflight Host Capacity Snapshot"
+    echo "============================================="
+    echo "Timestamp: $(date -Iseconds)"
+    echo ""
+    echo "--- k6 VPS ---"
+    echo ""
+    echo "--- CPU ---"
+    nproc 2>/dev/null || echo "nproc not available"
+    echo ""
+    echo "--- Memory ---"
+    free -h 2>/dev/null || echo "free not available"
+    echo ""
+    echo "--- Disk ---"
+    df -hT 2>/dev/null || echo "df not available"
+    echo ""
+    echo "--- k6 Version ---"
+    k6 version 2>/dev/null || echo "k6 not available"
+    echo ""
+    echo "--- k6 Location ---"
+    if echo "${BASE_URL}" | grep -qE "localhost|127\.0\.0\.1"; then
+      echo "k6 runs: LOCAL (same host as server) — resource metrics include k6 overhead."
+    else
+      echo "k6 runs: REMOTE — resource metrics represent server-side load only."
+    fi
+    echo ""
+    echo "--- LMS VPS (via SSH) ---"
+    echo ""
+  } > "${snapshot_file}"
+
+  # Append LMS VPS capacity info via SSH
+  lms_ssh "nproc 2>/dev/null || echo 'nproc not available'" >> "${snapshot_file}" 2>/dev/null || echo "LMS CPU: unreachable" >> "${snapshot_file}"
+  lms_ssh "free -h 2>/dev/null || echo 'free not available'" >> "${snapshot_file}" 2>/dev/null || echo "LMS Memory: unreachable" >> "${snapshot_file}"
+  lms_ssh "df -hT 2>/dev/null || echo 'df not available'" >> "${snapshot_file}" 2>/dev/null || echo "LMS Disk: unreachable" >> "${snapshot_file}"
+  lms_ssh "docker compose ps --services 2>/dev/null || echo 'docker compose not available'" >> "${snapshot_file}" 2>/dev/null || echo "LMS Docker: unreachable" >> "${snapshot_file}"
+  echo -e "${BLUE}[preflight] Host capacity: ${snapshot_file}${NC}"
   echo ""
 
   if [ $exit_code -eq 0 ]; then
@@ -398,7 +471,14 @@ run_k6_for_level_remote() {
 
   # ── 3. SSH LMS: prepare benchmark ──────────────────
   echo -e "${YELLOW}[${vu_count}vu] [remote] Preparing benchmark (LMS side)...${NC}"
-  lms_ssh "bash '${LMS_PROJECT_DIR}/scripts/benchmark-lms.sh' prepare --base-url '${BASE_URL}' ${cluster_flag}" || {
+  # Propagate page cache policy to LMS-side prepare
+  local page_cache_env=""
+  if [ "${SKIP_PAGE_CACHE:-false}" = "true" ]; then
+    page_cache_env="SKIP_PAGE_CACHE=true"
+  elif [ "${CLEAR_PAGE_CACHE:-false}" = "true" ]; then
+    page_cache_env="CLEAR_PAGE_CACHE=true"
+  fi
+  lms_ssh "${page_cache_env} bash '${LMS_PROJECT_DIR}/scripts/benchmark-lms.sh' prepare --base-url '${BASE_URL}' ${cluster_flag}" || {
     echo -e "${RED}[${vu_count}vu] Prepare failed${NC}"
     return 1
   }
@@ -523,6 +603,13 @@ run_k6_for_level_remote() {
   # ── 13. SSH LMS: container stats after ─────────────
   lms_ssh "bash '${LMS_PROJECT_DIR}/scripts/benchmark-lms.sh' container-stats '${remote_container_stats}.after'" || true
 
+  # ── 13b. SSH LMS: cluster stats (cluster mode only) ─
+  local remote_cluster_stats="${remote_artifact_dir}/${remote_prefix}-cluster-stats.txt"
+  if [ "${CLUSTER_MODE}" = "true" ]; then
+    echo -e "${YELLOW}[${vu_count}vu] [remote] Capturing cluster stats...${NC}"
+    lms_ssh "bash '${LMS_PROJECT_DIR}/scripts/benchmark-lms.sh' cluster-stats '${remote_cluster_stats}'" || true
+  fi
+
   # ── 14. Pull LMS artifacts ──────────────────────────
   echo -e "${YELLOW}[${vu_count}vu] [remote] Pulling LMS artifacts...${NC}"
   # Required artifacts (fail on pull error)
@@ -547,6 +634,11 @@ run_k6_for_level_remote() {
     cat "${redis_after_file}"
   } > "${redis_file}"
   rm -f "${redis_before_file}" "${redis_after_file}"
+
+  # Cluster stats (cluster mode only, best effort)
+  if [ "${CLUSTER_MODE}" = "true" ]; then
+    lms_rsync_pull "${remote_cluster_stats}" "${result_prefix}-cluster-stats.txt" 2>/dev/null || true
+  fi
 
   # Optional artifacts (best effort)
   lms_rsync_pull "${remote_container_stats}" "${container_stats_file}" 2>/dev/null || true
@@ -574,9 +666,18 @@ run_k6_for_level_remote() {
   # Write host evidence files
   echo "${LMS_SSH_HOST}" > "${result_prefix}-lms-host.txt"
   hostname > "${result_prefix}-k6-host.txt" 2>/dev/null || echo "unknown" > "${result_prefix}-k6-host.txt"
-  # k6 VPS resource monitoring can be added later as:
-  # {vu}vu-{timestamp}-k6-resources.csv
-  # Do NOT mix k6 resource data into resources.csv (which represents LMS resources only)
+
+  # ════════════════════════════════════════════════════════
+  # RESOURCES.CSV MEANING:
+  #   resources.csv represents LMS-side resource usage only
+  #   (CPU, memory, disk I/O from the LMS VPS resource monitor).
+  #   This is intentional: in two-VPS execution, k6 overhead
+  #   must not pollute the LMS resource metrics.
+  #
+  #   If k6-side resource monitoring is needed later, use:
+  #     {vu}vu-{timestamp}-k6-resources.csv
+  #   Do NOT mix k6 data into resources.csv.
+  # ════════════════════════════════════════════════════════
 
   # ── 16. Verify required local artifacts ─────────────
   _verify_run_artifacts "${result_prefix}" || {

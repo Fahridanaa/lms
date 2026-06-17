@@ -54,12 +54,14 @@ usage() {
   echo "  start-resource-monitor <csv>      Start background resource monitor"
   echo "  stop-resource-monitor <pid>       Stop resource monitor"
   echo "  container-stats <output-file>     Snapshot Docker container stats"
+  echo "  cluster-stats <output-file>       Capture Redis Cluster topology and keyspace"
   echo ""
   echo "Available strategies: cache-aside | read-through | write-through | no-cache"
   echo ""
   echo "Environment variables:"
   echo "  CLUSTER_MODE=true        Enable Redis Cluster mode (default: false)"
-  echo "  SKIP_PAGE_CACHE=true     Skip OS page cache clear (default: clear)"
+  echo "  SKIP_PAGE_CACHE=true     Skip OS page cache clear (default: skip)"
+  echo "  CLEAR_PAGE_CACHE=true    Require OS page cache clear (fails if sudo unavailable)"
   echo "  SKIP_MYSQL_RESTART=true  Skip MySQL restart (default: restart)"
 }
 
@@ -159,7 +161,29 @@ cmd_preflight() {
     fi
   fi
 
-  # 9. Result/artifact directory writable
+  # 9. Page cache policy
+  # Uses narrow sudo commands matching the sudoers contract:
+  #   fahri ALL=(root) NOPASSWD: /usr/bin/sync, /usr/bin/tee
+  # Does NOT require full passwordless sudo (sudo -n true would fail with restricted sudoers).
+  echo -n "[preflight] OS page cache: "
+  if [ "${SKIP_PAGE_CACHE:-false}" = "true" ]; then
+    echo -e "${YELLOW}SKIPPED (explicit)${NC}"
+    echo "PAGE_CACHE_RESULT=skipped-explicit"
+  elif [ "${CLEAR_PAGE_CACHE:-false}" = "true" ]; then
+    if sync && echo 3 | sudo -n tee /proc/sys/vm/drop_caches >/dev/null 2>&1; then
+      echo -e "${GREEN}CLEARED${NC}"
+      echo "PAGE_CACHE_RESULT=pass"
+    else
+      echo -e "${RED}FAILED — sync or tee not available via sudo -n; check sudoers for /usr/bin/sync and /usr/bin/tee${NC}"
+      echo "PAGE_CACHE_RESULT=fail"
+      exit_code=1
+    fi
+  else
+    echo -e "${YELLOW}SKIPPED (default; set CLEAR_PAGE_CACHE=true to enable)${NC}"
+    echo "PAGE_CACHE_RESULT=skipped-default"
+  fi
+
+  # 10. Result/artifact directory writable
   local remote_artifact_dir="${REMOTE_ARTIFACT_DIR:-/tmp/lms-benchmark-artifacts}"
   mkdir -p "${remote_artifact_dir}"
   echo -n "[preflight] Artifact dir (${remote_artifact_dir}): "
@@ -287,17 +311,20 @@ cmd_prepare() {
   fi
 
   # 7. Clear OS page cache
-  if [ "${SKIP_PAGE_CACHE:-false}" != "true" ]; then
-    echo "[prepare] Clearing OS page cache..."
-    if [ -w /proc/sys/vm/drop_caches ]; then
-      sync
-      echo 3 > /proc/sys/vm/drop_caches
+  # Policy: SKIP_PAGE_CACHE=true ⇒ skip; CLEAR_PAGE_CACHE=true ⇒ require clear; default ⇒ skip
+  # Uses narrow sudo commands compatible with passwordless sudo: sync + tee
+  if [ "${SKIP_PAGE_CACHE:-false}" = "true" ]; then
+    echo -e "${YELLOW}[prepare] OS page cache: skipped (SKIP_PAGE_CACHE=true)${NC}"
+  elif [ "${CLEAR_PAGE_CACHE:-false}" = "true" ]; then
+    echo "[prepare] Clearing OS page cache (CLEAR_PAGE_CACHE=true)..."
+    if sync && echo 3 | sudo -n tee /proc/sys/vm/drop_caches >/dev/null 2>&1; then
       echo -e "${GREEN}[prepare] OS page cache cleared${NC}"
     else
-      sudo sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches' 2>/dev/null && \
-        echo -e "${GREEN}[prepare] OS page cache cleared (via sudo)${NC}" || \
-        echo -e "${YELLOW}[prepare] Cannot clear OS page cache (not root)${NC}"
+      echo -e "${RED}[prepare] Failed to clear OS page cache — check sudoers for /usr/bin/sync and /usr/bin/tee${NC}"
+      return 1
     fi
+  else
+    echo -e "${YELLOW}[prepare] OS page cache: skipped (default; set CLEAR_PAGE_CACHE=true to enable)${NC}"
   fi
 
   # 8. Restart app and nginx
@@ -582,7 +609,7 @@ MONEOF
   chmod +x /tmp/lms-resource-monitor.sh
 
   # Start in background, record PID
-  /tmp/lms-resource-monitor.sh "${output_csv}" &
+  /tmp/lms-resource-monitor.sh "${output_csv}" </dev/null >/dev/null 2>&1 &
   local pid=$!
   echo "${pid}"
   echo -e "${GREEN}[resource-monitor] Started (PID ${pid}), writing to ${output_csv}${NC}" >&2
@@ -623,6 +650,42 @@ cmd_container_stats() {
 }
 
 # ─────────────────────────────────────────────
+# Subcommand: cluster-stats
+#
+# Capture Redis Cluster topology and keyspace info.
+# Matches the local run-benchmark.sh cluster-stats.txt format.
+# Only meaningful when CLUSTER_MODE=true.
+# ─────────────────────────────────────────────
+cmd_cluster_stats() {
+  local output_file="${1:?Error: output file path required}"
+  local cluster_nodes=("redis-c1" "redis-c2" "redis-c3" "redis-c4" "redis-c5" "redis-c6")
+
+  mkdir -p "$(dirname "${output_file}")"
+
+  {
+    echo "=== Cluster Stats - $(date -Iseconds) ==="
+    echo ""
+    for node in "${cluster_nodes[@]}"; do
+      if docker compose ps --services --filter "status=running" 2>/dev/null | grep -qF "$node"; then
+        echo "--- ${node} ---"
+        docker compose exec -T "$node" redis-cli CLUSTER INFO 2>/dev/null || echo "(CLUSTER INFO unavailable)"
+        echo ""
+        docker compose exec -T "$node" redis-cli CLUSTER NODES 2>/dev/null || echo "(CLUSTER NODES unavailable)"
+        echo ""
+        docker compose exec -T "$node" redis-cli INFO keyspace 2>/dev/null || echo "(INFO keyspace unavailable)"
+        echo ""
+      else
+        echo "--- ${node} ---"
+        echo "(not running)"
+        echo ""
+      fi
+    done
+  } > "${output_file}"
+
+  echo -e "${GREEN}[cluster-stats] Written to ${output_file}${NC}"
+}
+
+# ─────────────────────────────────────────────
 # Main dispatcher
 # ─────────────────────────────────────────────
 main() {
@@ -658,6 +721,9 @@ main() {
       ;;
     container-stats)
       cmd_container_stats "$@"
+      ;;
+    cluster-stats)
+      cmd_cluster_stats "$@"
       ;;
     -h|--help)
       usage
