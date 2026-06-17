@@ -404,16 +404,21 @@ class GenerateK6Fixtures extends Command
             sampled: $sampled,
         );
 
-        file_put_contents($outputPath, $js);
-
-        // ─── Sampled Mode: Post-process for SharedArray ──────────
+        // ─── Post-process: wrap eligible constants in k6 SharedArray ──
+        // SharedArray avoids per-VU data duplication in goja, preventing
+        // OOM when running many VUs with large fixture pools.
+        $js = $this->wrapInSharedArray($js);
         if ($sampled) {
-            $js = $this->wrapInSharedArray($js);
             $js .= "\n// Metadata\n";
             $js .= "// Generated at: ".date('c')."\n";
             $js .= "// Sampled caps: id=".($this->option('sampled-id-cap') ?? 1000).", read=".($this->option('sampled-read-cap') ?? 1000).", write=".($this->option('sampled-write-cap') ?? 500).", failure=".($this->option('sampled-failure-cap') ?? 300)."\n";
             $js .= "// Source: GenerateK6Fixtures.php --sampled\n";
             $js .= "// Regenerate: sail artisan db:seed --class=DatabaseSeeder && sail artisan benchmark:generate-k6-fixtures --sampled\n";
+        } else {
+            $js .= "\n// Metadata\n";
+            $js .= "// Generated at: ".date('c')."\n";
+            $js .= "// Source: GenerateK6Fixtures.php\n";
+            $js .= "// Regenerate: sail artisan db:seed --class=DatabaseSeeder && sail artisan benchmark:generate-k6-fixtures\n";
         }
 
         file_put_contents($outputPath, $js);
