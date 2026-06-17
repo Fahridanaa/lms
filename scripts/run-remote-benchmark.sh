@@ -667,8 +667,27 @@ run_k6_for_level_remote() {
     lms_rsync_pull "${remote_cluster_stats}" "${result_prefix}-cluster-stats.txt" 2>/dev/null || true
   fi
 
-  # Optional artifacts (best effort)
-  lms_rsync_pull "${remote_container_stats}" "${container_stats_file}" 2>/dev/null || true
+  # Container stats: combine before + after into one local file with clear sections
+  local container_before_tmp="${result_prefix}-container-before.tmp"
+  local container_after_tmp="${result_prefix}-container-after.tmp"
+  lms_rsync_pull "${remote_container_stats}" "${container_before_tmp}" 2>/dev/null || true
+  lms_rsync_pull "${remote_container_stats}.after" "${container_after_tmp}" 2>/dev/null || true
+  {
+    echo "=== Before k6 ==="
+    if [ -s "${container_before_tmp}" ]; then
+      cat "${container_before_tmp}"
+    else
+      echo "(before docker stats not available)"
+    fi
+    echo ""
+    echo "=== After k6 ==="
+    if [ -s "${container_after_tmp}" ]; then
+      cat "${container_after_tmp}"
+    else
+      echo "(after docker stats not available)"
+    fi
+  } > "${container_stats_file}"
+  rm -f "${container_before_tmp}" "${container_after_tmp}"
 
   # ── 15. Compute cache hit ratio locally ─────────────
   local hits_during=$(( hits_after - hits_before ))
@@ -765,18 +784,75 @@ _verify_run_artifacts() {
 
   # 4. Resources CSV exists with more than one data row
   local csv_file="${result_prefix}-resources.csv"
+  local csv_valid=true
   if [ -s "${csv_file}" ]; then
     local row_count
     row_count=$(wc -l < "${csv_file}" 2>/dev/null || echo 0)
     if [ "${row_count}" -gt 1 ]; then
       echo -e "  ${GREEN}✓ Resources CSV (${row_count} rows)${NC}"
+      # Validate numeric fields: cpu_pct, mem_used_mb, mem_total_mb
+      local numeric_errors
+      numeric_errors=$(awk -F',' '
+        NR>1 {
+          if($1=="") next
+          if($2!~/^[0-9]+\.?[0-9]*$/ && $2!~/^[0-9]*\.[0-9]+$/) { e++; print "cpu_pct="$2 }
+          if($3!~/^[0-9]+\.?[0-9]*$/ && $3!~/^[0-9]*\.[0-9]+$/) { e++; print "mem_used_mb="$3 }
+          if($4!~/^[0-9]+\.?[0-9]*$/ && $4!~/^[0-9]*\.[0-9]+$/) { e++; print "mem_total_mb="$4 }
+        }
+        END { if(e) print e+0 }' "${csv_file}" 2>/dev/null || echo "")
+      local numeric_err_count
+      numeric_err_count=$(echo "${numeric_errors}" | tail -1)
+      if [ -n "${numeric_err_count}" ] && [ "${numeric_err_count}" -gt 0 ] 2>/dev/null; then
+        echo -e "  ${RED}✗ Resources CSV has ${numeric_err_count} non-numeric values${NC}"
+        echo "${numeric_errors}" | head -5 | while IFS= read -r line; do
+          [ -n "$line" ] && echo "    ${RED}${line}${NC}"
+        done
+        exit_code=1
+        csv_valid=false
+      fi
+      # Warning: check if all disk read/write samples are identical
+      local disk_sig
+      disk_sig=$(awk -F',' 'NR>1 && $1!="" {print $6,$7}' "${csv_file}" 2>/dev/null | sort -u | wc -l)
+      if [ "${disk_sig}" -le 1 ] 2>/dev/null && [ "${row_count}" -gt 3 ]; then
+        echo -e "  ${YELLOW}⚠ All disk I/O samples are identical — may indicate stale iostat interval${NC}"
+      fi
     else
       echo -e "  ${RED}✗ Resources CSV has only header, no data: ${csv_file}${NC}"
       exit_code=1
+      csv_valid=false
     fi
   else
     echo -e "  ${RED}✗ Resources CSV missing or empty: ${csv_file}${NC}"
     exit_code=1
+    csv_valid=false
+  fi
+
+  # 4b. Container stats sections check (remote runs)
+  local cs_file="${result_prefix}-container-stats.txt"
+  if [ -f "${cs_file}" ] && [ -s "${cs_file}" ]; then
+    if grep -q "=== Before k6 ===" "${cs_file}" 2>/dev/null && grep -q "=== After k6 ===" "${cs_file}" 2>/dev/null; then
+      echo -e "  ${GREEN}✓ Container stats (before + after sections)${NC}"
+    else
+      echo -e "  ${YELLOW}⚠ Container stats missing before or after sections${NC}"
+    fi
+  fi
+
+  # 4c. Heuristic warning: high http_reqs but extremely low CPU
+  local summary_file="${result_prefix}-summary.json"
+  if [ -s "${summary_file}" ] && [ "${csv_valid}" = true ]; then
+    local http_reqs
+    http_reqs=$(node -e "
+      try {
+        var d=require('fs').readFileSync('${summary_file}','utf8');
+        var m=JSON.parse(d);
+        var r=m.metrics?.http_reqs?.counts?.count || m.metrics?.http_reqs?.value || 0;
+        console.log(r);
+      } catch(e) { console.log('0'); }" 2>/dev/null || echo "0")
+    local max_cpu
+    max_cpu=$(awk -F',' 'NR>1 && $1!="" && $2~/^[0-9]/ {if($2+0>m)m=$2} END{printf "%.1f", m+0}' "${csv_file}" 2>/dev/null || echo "0")
+    if [ "${http_reqs}" -gt 10000 ] 2>/dev/null && [ "${max_cpu%%.*}" -lt 15 ] 2>/dev/null; then
+      echo -e "  ${YELLOW}⚠ High http_reqs (${http_reqs}) but max CPU (${max_cpu}%) is very low — resource data may be suspect${NC}"
+    fi
   fi
 
   # 5. Fixture SHA256 file exists

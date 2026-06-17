@@ -670,33 +670,28 @@ start_resource_monitor() {
       local ts
       ts=$(date +%s)
 
-      # CPU% — ambil dari top (1 iterasi, batch mode)
-      # Format: "Cpu(s): 12.5 us, 3.2 sy, ..."  → ambil user+sys
+      # CPU% from /proc/stat delta (primary path, avoids top formatting fragility)
+      # idle_all = idle + iowait
+      # non_idle = user + nice + system + irq + softirq + steal
+      # total = idle_all + non_idle
+      # cpu_pct = (delta_total - delta_idle) * 100 / delta_total
       local cpu_pct
-      cpu_pct=$(top -bn2 -d0.5 | grep "Cpu(s)" | tail -1 \
-        | awk '{
-            for(i=1;i<=NF;i++) {
-              if($i ~ /[0-9]+\.[0-9]+/) {
-                if($(i+1) ~ /us/ || $(i-1) ~ /us/) { us=$i }
-                if($(i+1) ~ /sy/ || $(i-1) ~ /sy/) { sy=$i }
-              }
-            }
-            gsub(/,/,"",us); gsub(/,/,"",sy);
-            printf "%.1f", us+sy
-          }' 2>/dev/null || echo "0")
-
-      # Fallback CPU dari /proc/stat jika top gagal
-      if [ "${cpu_pct}" = "0" ] || [ -z "${cpu_pct}" ]; then
-        local idle1 total1 idle2 total2
-        read -r _ user1 nice1 system1 idle1 iowait1 irq1 softirq1 _ < /proc/stat
-        total1=$(( user1 + nice1 + system1 + idle1 + iowait1 + irq1 + softirq1 ))
-        sleep 1
-        read -r _ user2 nice2 system2 idle2 iowait2 irq2 softirq2 _ < /proc/stat
-        total2=$(( user2 + nice2 + system2 + idle2 + iowait2 + irq2 + softirq2 ))
-        local diff_total=$(( total2 - total1 ))
-        local diff_idle=$(( idle2 - idle1 ))
-        cpu_pct=$(echo "scale=1; (${diff_total} - ${diff_idle}) * 100 / ${diff_total}" | bc 2>/dev/null || echo "0")
-      fi
+      local user1 nice1 system1 idle1 iowait1 irq1 softirq1 steal1
+      local user2 nice2 system2 idle2 iowait2 irq2 softirq2 steal2
+      read -r _ user1 nice1 system1 idle1 iowait1 irq1 softirq1 steal1 _ < /proc/stat
+      sleep 1
+      read -r _ user2 nice2 system2 idle2 iowait2 irq2 softirq2 steal2 _ < /proc/stat
+      cpu_pct=$(awk -v u1="$user1" -v n1="$nice1" -v s1="$system1" -v id1="$idle1" -v io1="$iowait1" -v ir1="$irq1" -v sr1="$softirq1" -v st1="$steal1" \
+                    -v u2="$user2" -v n2="$nice2" -v s2="$system2" -v id2="$idle2" -v io2="$iowait2" -v ir2="$irq2" -v sr2="$softirq2" -v st2="$steal2" \
+                    'BEGIN {
+                      idle1 = id1 + io1; idle2 = id2 + io2
+                      total1 = id1 + io1 + u1 + n1 + s1 + ir1 + sr1 + st1
+                      total2 = id2 + io2 + u2 + n2 + s2 + ir2 + sr2 + st2
+                      dtotal = total2 - total1
+                      didle = idle2 - idle1
+                      if (dtotal > 0) printf "%.1f", (dtotal - didle) * 100 / dtotal
+                      else printf "0"
+                    }' 2>/dev/null || echo "0")
 
       # Memory — dari free -m (sesuai htop)
       local mem_used mem_total mem_pct
@@ -708,8 +703,9 @@ start_resource_monitor() {
       if command -v iostat &>/dev/null; then
         # iostat -d -m: MB/s, ambil baris disk utama (sda/vda/nvme)
         local iostat_line
-        iostat_line=$(iostat -d -m 1 1 2>/dev/null \
-          | grep -E "^(sda|vda|nvme|xvda|sdb|vdb|dm-)" | head -1)
+        # Use iostat -m 1 2: first sample is boot average, second is real interval
+        iostat_line=$(iostat -d -m 1 2 2>/dev/null \
+          | grep -E "^(sda|vda|nvme|xvda|sdb|vdb|dm-)" | tail -1)
         disk_read=$(echo  "${iostat_line}" | awk '{print $3}' | tr -d ',' || echo "0")
         disk_write=$(echo "${iostat_line}" | awk '{print $4}' | tr -d ',' || echo "0")
         # Pastikan tidak kosong
