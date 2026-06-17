@@ -170,7 +170,7 @@ cmd_preflight() {
     echo -e "${YELLOW}SKIPPED (explicit)${NC}"
     echo "PAGE_CACHE_RESULT=skipped-explicit"
   elif [ "${CLEAR_PAGE_CACHE:-false}" = "true" ]; then
-    if sync && echo 3 | sudo -n tee /proc/sys/vm/drop_caches >/dev/null 2>&1; then
+    if sudo -n sync && echo 3 | sudo -n tee /proc/sys/vm/drop_caches >/dev/null 2>&1; then
       echo -e "${GREEN}CLEARED${NC}"
       echo "PAGE_CACHE_RESULT=pass"
     else
@@ -317,7 +317,7 @@ cmd_prepare() {
     echo -e "${YELLOW}[prepare] OS page cache: skipped (SKIP_PAGE_CACHE=true)${NC}"
   elif [ "${CLEAR_PAGE_CACHE:-false}" = "true" ]; then
     echo "[prepare] Clearing OS page cache (CLEAR_PAGE_CACHE=true)..."
-    if sync && echo 3 | sudo -n tee /proc/sys/vm/drop_caches >/dev/null 2>&1; then
+    if sudo -n sync && echo 3 | sudo -n tee /proc/sys/vm/drop_caches >/dev/null 2>&1; then
       echo -e "${GREEN}[prepare] OS page cache cleared${NC}"
     else
       echo -e "${RED}[prepare] Failed to clear OS page cache — check sudoers for /usr/bin/sync and /usr/bin/tee${NC}"

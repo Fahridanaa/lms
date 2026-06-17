@@ -228,7 +228,7 @@ cmd_preflight() {
 
   # Extract machine-readable page-cache result emitted by benchmark-lms.sh
   local page_cache_result
-  page_cache_result=$(echo "${lms_output}" | grep "^PAGE_CACHE_RESULT=" | tail -1 | cut -d= -f2)
+  page_cache_result=$(echo "${lms_output}" | grep "^PAGE_CACHE_RESULT=" | tail -1 | cut -d= -f2 || true)
 
   # Write preflight evidence file
   local preflight_file="${RESULTS_DIR}/preflight-$(date +%Y%m%d_%H%M%S)-remote-preflight.txt"
