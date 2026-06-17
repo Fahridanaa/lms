@@ -340,8 +340,8 @@ cmd_fixture_check() {
   echo "=============================================="
   echo ""
 
-  local lms_fixture_path="${LMS_PROJECT_DIR}/tests/Benchmark/k6/fixtures.sampled.js"
-  local k6_fixture_path="${K6_PROJECT_DIR}/tests/Benchmark/k6/fixtures.sampled.js"
+  local lms_fixture_path="${LMS_PROJECT_DIR}/tests/Benchmark/k6/fixtures.js"
+  local k6_fixture_path="${K6_PROJECT_DIR}/tests/Benchmark/k6/fixtures.js"
 
   local exit_code=0
 
@@ -496,8 +496,8 @@ run_k6_for_level_remote() {
   }
 
   # ── 4. Pull fixture ────────────────────────────────
-  local lms_fixture="${LMS_PROJECT_DIR}/tests/Benchmark/k6/fixtures.sampled.js"
-  local k6_fixture="${K6_PROJECT_DIR}/tests/Benchmark/k6/fixtures.sampled.js"
+  local lms_fixture="${LMS_PROJECT_DIR}/tests/Benchmark/k6/fixtures.js"
+  local k6_fixture="${K6_PROJECT_DIR}/tests/Benchmark/k6/fixtures.js"
   mkdir -p "$(dirname "${k6_fixture}")"
   echo -e "${YELLOW}[${vu_count}vu] [remote] Pulling fixture from LMS...${NC}"
   lms_rsync_pull "${lms_fixture}" "${k6_fixture}" || {

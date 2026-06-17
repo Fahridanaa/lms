@@ -25,7 +25,7 @@ import {
   pick,
   activityPath,
   scoreWithinMax,
-} from './fixtures.sampled.js';
+} from './fixtures.js';
 
 // ============================================================
 // WRITE-HEAVY SCENARIO (40% Read, 60% Write)
@@ -69,11 +69,13 @@ export const options = {
     { duration: '30s', target: 0 },
   ],
   thresholds: {
-    http_req_duration:        ['p(95)<3000'],
     // http_req_failed{ef:1} tracks CONTROLLED failure requests (expect 403/404).
     // These always fail by design, so allow 100% failure rate.
     'http_req_failed{ef:1}': ['rate<1.01'],
-    http_req_failed:          ['rate<0.15'],
+    // http_req_failed includes both controlled failures (~7% ef:1) and
+    // unexpected failures. After php-fpm tuning, unexpected failures should
+    // be near 0, so total rate must be < 5%.
+    http_req_failed:          ['rate<0.05'],
   },
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   tags: {

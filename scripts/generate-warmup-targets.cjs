@@ -20,9 +20,7 @@ const projectDir = path.resolve(scriptDir, '..');
 const k6Dir = path.join(projectDir, 'tests/Benchmark/k6');
 const fixtureFile = process.env.K6_FIXTURE_FILE
   ? path.resolve(projectDir, process.env.K6_FIXTURE_FILE)
-  : (fs.existsSync(path.join(k6Dir, 'fixtures.sampled.js'))
-      ? path.join(k6Dir, 'fixtures.sampled.js')
-      : path.join(k6Dir, 'fixtures.js'));
+  : path.join(k6Dir, 'fixtures.js');
 
 const outputFile = process.argv[2] || path.join(scriptDir, 'lib/warmup-targets.json');
 
