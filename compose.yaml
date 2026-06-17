@@ -199,7 +199,7 @@ services:
         command:
             - --innodb-flush-log-at-trx-commit=2
             - --max-connections=300
-            - --innodb-buffer-pool-size=64M
+            - --innodb-buffer-pool-size=2G
         environment:
             MYSQL_ROOT_PASSWORD: "${DB_PASSWORD}"
             MYSQL_ROOT_HOST: "%"
