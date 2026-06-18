@@ -63,8 +63,11 @@ class CourseStructureService
             }])
             ->get();
 
-        // Collect module IDs by type for batch loading activities
+        // Collect all modules for batch operations
         $allModules = $sections->pluck('learningModules')->flatten();
+
+        // ---- Batch-compute module readability (replaces per-module canReadModule) ----
+        $readableModules = $this->courseAccessService->readableModulesFor($actor, $course, $allModules);
 
         $materialIds = $allModules
             ->where('module_type', LearningModule::TYPE_MATERIAL)
@@ -218,8 +221,8 @@ class CourseStructureService
             $modules = [];
 
             foreach ($section->learningModules as $module) {
-                // Skip modules that fail access check
-                if (! $this->courseAccessService->canReadModule($actor, $module)) {
+                // Skip modules that fail access check (pre-computed)
+                if (! $readableModules->get($module->id, false)) {
                     continue;
                 }
 

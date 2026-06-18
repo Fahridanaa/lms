@@ -19,7 +19,7 @@ class MaterialService
         protected MaterialRepository $materialRepository,
         protected CourseAccessService $courseAccessService,
         protected ModuleAvailabilityService $moduleAvailabilityService,
-        protected ModuleCompletionService $moduleCompletionService
+        protected ModuleCompletionService $moduleCompletionService,
     ) {}
 
     /**
@@ -27,6 +27,7 @@ class MaterialService
      *
      * Instructors see all materials in their course.
      * Students only see materials that satisfy availability rules.
+     * Uses batch-loaded readability and availability to avoid N+1 queries.
      */
     public function getCourseMaterials(int $courseId, User $actor)
     {
@@ -39,23 +40,106 @@ class MaterialService
             ->tags(['materials', "course:{$courseId}"])
             ->get(
                 "course:{$courseId}:materials:actor:{$actor->id}",
-                function () use ($courseId, $actor) {
+                function () use ($courseId, $actor, $course) {
                     $materials = $this->materialRepository->getByCourse($courseId);
 
-                    return collect($materials)->filter(function ($material) use ($actor) {
+                    // Batch-load all learning modules for these materials
+                    $moduleIds = collect($materials)
+                        ->pluck('learningModule')
+                        ->filter()
+                        ->pluck('id');
+
+                    if ($moduleIds->isEmpty()) {
+                        return collect();
+                    }
+
+                    $allModules = \App\Models\LearningModule::query()
+                        ->whereIn('id', $moduleIds)
+                        ->with('availabilityRules')
+                        ->get();
+
+                    // Batch-compute readability
+                    $readableModules = $this->courseAccessService->readableModulesFor($actor, $course, $allModules);
+
+                    // For students, batch-load availability data
+                    $isInstructor = $this->courseAccessService->isInstructorForCourse($actor, $course);
+                    $completionStates = collect();
+                    $grades = collect();
+                    $groupMembershipIds = collect();
+                    $groupingGroupMap = collect();
+
+                    if (! $isInstructor) {
+                        $completionStates = $this->moduleCompletionService->completionsForUser($actor, $allModules);
+
+                        $allRules = $allModules->flatMap(fn ($m) => $m->availabilityRules);
+
+                        $prerequisiteModuleIds = $allRules->where('rule_type', 'completion')
+                            ->pluck('required_module_id')->unique()->filter();
+                        if ($prerequisiteModuleIds->isNotEmpty()) {
+                            $prereqCompletions = \App\Models\ModuleCompletion::query()
+                                ->whereIn('learning_module_id', $prerequisiteModuleIds)
+                                ->where('user_id', $actor->id)
+                                ->get()
+                                ->keyBy('learning_module_id')
+                                ->map(fn ($c) => ['completed' => $c->state !== 'incomplete', 'state' => $c->state]);
+                            $completionStates = $completionStates->union($prereqCompletions);
+                        }
+
+                        $gradeItemIds = $allRules->where('rule_type', 'min_grade')
+                            ->pluck('grade_item_id')->unique()->filter();
+                        $grades = $gradeItemIds->isNotEmpty()
+                            ? \App\Models\Grade::query()
+                                ->whereIn('grade_item_id', $gradeItemIds)
+                                ->where('user_id', $actor->id)
+                                ->where('status', 'final')
+                                ->get()->keyBy('grade_item_id')
+                            : collect();
+
+                        $groupIds = $allRules->where('rule_type', 'group')
+                            ->pluck('course_group_id')->unique()->filter();
+                        $groupMembershipIds = $groupIds->isNotEmpty()
+                            ? \App\Models\CourseGroupMember::query()
+                                ->whereIn('course_group_id', $groupIds)
+                                ->where('user_id', $actor->id)
+                                ->pluck('course_group_id')
+                            : collect();
+
+                        $groupingIds = $allRules->where('rule_type', 'group')
+                            ->pluck('course_grouping_id')->unique()->filter();
+                        if ($groupingIds->isNotEmpty()) {
+                            $groupings = \App\Models\CourseGrouping::query()
+                                ->whereIn('id', $groupingIds)->where('active', true)->get()->keyBy('id');
+                            if ($groupings->isNotEmpty()) {
+                                $groupingGroupMap = \App\Models\CourseGroupingGroup::query()
+                                    ->whereIn('course_grouping_id', $groupings->keys())
+                                    ->get()
+                                    ->groupBy('course_grouping_id')
+                                    ->map(fn ($g) => $g->pluck('course_group_id'));
+                            }
+                        }
+                    }
+
+                    return collect($materials)->filter(function ($material) use ($readableModules, $isInstructor, $actor, $completionStates, $grades, $groupMembershipIds, $groupingGroupMap) {
                         if (! $material->learningModule) {
                             return false;
                         }
 
-                        // Instructors see all materials in their course
-                        if ($this->courseAccessService->isInstructorForCourse($actor, $material->course)) {
+                        // Check readability (pre-computed)
+                        if (! $readableModules->get($material->learningModule->id, false)) {
+                            return false;
+                        }
+
+                        // Instructors see all readable materials
+                        if ($isInstructor) {
                             return true;
                         }
 
-                        // Students filtered by full availability rules
-                        $availability = $this->moduleAvailabilityService->availabilityFor($actor, $material->learningModule);
+                        // Students: full availability check with batch data
+                        $structured = $this->moduleAvailabilityService->batchStructuredAvailabilityFor(
+                            $actor, $material->learningModule, false, $completionStates, $grades, $groupMembershipIds, $groupingGroupMap,
+                        );
 
-                        return $availability['available'];
+                        return $structured['available'];
                     })->values();
                 }
             );
@@ -117,24 +201,26 @@ class MaterialService
         // students must satisfy visibility + availability rules.
         $this->courseAccessService->assertActivityAvailableForRead($actor, $material);
 
-        // Create file record on first download/access (idempotent, shared)
-        FileRecord::firstOrCreate([
-            'owner_type' => 'material',
-            'owner_id' => $material->id,
-        ], [
-            'uploader_id' => $material->course->instructor_id,
-            'component' => 'material',
-            'file_path' => $material->file_path,
-            'mime_type' => $material->mime_type,
-            'file_size' => $material->file_size ?? 0,
-            'revision' => $material->revision ?? 1,
-            'visible' => true,
-        ]);
+        // Atomic: file record + completion
+        \Illuminate\Support\Facades\DB::transaction(function () use ($material, $actor) {
+            FileRecord::firstOrCreate([
+                'owner_type' => 'material',
+                'owner_id' => $material->id,
+            ], [
+                'uploader_id' => $material->course->instructor_id,
+                'component' => 'material',
+                'file_path' => $material->file_path,
+                'mime_type' => $material->mime_type,
+                'file_size' => $material->file_size ?? 0,
+                'revision' => $material->revision ?? 1,
+                'visible' => true,
+            ]);
 
-        // Only record completion for students (instructors download for inspection)
-        if ($this->courseAccessService->isActiveEnrollee($actor, $material->course)) {
-            $this->moduleCompletionService->completeForMaterial($material, $actor);
-        }
+            // Only record completion for students (instructors download for inspection)
+            if ($this->courseAccessService->isActiveEnrollee($actor, $material->course)) {
+                $this->moduleCompletionService->completeForMaterial($material, $actor);
+            }
+        });
 
         return [
             'id' => $material->id,

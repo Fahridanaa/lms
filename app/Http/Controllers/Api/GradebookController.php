@@ -50,23 +50,8 @@ class GradebookController extends Controller
     {
         $actor = $this->resolveActor($request);
 
-        if ($actor->id !== $userId) {
-            // Allow if actor is instructor for at least one course the user is enrolled in
-            $courses = Course::query()
-                ->whereIn('id', function ($q) use ($userId) {
-                    $q->select('course_id')
-                        ->from('course_enrollments')
-                        ->where('user_id', $userId)
-                        ->where('role', 'student')
-                        ->where('status', 'active');
-                })
-                ->get();
-
-            $isInstructor = $courses->contains(fn ($course) => $this->courseAccessService->isInstructorForCourse($actor, $course));
-
-            if (! $isInstructor) {
-                throw new BusinessException('You do not have permission to view these grades', 403);
-            }
+        if (! $this->gradebookService->canReadUserGrades($userId, $actor)) {
+            throw new BusinessException('You do not have permission to view these grades', 403);
         }
 
         $grades = $this->gradebookService->getUserGrades($userId, $actor);

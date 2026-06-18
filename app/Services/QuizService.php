@@ -32,6 +32,21 @@ class QuizService
     ) {}
 
     /**
+     * Get a quiz by ID with its course loaded (cached).
+     *
+     * Read-only helper for authorization checks that need course context.
+     */
+    public function getQuizById(int $quizId): ?Quiz
+    {
+        return $this->cacheStrategy
+            ->tags(['quizzes', "quiz:{$quizId}"])
+            ->get(
+                "quiz:{$quizId}:by-id",
+                fn () => $this->quizRepository->find($quizId, ['course'])
+            );
+    }
+
+    /**
      * Get all quizzes (cached), optionally paginated.
      *
      * @param int|null $perPage Number of items per page (null = no pagination)
@@ -295,142 +310,139 @@ class QuizService
 
         $scoringResult = $this->quizScoringService->calculate($attempt->quiz, $answers);
 
-        $updatedAttempt = $this->quizAttemptRepository->update($attemptId, [
-            'answers' => $answers,
-            'score' => $scoringResult['percentage'],
-            'status' => 'finished',
-            'completed_at' => now(),
-            'submitted_at' => now(),
-        ]);
+        // Atomic transaction: all DB writes must commit together
+        $transactionResult = DB::transaction(function () use ($attemptId, $answers, $attempt, $actor, $scoringResult) {
+            $updatedAttempt = $this->quizAttemptRepository->update($attemptId, [
+                'answers' => $answers,
+                'score' => $scoringResult['percentage'],
+                'status' => 'finished',
+                'completed_at' => now(),
+                'submitted_at' => now(),
+            ]);
 
-        // Write per-question attempt detail (Plan 001: write fan-out)
-        // Using bulk INSERT for steps and step data to avoid N+1 (was 6N queries for N questions)
-        $answeredQuestionIds = array_keys($answers);
-        $stepsData = [];
-        $answeredQuestionResults = [];
-        $now = now();
+            // Write per-question attempt detail (bulk INSERT to avoid N+1)
+            $answeredQuestionIds = array_keys($answers);
+            $stepsData = [];
+            $answeredQuestionResults = [];
+            $now = now();
 
-        foreach ($attempt->attemptQuestions as $attemptQuestion) {
-            $questionId = $attemptQuestion->question_id;
+            foreach ($attempt->attemptQuestions as $attemptQuestion) {
+                $questionId = $attemptQuestion->question_id;
 
-            if (in_array($questionId, $answeredQuestionIds)) {
-                $userAnswer = $answers[$questionId];
-                $result = $this->quizScoringService->scoreQuestion($attemptQuestion->question, $userAnswer);
+                if (in_array($questionId, $answeredQuestionIds)) {
+                    $userAnswer = $answers[$questionId];
+                    $result = $this->quizScoringService->scoreQuestion($attemptQuestion->question, $userAnswer);
 
-                // Update the attempt-question row (individual UPDATE, 1 per question)
-                $attemptQuestion->update([
-                    'score' => $result['score'],
-                    'state' => 'graded',
-                ]);
+                    $attemptQuestion->update([
+                        'score' => $result['score'],
+                        'state' => 'graded',
+                    ]);
 
-                // Collect step data for bulk insert
-                $stepsData[] = [
-                    'quiz_attempt_question_id' => $attemptQuestion->id,
-                    'sequence_number' => $attemptQuestion->steps->count(),
-                    'state' => 'graded',
-                    'score' => $result['score'],
-                    'user_id' => $actor->id,
+                    $stepsData[] = [
+                        'quiz_attempt_question_id' => $attemptQuestion->id,
+                        'sequence_number' => $attemptQuestion->steps->count(),
+                        'state' => 'graded',
+                        'score' => $result['score'],
+                        'user_id' => $actor->id,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+
+                    $answeredQuestionResults[$attemptQuestion->id] = [
+                        'user_answer' => $userAnswer,
+                        'is_correct' => $result['is_correct'],
+                        'score' => $result['score'],
+                        'max' => $result['max'],
+                    ];
+                }
+            }
+
+            DB::table('quiz_attempt_steps')->insert($stepsData);
+
+            $attemptQuestionIds = $attempt->attemptQuestions->pluck('id')->toArray();
+            $insertedSteps = QuizAttemptStep::query()
+                ->whereIn('quiz_attempt_question_id', $attemptQuestionIds)
+                ->where('sequence_number', '>', 0)
+                ->where('user_id', $actor->id)
+                ->get();
+
+            $stepDataRows = [];
+            foreach ($insertedSteps as $step) {
+                $aqResult = $answeredQuestionResults[$step->quiz_attempt_question_id] ?? null;
+                if ($aqResult === null) {
+                    continue;
+                }
+
+                $stepDataRows[] = [
+                    'quiz_attempt_step_id' => $step->id,
+                    'name' => 'answer',
+                    'value' => is_array($aqResult['user_answer']) ? json_encode($aqResult['user_answer']) : (string) $aqResult['user_answer'],
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
-
-                // Store result for step-data building after bulk insert
-                $answeredQuestionResults[$attemptQuestion->id] = [
-                    'user_answer' => $userAnswer,
-                    'is_correct' => $result['is_correct'],
-                    'score' => $result['score'],
-                    'max' => $result['max'],
+                $stepDataRows[] = [
+                    'quiz_attempt_step_id' => $step->id,
+                    'name' => 'is_correct',
+                    'value' => $aqResult['is_correct'] ? '1' : '0',
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+                $stepDataRows[] = [
+                    'quiz_attempt_step_id' => $step->id,
+                    'name' => 'raw_score',
+                    'value' => (string) $aqResult['score'],
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+                $stepDataRows[] = [
+                    'quiz_attempt_step_id' => $step->id,
+                    'name' => 'max_points',
+                    'value' => (string) $aqResult['max'],
+                    'created_at' => $now,
+                    'updated_at' => $now,
                 ];
             }
-        }
 
-        // Bulk insert steps
-        DB::table('quiz_attempt_steps')->insert($stepsData);
+            DB::table('quiz_attempt_step_data')->insert($stepDataRows);
 
-        // Reload inserted steps to get their IDs for step data
-        $attemptQuestionIds = $attempt->attemptQuestions->pluck('id')->toArray();
-        $insertedSteps = QuizAttemptStep::query()
-            ->whereIn('quiz_attempt_question_id', $attemptQuestionIds)
-            ->where('sequence_number', '>', 0)
-            ->where('user_id', $actor->id)
-            ->get();
+            $maxScore = (float) $attempt->quiz->questions->sum('points');
 
-        // Build step data rows for bulk insert
-        $stepDataRows = [];
-        foreach ($insertedSteps as $step) {
-            $aqResult = $answeredQuestionResults[$step->quiz_attempt_question_id] ?? null;
-            if ($aqResult === null) {
-                continue;
-            }
+            $gradeItem = GradeItem::firstOrCreate([
+                'course_id' => $attempt->quiz->course_id,
+                'item_type' => 'quiz',
+                'item_id' => $attempt->quiz_id,
+            ], [
+                'name' => $attempt->quiz->title ?? "Quiz {$attempt->quiz_id}",
+                'max_score' => $maxScore,
+                'source' => 'quiz',
+            ]);
 
-            $stepDataRows[] = [
-                'quiz_attempt_step_id' => $step->id,
-                'name' => 'answer',
-                'value' => is_array($aqResult['user_answer']) ? json_encode($aqResult['user_answer']) : (string) $aqResult['user_answer'],
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
-            $stepDataRows[] = [
-                'quiz_attempt_step_id' => $step->id,
-                'name' => 'is_correct',
-                'value' => $aqResult['is_correct'] ? '1' : '0',
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
-            $stepDataRows[] = [
-                'quiz_attempt_step_id' => $step->id,
-                'name' => 'raw_score',
-                'value' => (string) $aqResult['score'],
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
-            $stepDataRows[] = [
-                'quiz_attempt_step_id' => $step->id,
-                'name' => 'max_points',
-                'value' => (string) $aqResult['max'],
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
-        }
+            Grade::query()->updateOrCreate([
+                'user_id' => $attempt->user_id,
+                'course_id' => $attempt->quiz->course_id,
+                'gradeable_type' => 'quiz_attempt',
+                'gradeable_id' => $attempt->id,
+            ], [
+                'grade_item_id' => $gradeItem->id,
+                'score' => $scoringResult['earned_points'],
+                'max_score' => $scoringResult['max_points'],
+                'percentage' => $scoringResult['percentage'],
+                'status' => 'final',
+                'source' => 'quiz',
+            ]);
 
-        // Bulk insert step data
-        DB::table('quiz_attempt_step_data')->insert($stepDataRows);
+            // Update quiz aggregate grade
+            $this->updateQuizAggregateGrade($attempt->quiz, $actor, $updatedAttempt);
 
-        $maxScore = (float) $attempt->quiz->questions->sum('points');
+            return ['attempt' => $updatedAttempt, 'gradeItem' => $gradeItem];
+        });
 
-        // Resolve or create a grade item for this quiz
-        $gradeItem = GradeItem::firstOrCreate([
-            'course_id' => $attempt->quiz->course_id,
-            'item_type' => 'quiz',
-            'item_id' => $attempt->quiz_id,
-        ], [
-            'name' => $attempt->quiz->title ?? "Quiz {$attempt->quiz_id}",
-            'max_score' => $maxScore,
-            'source' => 'quiz',
-        ]);
+        $updatedAttempt = $transactionResult['attempt'];
+        $gradeItem = $transactionResult['gradeItem'];
 
-        Grade::query()->updateOrCreate([
-            'user_id' => $attempt->user_id,
-            'course_id' => $attempt->quiz->course_id,
-            'gradeable_type' => 'quiz_attempt',
-            'gradeable_id' => $attempt->id,
-        ], [
-            'grade_item_id' => $gradeItem->id,
-            'score' => $scoringResult['earned_points'],
-            'max_score' => $scoringResult['max_points'],
-            'percentage' => $scoringResult['percentage'],
-            'status' => 'final',
-            'source' => 'quiz',
-        ]);
-
-        // Update quiz aggregate grade (Plan 002)
-        $this->updateQuizAggregateGrade($attempt->quiz, $actor, $updatedAttempt);
-
-        // Mark completion if module is configured for finish/pass_grade-based completion
-        // Pass the updated attempt so pass-grade checks see the actual score
+        // Post-commit: completion, stale marking, and cache flushes
         $this->moduleCompletionService->completeForQuizAttempt($attempt->quiz, $updatedAttempt, $actor);
 
-        // Mark gradebook stale after quiz submission grade update
         app(\App\Services\GradebookRecalculationService::class)
             ->markCourseStale($attempt->quiz->course_id, 'quiz_submission', 'quiz_attempt', $attempt->id);
 

@@ -14,6 +14,7 @@ use App\Models\GradeHistory;
 use App\Models\GradeItem;
 use App\Models\User;
 use App\Repositories\GradeRepository;
+use Illuminate\Support\Facades\DB;
 
 class GradebookService
 {
@@ -55,6 +56,47 @@ class GradebookService
             'SUM(%1$s.percentage * COALESCE(grade_items.weight, 1.0)) / NULLIF(SUM(COALESCE(grade_items.weight, 1.0)), 0)',
             $table
         );
+    }
+
+    /**
+     * Check if an actor can read a user's grades across all courses.
+     *
+     * Self-view always returns true. For instructors, uses a single EXISTS
+     * query instead of loading all enrolled courses and checking per-course.
+     */
+    public function canReadUserGrades(int $userId, User $actor): bool
+    {
+        if ($actor->id === $userId) {
+            return true;
+        }
+
+        // Single query: does the actor teach any course where the user is enrolled?
+        return Course::query()
+            ->where('courses.is_active', true)
+            ->where(function ($query) use ($actor) {
+                $query->where('courses.instructor_id', $actor->id)
+                    ->orWhere(function ($q) use ($actor) {
+                        $q->whereExists(function ($subQuery) use ($actor) {
+                            $subQuery->select(DB::raw(1))
+                                ->from('role_assignments')
+                                ->join('contexts', 'role_assignments.context_id', '=', 'contexts.id')
+                                ->join('roles', 'role_assignments.role_id', '=', 'roles.id')
+                                ->where('role_assignments.user_id', $actor->id)
+                                ->where('roles.shortname', 'instructor')
+                                ->where('contexts.contextlevel', Context::LEVEL_COURSE)
+                                ->whereColumn('contexts.instance_id', 'courses.id');
+                        });
+                    });
+            })
+            ->whereExists(function ($subQuery) use ($userId) {
+                $subQuery->select(DB::raw(1))
+                    ->from('course_enrollments')
+                    ->whereColumn('course_enrollments.course_id', 'courses.id')
+                    ->where('course_enrollments.user_id', $userId)
+                    ->where('course_enrollments.role', 'student')
+                    ->where('course_enrollments.status', 'active');
+            })
+            ->exists();
     }
 
     /**

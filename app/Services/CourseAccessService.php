@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Assignment;
+use App\Models\Context;
 use App\Models\Course;
 use App\Models\CourseEnrollment;
 use App\Models\CourseGroupMember;
@@ -11,6 +12,7 @@ use App\Models\Material;
 use App\Models\Quiz;
 use App\Models\Submission;
 use App\Models\User;
+use Illuminate\Support\Collection;
 
 class CourseAccessService
 {
@@ -423,6 +425,219 @@ class CourseAccessService
         if (! $this->canReadModule($actor, $module)) {
             throw new \App\Exceptions\BusinessException('Module not accessible', 404);
         }
+    }
+
+    /* ──────────────────────────────────────────────
+     * Batch Helpers
+     * ────────────────────────────────────────────── */
+
+    /**
+     * Compute readability for a collection of modules in bulk.
+     *
+     * Resolves module contexts, instructor bypass capability, visibility,
+     * course readability, and group-rule membership in a minimal set of queries,
+     * then returns a map of module_id => bool.
+     *
+     * Intended for use in course-structure and list endpoints where per-module
+     * canReadModule() would cause N+1 context, capability, and group queries.
+     *
+     * @param Collection<int, LearningModule> $modules  Must have availabilityRules relation loaded.
+     */
+    public function readableModulesFor(User $actor, Course $course, Collection $modules): Collection
+    {
+        $moduleIds = $modules->pluck('id');
+
+        // Short-circuit: empty collection
+        if ($moduleIds->isEmpty()) {
+            return collect();
+        }
+
+        // 1. Course readability (resolved once)
+        $courseReadable = $this->canReadCourse($actor, $course);
+
+        // 2. Batch-load module contexts (one query)
+        $moduleContexts = Context::query()
+            ->where('contextlevel', Context::LEVEL_MODULE)
+            ->whereIn('instance_id', $moduleIds)
+            ->get()
+            ->keyBy('instance_id');
+
+        // 3. Batch-load course context (one query)
+        $courseContext = $this->contextService->find(Context::LEVEL_COURSE, $course->id);
+
+        // 4. Determine if actor has module:ignore-availability bypass or is instructor.
+        //    Instructors bypass all visibility checks. We batch-check capabilities
+        //    and then apply instructor fallback for modules without contexts.
+        $isInstructor = $this->isInstructorForCourse($actor, $course);
+        $bypassModuleIds = $this->resolveBypassModules($actor, $modules, $moduleContexts, $courseContext, $isInstructor);
+
+        // 5. Collect all group IDs referenced in group-type availability rules
+        $allGroupRules = $modules->flatMap(fn ($m) => $m->availabilityRules->where('rule_type', 'group'));
+        $groupIds = $allGroupRules->pluck('course_group_id')->unique()->filter();
+
+        // 6. Batch-load group memberships for the actor (one query)
+        $groupMembershipIds = $groupIds->isNotEmpty()
+            ? CourseGroupMember::query()
+                ->whereIn('course_group_id', $groupIds)
+                ->where('user_id', $actor->id)
+                ->pluck('course_group_id')
+            : collect();
+
+        // 7. Compute readability per module
+        $readableMap = collect();
+
+        foreach ($modules as $module) {
+            // Bypass: instructor with ignore-availability capability
+            if ($bypassModuleIds->contains($module->id)) {
+                $readableMap->put($module->id, true);
+                continue;
+            }
+
+            // Visibility check
+            if (! $module->visible) {
+                $readableMap->put($module->id, false);
+                continue;
+            }
+
+            // Course readability
+            if (! $courseReadable) {
+                $readableMap->put($module->id, false);
+                continue;
+            }
+
+            // Group-based availability rules with condition_group awareness
+            $groupRules = $module->availabilityRules->where('rule_type', 'group');
+            if ($groupRules->isNotEmpty()) {
+                $groups = $groupRules->groupBy(fn ($rule) => $rule->condition_group ?? 'singleton_'.$rule->id);
+
+                $anyGroupPassed = false;
+                foreach ($groups as $conditionGroupRules) {
+                    $groupPassed = true;
+                    foreach ($conditionGroupRules as $rule) {
+                        if (! $rule->course_group_id) {
+                            continue;
+                        }
+                        if (! $groupMembershipIds->contains($rule->course_group_id)) {
+                            $groupPassed = false;
+                            break;
+                        }
+                    }
+                    if ($groupPassed) {
+                        $anyGroupPassed = true;
+                        break;
+                    }
+                }
+
+                if (! $anyGroupPassed) {
+                    $allRuleGroups = $module->availabilityRules
+                        ->whereNotNull('condition_group')
+                        ->pluck('condition_group')
+                        ->unique();
+                    $groupRuleGroups = $groupRules
+                        ->whereNotNull('condition_group')
+                        ->pluck('condition_group')
+                        ->unique();
+                    $groupsWithOnlyNonGroupRules = $allRuleGroups->diff($groupRuleGroups);
+                    $hasSingletonNullRules = $groupRules->whereNull('condition_group')->isNotEmpty();
+                    $nonGroupBranchAvailable = $groupsWithOnlyNonGroupRules->isNotEmpty();
+
+                    if (! $nonGroupBranchAvailable) {
+                        $readableMap->put($module->id, false);
+                        continue;
+                    }
+                }
+            }
+
+            $readableMap->put($module->id, true);
+        }
+
+        return $readableMap;
+    }
+
+    /**
+     * Resolve which module IDs the actor can bypass visibility for.
+     *
+     * Checks module:ignore-availability capability at module contexts or
+     * the course context (instructor bypass). Also applies the fallback
+     * from canReadModule: if both module and course context are missing,
+     * instructors get bypass. Returns a collection of module IDs that
+     * have the bypass.
+     *
+     * @param Collection<int, LearningModule> $modules
+     * @param Collection<int, Context> $moduleContexts  keyed by instance_id
+     */
+    private function resolveBypassModules(
+        User $actor,
+        Collection $modules,
+        Collection $moduleContexts,
+        ?Context $courseContext,
+        bool $isInstructor,
+    ): Collection {
+        // Collect all context IDs we need to check
+        $allContextIds = $moduleContexts->pluck('id');
+        if ($courseContext !== null) {
+            $allContextIds = $allContextIds->push($courseContext->id);
+        }
+
+        if ($allContextIds->isEmpty()) {
+            // Fallback: if no contexts exist, instructors bypass all
+            return $isInstructor ? $modules->pluck('id') : collect();
+        }
+
+        // Find the 'module:ignore-availability' capability ID
+        $capId = \App\Models\Capability::query()
+            ->where('shortname', 'module:ignore-availability')
+            ->value('id');
+
+        if ($capId === null) {
+            return $isInstructor ? $modules->pluck('id') : collect();
+        }
+
+        // Find role IDs that grant this capability
+        $roleIds = \App\Models\RoleCapability::query()
+            ->where('capability_id', $capId)
+            ->pluck('role_id');
+
+        if ($roleIds->isEmpty()) {
+            return $isInstructor ? $modules->pluck('id') : collect();
+        }
+
+        // Batch-check: does the actor have any of these roles at any relevant context?
+        $assignedContextIds = \App\Models\RoleAssignment::query()
+            ->whereIn('role_id', $roleIds)
+            ->whereIn('context_id', $allContextIds)
+            ->where('user_id', $actor->id)
+            ->pluck('context_id');
+
+        if ($assignedContextIds->isEmpty()) {
+            // Fallback: instructors bypass modules without valid contexts
+            if ($isInstructor) {
+                // Modules without a module context get bypass via instructor fallback
+                $modulesWithContext = $moduleContexts->keys();
+                return $modules->pluck('id')->diff($modulesWithContext);
+            }
+            return collect();
+        }
+
+        // If course context has the bypass, all modules get it
+        if ($courseContext !== null && $assignedContextIds->contains($courseContext->id)) {
+            return $modules->pluck('id');
+        }
+
+        // Otherwise, find which specific module contexts have the bypass
+        $bypassModuleInstanceIds = $moduleContexts
+            ->filter(fn ($ctx) => $assignedContextIds->contains($ctx->id))
+            ->keys();
+
+        // Instructors also bypass modules without a module context
+        if ($isInstructor) {
+            $modulesWithoutContext = $modules
+                ->filter(fn ($m) => ! $moduleContexts->has($m->id))
+                ->pluck('id');
+            $bypassModuleInstanceIds = $bypassModuleInstanceIds->merge($modulesWithoutContext);
+        }
+
+        return $bypassModuleInstanceIds;
     }
 
     /* ──────────────────────────────────────────────

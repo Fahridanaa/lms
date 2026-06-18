@@ -628,6 +628,81 @@ class QuizControllerTest extends TestCase
             ]);
     }
 
+    #[Test]
+    public function instructor_for_quiz_course_can_view_other_user_attempt_result(): void
+    {
+        // Arrange: instructor enrolled in the quiz course
+        $instructor = User::factory()->create(['role' => 'instructor']);
+        CourseEnrollment::factory()->create([
+            'course_id' => $this->course->id,
+            'user_id' => $instructor->id,
+            'role' => 'instructor',
+        ]);
+
+        // Create a completed attempt by another student
+        $otherStudent = User::factory()->create(['role' => 'student']);
+        CourseEnrollment::factory()->create([
+            'course_id' => $this->course->id,
+            'user_id' => $otherStudent->id,
+        ]);
+        $attempt = QuizAttempt::factory()->create([
+            'quiz_id' => $this->quiz->id,
+            'user_id' => $otherStudent->id,
+            'started_at' => now()->subMinutes(30),
+            'completed_at' => now(),
+            'score' => 75,
+            'answers' => json_encode([]),
+        ]);
+
+        // Act: instructor requests the student's attempt result
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $instructor->id)
+            ->getJson("/api/quizzes/{$this->quiz->id}/attempts/{$attempt->id}/result");
+
+        // Assert: instructor can view the result
+        $response->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'data' => [
+                    'id' => $attempt->id,
+                    'user_id' => $otherStudent->id,
+                    'score' => 75,
+                ],
+            ]);
+    }
+
+    #[Test]
+    public function instructor_for_another_course_cannot_view_attempt_result(): void
+    {
+        // Arrange: instructor in a different course
+        $instructor = User::factory()->create(['role' => 'instructor']);
+        $otherCourse = Course::factory()->create();
+        CourseEnrollment::factory()->create([
+            'course_id' => $otherCourse->id,
+            'user_id' => $instructor->id,
+            'role' => 'instructor',
+        ]);
+
+        // Create a completed attempt by the student in the quiz course
+        $attempt = QuizAttempt::factory()->create([
+            'quiz_id' => $this->quiz->id,
+            'user_id' => $this->user->id,
+            'started_at' => now()->subMinutes(30),
+            'completed_at' => now(),
+            'score' => 80,
+            'answers' => json_encode([]),
+        ]);
+
+        // Act: instructor from other course tries to view attempt result
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $instructor->id)
+            ->getJson("/api/quizzes/{$this->quiz->id}/attempts/{$attempt->id}/result");
+
+        // Assert: 403 — not an instructor for this quiz's course
+        $response->assertStatus(403)
+            ->assertJson([
+                'success' => false,
+            ]);
+    }
+
     public function test_quiz_not_found_returns_404(): void
     {
         $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)

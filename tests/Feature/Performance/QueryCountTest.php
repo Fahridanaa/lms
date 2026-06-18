@@ -7,10 +7,13 @@ use App\Models\Course;
 use App\Models\CourseCompletionCriterion;
 use App\Models\CourseCompletionCriterionCompletion;
 use App\Models\CourseEnrollment;
+use App\Models\CourseGroup;
+use App\Models\CourseGroupMember;
 use App\Models\CourseSection;
 use App\Models\Grade;
 use App\Models\GradeItem;
 use App\Models\LearningModule;
+use App\Models\Material;
 use App\Models\ModuleAvailabilityRule;
 use App\Models\Question;
 use App\Models\Quiz;
@@ -275,6 +278,98 @@ class QueryCountTest extends TestCase
             25,
             $queryCount,
             "Course structure used {$queryCount} queries, expected < 25"
+        );
+    }
+
+    /**
+     * Plan 02: Course structure with 30+ modules should use batch queries.
+     * Verifies query count grows sublinearly with module count.
+     */
+    public function test_course_structure_large_course_query_count(): void
+    {
+        // Create a group for group rules
+        $group = CourseGroup::factory()->create([
+            'course_id' => $this->course->id,
+            'active' => true,
+        ]);
+        CourseGroupMember::factory()->create([
+            'course_group_id' => $group->id,
+            'user_id' => $this->student->id,
+        ]);
+
+        // Create 2 sections with 15 modules each (30 total)
+        $section1 = CourseSection::factory()->create(['course_id' => $this->course->id]);
+        $section2 = CourseSection::factory()->create(['course_id' => $this->course->id]);
+
+        $gradeItem = GradeItem::factory()->create([
+            'course_id' => $this->course->id,
+            'max_score' => 100,
+        ]);
+
+        for ($i = 0; $i < 30; $i++) {
+            $sectionId = $i < 15 ? $section1->id : $section2->id;
+
+            // Create material (factory auto-creates the learning module)
+            $material = Material::factory()->create([
+                'course_id' => $this->course->id,
+            ]);
+
+            // Move the auto-created learning module to the right section
+            $module = $material->learningModule;
+            $module->update([
+                'course_section_id' => $sectionId,
+                'sort_order' => $i,
+            ]);
+
+            // Each module gets 3 rules: group, date, and min_grade
+            ModuleAvailabilityRule::factory()->create([
+                'learning_module_id' => $module->id,
+                'rule_type' => 'group',
+                'course_group_id' => $group->id,
+            ]);
+            ModuleAvailabilityRule::factory()->create([
+                'learning_module_id' => $module->id,
+                'rule_type' => 'date',
+                'operator' => 'after',
+                'value' => now()->subDay()->toIso8601String(),
+            ]);
+            ModuleAvailabilityRule::factory()->create([
+                'learning_module_id' => $module->id,
+                'rule_type' => 'min_grade',
+                'grade_item_id' => $gradeItem->id,
+                'operator' => '>=',
+                'value' => '50',
+            ]);
+        }
+
+        // Warm authorization cache with a first request
+        $this->withHeader('X-Benchmark-Actor-Id', $this->student->id)
+            ->getJson("/api/courses/{$this->course->id}/structure");
+
+        // Forget only the structure cache (auth cache stays warm)
+        Cache::flush();
+
+        // Warm auth cache again
+        $this->withHeader('X-Benchmark-Actor-Id', $this->student->id)
+            ->getJson("/api/courses/{$this->course->id}/structure");
+        Cache::forget("lms:course:{$this->course->id}:structure:{$this->student->id}");
+
+        $queryCount = 0;
+        DB::listen(function () use (&$queryCount): void {
+            $queryCount++;
+        });
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->student->id)
+            ->getJson("/api/courses/{$this->course->id}/structure");
+
+        $response->assertStatus(200);
+
+        // With 30 modules x 3 rules each, old approach would issue 90+ queries
+        // for group rules alone. Batch approach should use < 25 queries.
+        $this->assertLessThan(
+            25,
+            $queryCount,
+            "Course structure with 30 modules used {$queryCount} queries, expected < 25"
         );
     }
 

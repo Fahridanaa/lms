@@ -36,6 +36,7 @@ class AssignmentService
      *
      * The actor parameter makes the cache key actor-specific so that
      * group-restricted, hidden, or unavailable modules are filtered per user.
+     * Uses batch-loaded readability to avoid N+1 queries.
      */
     public function getCourseAssignments(int $courseId, ?User $actor = null)
     {
@@ -52,13 +53,33 @@ class AssignmentService
                         return $assignments;
                     }
 
-                    return collect($assignments)->filter(function ($assignment) use ($actor) {
+                    // Batch-load all learning modules for these assignments
+                    $moduleIds = collect($assignments)
+                        ->pluck('learningModule')
+                        ->filter()
+                        ->pluck('id');
+
+                    if ($moduleIds->isEmpty()) {
+                        return collect();
+                    }
+
+                    $allModules = \App\Models\LearningModule::query()
+                        ->whereIn('id', $moduleIds)
+                        ->with('availabilityRules')
+                        ->get();
+
+                    // Get course for readability check
+                    $course = \App\Models\Course::query()->find($courseId);
+
+                    // Batch-compute readability
+                    $readableModules = $this->courseAccessService->readableModulesFor($actor, $course, $allModules);
+
+                    return collect($assignments)->filter(function ($assignment) use ($readableModules) {
                         if (! $assignment->learningModule) {
                             return false;
                         }
 
-                        // Use canReadActivity (course + module visibility + group restriction)
-                        return $this->courseAccessService->canReadActivity($actor, $assignment->learningModule);
+                        return $readableModules->get($assignment->learningModule->id, false);
                     })->values();
                 }
             );
@@ -192,42 +213,46 @@ class AssignmentService
         $isLate = $effectiveDeadlines['due_date'] !== null && now()->gt($effectiveDeadlines['due_date']);
 
         try {
-            Submission::query()
-                ->where('assignment_id', $assignmentId)
-                ->where('user_id', $userId)
-                ->update(['is_latest' => false]);
+            $submission = \Illuminate\Support\Facades\DB::transaction(function () use ($assignmentId, $userId, $data, $attemptCount, $isLate, $assignment, $actor) {
+                Submission::query()
+                    ->where('assignment_id', $assignmentId)
+                    ->where('user_id', $userId)
+                    ->update(['is_latest' => false]);
 
-            $submission = $this->submissionRepository->create([
-                'assignment_id' => $assignmentId,
-                'user_id' => $userId,
-                'file_path' => $data,
-                'status' => 'submitted',
-                'attempt_number' => $attemptCount + 1,
-                'is_latest' => true,
-                'submitted_at' => now(),
-                'late' => $isLate,
-            ]);
+                $submission = $this->submissionRepository->create([
+                    'assignment_id' => $assignmentId,
+                    'user_id' => $userId,
+                    'file_path' => $data,
+                    'status' => 'submitted',
+                    'attempt_number' => $attemptCount + 1,
+                    'is_latest' => true,
+                    'submitted_at' => now(),
+                    'late' => $isLate,
+                ]);
+
+                // Create file record for the submission
+                FileRecord::create([
+                    'owner_type' => 'submission',
+                    'owner_id' => $submission->id,
+                    'uploader_id' => $actor->id,
+                    'component' => 'assignment_submission',
+                    'file_path' => $data,
+                    'mime_type' => 'application/pdf',
+                    'file_size' => 0,
+                    'revision' => 1,
+                    'visible' => true,
+                ]);
+
+                // Mark completion if module is configured for submit-based completion
+                $this->moduleCompletionService->completeForAssignmentSubmission($assignment, $submission, $actor);
+
+                return $submission;
+            });
         } catch (\Illuminate\Database\UniqueConstraintViolationException) {
             throw new BusinessException(AssignmentMessage::ALREADY_SUBMITTED, 400);
         }
 
-        // Create file record for the submission
-        FileRecord::create([
-            'owner_type' => 'submission',
-            'owner_id' => $submission->id,
-            'uploader_id' => $actor->id,
-            'component' => 'assignment_submission',
-            'file_path' => $data,
-            'mime_type' => 'application/pdf',
-            'file_size' => 0,
-            'revision' => 1,
-            'visible' => true,
-        ]);
-
-        // Mark completion if module is configured for submit-based completion
-        $this->moduleCompletionService->completeForAssignmentSubmission($assignment, $submission, $actor);
-
-        // Warm cache untuk entity baru, lalu flush list caches
+        // Warm cache untuk entity baru, lalu flush list caches (after commit)
         $this->cacheStrategy->put(
             "submission:{$submission->id}",
             $submission->load(['user', 'assignment'])
@@ -550,60 +575,68 @@ class AssignmentService
             throw new BusinessException('You do not have permission to grade this submission', 403);
         }
 
-        $updatedSubmission = $this->submissionRepository->update($submissionId, [
-            'score' => $score,
-            'feedback' => $feedback,
-            'status' => 'graded',
-            'grader_id' => $grader?->id,
-            'graded_at' => now(),
-        ]);
+        // Atomic transaction: submission update + grade item + grade + completion
+        $updatedSubmission = \Illuminate\Support\Facades\DB::transaction(function () use ($submissionId, $score, $feedback, $grader, $submission, $assignment) {
+            $updatedSubmission = $this->submissionRepository->update($submissionId, [
+                'score' => $score,
+                'feedback' => $feedback,
+                'status' => 'graded',
+                'grader_id' => $grader?->id,
+                'graded_at' => now(),
+            ]);
 
-        // Resolve or create a grade item for this assignment
-        $gradeItem = GradeItem::firstOrCreate([
-            'course_id' => $assignment->course_id,
-            'item_type' => 'assignment',
-            'item_id' => $submission->assignment_id,
-        ], [
-            'name' => $assignment->title ?? "Assignment {$submission->assignment_id}",
-            'max_score' => $assignment->max_score ?? 100,
-            'source' => 'assignment',
-        ]);
+            // Resolve or create a grade item for this assignment
+            $gradeItem = GradeItem::firstOrCreate([
+                'course_id' => $assignment->course_id,
+                'item_type' => 'assignment',
+                'item_id' => $submission->assignment_id,
+            ], [
+                'name' => $assignment->title ?? "Assignment {$submission->assignment_id}",
+                'max_score' => $assignment->max_score ?? 100,
+                'source' => 'assignment',
+            ]);
 
-        $gradePercentage = $assignment->max_score > 0 ? ($score / $assignment->max_score) * 100 : 0;
+            $gradePercentage = $assignment->max_score > 0 ? ($score / $assignment->max_score) * 100 : 0;
 
-        Grade::query()->updateOrCreate([
-            'user_id' => $submission->user_id,
-            'course_id' => $assignment->course_id,
-            'gradeable_type' => 'submission',
-            'gradeable_id' => $submission->id,
-        ], [
-            'grade_item_id' => $gradeItem->id,
-            'score' => $score,
-            'max_score' => $assignment->max_score,
-            'percentage' => $gradePercentage,
-            'grader_id' => $grader?->id,
-            'feedback' => $feedback,
-            'status' => 'final',
-            'source' => 'assignment',
-        ]);
+            Grade::query()->updateOrCreate([
+                'user_id' => $submission->user_id,
+                'course_id' => $assignment->course_id,
+                'gradeable_type' => 'submission',
+                'gradeable_id' => $submission->id,
+            ], [
+                'grade_item_id' => $gradeItem->id,
+                'score' => $score,
+                'max_score' => $assignment->max_score,
+                'percentage' => $gradePercentage,
+                'grader_id' => $grader?->id,
+                'feedback' => $feedback,
+                'status' => 'final',
+                'source' => 'assignment',
+            ]);
 
-        // Mark completion for pass-grade after grading
-        $assignment = $submission->assignment;
-        $updatedSubmission->loadMissing(['assignment.course', 'assignment.learningModule']);
-        $this->moduleCompletionService->completeForAssignmentSubmission(
-            $assignment,
-            $updatedSubmission,
-            User::query()->findOrFail($submission->user_id)
-        );
+            // Mark completion for pass-grade after grading
+            $assignment = $submission->assignment;
+            $updatedSubmission->loadMissing(['assignment.course', 'assignment.learningModule']);
+            $this->moduleCompletionService->completeForAssignmentSubmission(
+                $assignment,
+                $updatedSubmission,
+                User::query()->findOrFail($submission->user_id)
+            );
 
-        // Mark gradebook stale after grading
+            return ['submission' => $updatedSubmission, 'gradeItem' => $gradeItem];
+        });
+
+        $finalSubmission = $updatedSubmission['submission'];
+        $gradeItem = $updatedSubmission['gradeItem'];
+
+        // Mark gradebook stale after grading (after commit)
         app(\App\Services\GradebookRecalculationService::class)
             ->markCourseStale($assignment->course_id, 'assignment_grading', 'submission', $submissionId);
 
-        // Warm cache dengan entity terbaru (Write-Through: cache + DB sync)
+        // Warm cache dengan entity terbaru (after commit)
         $this->cacheStrategy->put(
             "submission:{$submissionId}",
-            $updatedSubmission->load(['user', 'assignment'])
+            $finalSubmission->load(['user', 'assignment'])
         );
 
         $this->cacheStrategy->flushTags([
@@ -616,7 +649,7 @@ class AssignmentService
             "submission:{$submissionId}:marks",
         ]);
 
-        return $updatedSubmission;
+        return $finalSubmission;
     }
 
     /**
