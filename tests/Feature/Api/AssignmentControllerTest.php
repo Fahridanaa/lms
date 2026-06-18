@@ -8,7 +8,11 @@ use App\Models\AssignmentMark;
 use App\Models\AssignmentOverride;
 use App\Models\Course;
 use App\Models\CourseEnrollment;
+use App\Models\CourseGroup;
+use App\Models\CourseGroupMember;
+use App\Models\GradeItem;
 use App\Models\LearningModule;
+use App\Models\ModuleAvailabilityRule;
 use App\Models\Submission;
 use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -69,6 +73,118 @@ class AssignmentControllerTest extends TestCase
                     ],
                 ],
             ]);
+    }
+
+    #[Test]
+    public function student_sees_available_assignment_in_list(): void
+    {
+        // The setUp already creates one assignment with an available learning module.
+        // Student should see it in the list.
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->getJson("/api/courses/{$this->course->id}/assignments");
+
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        $ids = array_column($data, 'id');
+        $this->assertContains($this->assignment->id, $ids);
+    }
+
+    #[Test]
+    public function student_does_not_see_assignment_blocked_by_future_date(): void
+    {
+        // Arrange: set the assignment's learning module to be available in the future
+        $this->assignment->learningModule()->update([
+            'available_from' => now()->addDays(7),
+        ]);
+
+        // Act: student lists course assignments
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->getJson("/api/courses/{$this->course->id}/assignments");
+
+        // Assert: student does not see the blocked assignment
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        $ids = array_column($data, 'id');
+        $this->assertNotContains($this->assignment->id, $ids);
+    }
+
+    #[Test]
+    public function student_does_not_see_assignment_blocked_by_prerequisite_completion(): void
+    {
+        // Arrange: create a prerequisite learning module and a completion rule
+        $prerequisiteModule = LearningModule::factory()->create([
+            'course_id' => $this->course->id,
+            'module_type' => LearningModule::TYPE_MATERIAL,
+            'visible' => true,
+        ]);
+
+        $module = $this->assignment->learningModule;
+        ModuleAvailabilityRule::factory()->create([
+            'learning_module_id' => $module->id,
+            'rule_type' => 'completion',
+            'required_module_id' => $prerequisiteModule->id,
+            'operator' => '==',
+            'value' => 'complete',
+        ]);
+
+        // Act: student lists course assignments (prerequisite NOT completed)
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->getJson("/api/courses/{$this->course->id}/assignments");
+
+        // Assert: student does not see the blocked assignment
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        $ids = array_column($data, 'id');
+        $this->assertNotContains($this->assignment->id, $ids);
+    }
+
+    #[Test]
+    public function student_does_not_see_assignment_blocked_by_min_grade(): void
+    {
+        // Arrange: create a grade item and a min-grade rule
+        $gradeItem = GradeItem::factory()->create([
+            'course_id' => $this->course->id,
+            'item_type' => 'quiz',
+        ]);
+
+        $module = $this->assignment->learningModule;
+        ModuleAvailabilityRule::factory()->create([
+            'learning_module_id' => $module->id,
+            'rule_type' => 'min_grade',
+            'grade_item_id' => $gradeItem->id,
+            'operator' => '>=',
+            'value' => 80,
+        ]);
+
+        // Act: student lists course assignments (no grade exists for this grade item)
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->user->id)
+            ->getJson("/api/courses/{$this->course->id}/assignments");
+
+        // Assert: student does not see the blocked assignment
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        $ids = array_column($data, 'id');
+        $this->assertNotContains($this->assignment->id, $ids);
+    }
+
+    #[Test]
+    public function instructor_still_sees_unavailable_assignments_in_list(): void
+    {
+        // Arrange: set the assignment's learning module to be available in the future
+        $this->assignment->learningModule()->update([
+            'available_from' => now()->addDays(7),
+        ]);
+
+        // Act: instructor lists course assignments
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->getJson("/api/courses/{$this->course->id}/assignments");
+
+        // Assert: instructor can see it despite future date
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        $ids = array_column($data, 'id');
+        $this->assertContains($this->assignment->id, $ids);
     }
 
     public function test_can_show_assignment_detail(): void

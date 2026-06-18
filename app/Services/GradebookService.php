@@ -100,40 +100,32 @@ class GradebookService
     }
 
     /**
-     * Get full gradebook for a course (cached)
-     * Returns all students with their aggregated grade stats.
+     * Get full gradebook for a course (cached).
      *
-     * Loads grade items first and uses them to scope the grade aggregation.
-     * Hidden grade items are excluded from student view.
+     * Instructor-scoped: the controller (canReadGradebook) blocks non-instructors,
+     * so this endpoint is entirely for course management. The cache key is
+     * explicitly suffixed with `instructor` to prevent cross-actor cache mixing
+     * if student-gradebook access is added later.
      *
-     * Optimized: Uses SQL aggregation instead of loading all Grade models
-     * with polymorphic gradeable relations into memory.
+     * @internal Only callable after canReadGradebook() passes.
      */
     public function getCourseGradebook(int $courseId, User $actor): array
     {
-        $course = Course::query()->findOrFail($courseId);
-
-        $isStudent = $this->courseAccessService->isActiveEnrollee($actor, $course);
-        $visibilityMode = $isStudent ? 'student-visible' : 'instructor';
-
         return $this->cacheStrategy
             ->tags(['gradebook', "course:{$courseId}"])
-            ->get("course:{$courseId}:gradebook:{$visibilityMode}", function () use ($courseId, $actor, $isStudent) {
-                // Clear gradebook stale marker on instructor read (acts as implicit recalculation)
-                if (! $isStudent) {
-                    app(\App\Services\GradebookRecalculationService::class)->markRecalculated($courseId);
-                }
+            ->get("course:{$courseId}:gradebook:instructor", function () use ($courseId, $actor) {
+                // Clear gradebook stale marker on read (acts as implicit recalculation)
+                app(\App\Services\GradebookRecalculationService::class)->markRecalculated($courseId);
+
                 $activeStudentIds = $this->activeStudentIds($courseId);
 
                 if ($activeStudentIds === []) {
                     return [];
                 }
 
-                // Load visible grade items for the course.
-                // If actor is a student, exclude hidden grade items.
+                // Load all grade items for the course (instructor view — no hidden filtering)
                 $gradeItems = GradeItem::query()
                     ->where('course_id', $courseId)
-                    ->when($isStudent, fn ($q) => $q->where('hidden', false))
                     ->get();
 
                 $gradeItemIds = $gradeItems->pluck('id');
@@ -203,11 +195,7 @@ class GradebookService
                 // Load grade categories for the course (Plan 003: category hierarchy)
                 $categories = GradeCategory::query()
                     ->where('course_id', $courseId)
-                    ->with(['gradeItems' => function ($q) use ($isStudent) {
-                        if ($isStudent) {
-                            $q->where('hidden', false);
-                        }
-                    }])
+                    ->with('gradeItems')
                     ->orderBy('depth')
                     ->orderBy('id')
                     ->get();
@@ -393,12 +381,15 @@ class GradebookService
         $data['percentage'] = $maxScore > 0 ? ($score / $maxScore) * 100 : 0;
         $data['status'] = $data['status'] ?? $grade->status ?? 'final';
 
-        // Record grade history before updating (Plan 003)
-        $this->recordGradeHistory($grade, 'updated', $actor, $data);
+        // Atomic transaction: grade history + grade update
+        $updatedGrade = DB::transaction(function () use ($grade, $actor, $data, $gradeId) {
+            // Record grade history before updating (Plan 003)
+            $this->recordGradeHistory($grade, 'updated', $actor, $data);
 
-        $updatedGrade = $this->gradeRepository->update($gradeId, $data);
+            return $this->gradeRepository->update($gradeId, $data);
+        });
 
-        // Mark gradebook stale after direct grade update
+        // Post-commit: stale marking, completion cascade, and cache flush
         app(\App\Services\GradebookRecalculationService::class)
             ->markCourseStale($grade->course_id, 'direct_grade_update', 'grade', $gradeId);
 

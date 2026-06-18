@@ -1043,4 +1043,31 @@ class GradebookControllerTest extends TestCase
         // A non-instructor should not be able to access other users' grades
         $response->assertStatus(403);
     }
+
+    #[Test]
+    public function locked_grade_item_prevents_grade_update(): void
+    {
+        $gradeItem = GradeItem::factory()->create([
+            'course_id' => $this->course->id,
+            'locked' => true,
+        ]);
+
+        $grade = Grade::factory()->create([
+            'user_id' => $this->user->id,
+            'course_id' => $this->course->id,
+            'grade_item_id' => $gradeItem->id,
+            'score' => 80,
+        ]);
+
+        $response = $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
+            ->putJson("/api/grades/{$grade->id}", ['score' => 95]);
+
+        $response->assertStatus(403);
+
+        // Grade should remain unchanged
+        $this->assertDatabaseHas('grades', [
+            'id' => $grade->id,
+            'score' => 80,
+        ]);
+    }
 }

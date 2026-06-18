@@ -199,60 +199,66 @@ class QuizService
 
         $startedAt = now();
 
-        try {
-            $attempt = $this->quizAttemptRepository->create([
-                'quiz_id' => $quizId,
-                'user_id' => $actor->id,
-                'answers' => [],
-                'status' => 'in_progress',
-                'attempt_number' => $attemptCount + 1,
-                'started_at' => $startedAt,
-                'expires_at' => $effectiveOverrides['time_limit'] ? $startedAt->copy()->addMinutes($effectiveOverrides['time_limit']) : null,
-            ]);
-        } catch (\Illuminate\Database\UniqueConstraintViolationException) {
-            throw new BusinessException(QuizMessage::ONGOING_ATTEMPT, 400);
-        }
+        // Atomic transaction: attempt creation + question + step inserts
+        $attempt = DB::transaction(function () use ($quizId, $actor, $attemptCount, $startedAt, $effectiveOverrides, $quiz) {
+            try {
+                $attempt = $this->quizAttemptRepository->create([
+                    'quiz_id' => $quizId,
+                    'user_id' => $actor->id,
+                    'answers' => [],
+                    'status' => 'in_progress',
+                    'attempt_number' => $attemptCount + 1,
+                    'started_at' => $startedAt,
+                    'expires_at' => $effectiveOverrides['time_limit'] ? $startedAt->copy()->addMinutes($effectiveOverrides['time_limit']) : null,
+                ]);
+            } catch (\Illuminate\Database\UniqueConstraintViolationException) {
+                throw new BusinessException(QuizMessage::ONGOING_ATTEMPT, 400);
+            }
 
-        // Create attempt-question rows for each slot (Plan 001: normalized detail)
-        // Using bulk INSERT to avoid N+1 (was 2N queries for N slots)
-        // questionSlots.question is already eager-loaded by findWithQuestionsAndCourse
-        $attemptQuestionsData = [];
-        $now = now();
+            // Create attempt-question rows for each slot (Plan 001: normalized detail)
+            // Using bulk INSERT to avoid N+1 (was 2N queries for N slots)
+            // questionSlots.question is already eager-loaded by findWithQuestionsAndCourse
+            $attemptQuestionsData = [];
+            $now = now();
 
-        foreach ($quiz->questionSlots as $slot) {
-            $attemptQuestionsData[] = [
-                'quiz_attempt_id' => $attempt->id,
-                'quiz_question_slot_id' => $slot->id,
-                'question_id' => $slot->question_id,
-                'slot' => $slot->slot,
-                'max_points' => $slot->max_points ?? (float) $slot->question?->points ?? 0,
-                'state' => 'not_answered',
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
-        }
+            foreach ($quiz->questionSlots as $slot) {
+                $attemptQuestionsData[] = [
+                    'quiz_attempt_id' => $attempt->id,
+                    'quiz_question_slot_id' => $slot->id,
+                    'question_id' => $slot->question_id,
+                    'slot' => $slot->slot,
+                    'max_points' => $slot->max_points ?? (float) $slot->question?->points ?? 0,
+                    'state' => 'not_answered',
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
 
-        DB::table('quiz_attempt_questions')->insert($attemptQuestionsData);
+            DB::table('quiz_attempt_questions')->insert($attemptQuestionsData);
 
-        // Reload inserted questions to get their IDs for step rows
-        $insertedQuestions = QuizAttemptQuestion::query()
-            ->where('quiz_attempt_id', $attempt->id)
-            ->get();
+            // Reload inserted questions to get their IDs for step rows
+            $insertedQuestions = QuizAttemptQuestion::query()
+                ->where('quiz_attempt_id', $attempt->id)
+                ->get();
 
-        $attemptStepsData = [];
-        foreach ($insertedQuestions as $question) {
-            $attemptStepsData[] = [
-                'quiz_attempt_question_id' => $question->id,
-                'sequence_number' => 0,
-                'state' => 'not_answered',
-                'user_id' => $actor->id,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
-        }
+            $attemptStepsData = [];
+            foreach ($insertedQuestions as $question) {
+                $attemptStepsData[] = [
+                    'quiz_attempt_question_id' => $question->id,
+                    'sequence_number' => 0,
+                    'state' => 'not_answered',
+                    'user_id' => $actor->id,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
 
-        DB::table('quiz_attempt_steps')->insert($attemptStepsData);
+            DB::table('quiz_attempt_steps')->insert($attemptStepsData);
 
+            return $attempt;
+        });
+
+        // Post-commit: cache flush
         $this->cacheStrategy->flushTags(["user:{$actor->id}:attempts"]);
 
         return $attempt;
@@ -320,8 +326,9 @@ class QuizService
                 'submitted_at' => now(),
             ]);
 
-            // Write per-question attempt detail (bulk INSERT to avoid N+1)
-            $answeredQuestionIds = array_keys($answers);
+            // Write per-question attempt detail — one bulk upsert instead of per-question updates
+            $answersByQuestionId = $answers; // Already keyed by question_id — O(1) lookup
+            $attemptQuestionRows = [];
             $stepsData = [];
             $answeredQuestionResults = [];
             $now = now();
@@ -329,14 +336,21 @@ class QuizService
             foreach ($attempt->attemptQuestions as $attemptQuestion) {
                 $questionId = $attemptQuestion->question_id;
 
-                if (in_array($questionId, $answeredQuestionIds)) {
-                    $userAnswer = $answers[$questionId];
+                if (array_key_exists($questionId, $answersByQuestionId)) {
+                    $userAnswer = $answersByQuestionId[$questionId];
                     $result = $this->quizScoringService->scoreQuestion($attemptQuestion->question, $userAnswer);
 
-                    $attemptQuestion->update([
+                    $attemptQuestionRows[] = [
+                        'id' => $attemptQuestion->id,
+                        'quiz_attempt_id' => $attemptQuestion->quiz_attempt_id,
+                        'quiz_question_slot_id' => $attemptQuestion->quiz_question_slot_id,
+                        'question_id' => $attemptQuestion->question_id,
+                        'slot' => $attemptQuestion->slot,
+                        'max_points' => $attemptQuestion->max_points,
                         'score' => $result['score'],
                         'state' => 'graded',
-                    ]);
+                        'updated_at' => $now,
+                    ];
 
                     $stepsData[] = [
                         'quiz_attempt_question_id' => $attemptQuestion->id,
@@ -355,6 +369,14 @@ class QuizService
                         'max' => $result['max'],
                     ];
                 }
+            }
+
+            if ($attemptQuestionRows !== []) {
+                QuizAttemptQuestion::query()->upsert(
+                    $attemptQuestionRows,
+                    ['id'],
+                    ['score', 'state', 'updated_at']
+                );
             }
 
             DB::table('quiz_attempt_steps')->insert($stepsData);

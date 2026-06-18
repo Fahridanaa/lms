@@ -119,13 +119,20 @@ class MaterialService
                         }
                     }
 
-                    return collect($materials)->filter(function ($material) use ($readableModules, $isInstructor, $actor, $completionStates, $grades, $groupMembershipIds, $groupingGroupMap) {
-                        if (! $material->learningModule) {
+                    // Build a map of canonical loaded modules (with availabilityRules)
+                    $modulesById = $allModules->keyBy('id');
+
+                    return collect($materials)->filter(function ($material) use ($readableModules, $isInstructor, $actor, $completionStates, $grades, $groupMembershipIds, $groupingGroupMap, $modulesById) {
+                        $repoModule = $material->learningModule;
+                        if (! $repoModule) {
                             return false;
                         }
 
+                        // Use the canonical loaded module (with availabilityRules eager-loaded)
+                        $module = $modulesById->get($repoModule->id, $repoModule);
+
                         // Check readability (pre-computed)
-                        if (! $readableModules->get($material->learningModule->id, false)) {
+                        if (! $readableModules->get($module->id, false)) {
                             return false;
                         }
 
@@ -136,7 +143,7 @@ class MaterialService
 
                         // Students: full availability check with batch data
                         $structured = $this->moduleAvailabilityService->batchStructuredAvailabilityFor(
-                            $actor, $material->learningModule, false, $completionStates, $grades, $groupMembershipIds, $groupingGroupMap,
+                            $actor, $module, false, $completionStates, $grades, $groupMembershipIds, $groupingGroupMap,
                         );
 
                         return $structured['available'];

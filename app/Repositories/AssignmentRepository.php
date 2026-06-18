@@ -24,7 +24,6 @@ class AssignmentRepository extends BaseRepository
             ->where('is_active', true)
             ->orderBy('due_date', 'asc')
             ->get()
-            ->filter(fn (Assignment $assignment): bool => $assignment->learningModule?->isAvailable())
             ->values();
     }
 

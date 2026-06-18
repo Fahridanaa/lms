@@ -11,6 +11,8 @@ use App\Models\AssignmentAllocatedMarker;
 use App\Models\AssignmentMark;
 use App\Models\AssignmentOverride;
 use App\Models\Course;
+use App\Models\CourseGroupMember;
+use App\Models\CourseGroupingGroup;
 use App\Models\FileRecord;
 use App\Models\Grade;
 use App\Models\GradeItem;
@@ -19,6 +21,7 @@ use App\Models\Submission;
 use App\Models\User;
 use App\Repositories\AssignmentRepository;
 use App\Repositories\SubmissionRepository;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\App;
 
 class AssignmentService
@@ -28,7 +31,8 @@ class AssignmentService
         protected AssignmentRepository $assignmentRepository,
         protected SubmissionRepository $submissionRepository,
         protected CourseAccessService $courseAccessService,
-        protected ModuleCompletionService $moduleCompletionService
+        protected ModuleCompletionService $moduleCompletionService,
+        protected ModuleAvailabilityService $moduleAvailabilityService
     ) {}
 
     /**
@@ -36,7 +40,10 @@ class AssignmentService
      *
      * The actor parameter makes the cache key actor-specific so that
      * group-restricted, hidden, or unavailable modules are filtered per user.
-     * Uses batch-loaded readability to avoid N+1 queries.
+     * Uses batch-loaded readability and availability to avoid N+1 queries.
+     *
+     * For students, applies full availability rules (date, completion, min-grade, group)
+     * so the list matches detail/submit availability. Instructors see all readable assignments.
      */
     public function getCourseAssignments(int $courseId, ?User $actor = null)
     {
@@ -74,12 +81,94 @@ class AssignmentService
                     // Batch-compute readability
                     $readableModules = $this->courseAccessService->readableModulesFor($actor, $course, $allModules);
 
-                    return collect($assignments)->filter(function ($assignment) use ($readableModules) {
-                        if (! $assignment->learningModule) {
+                    // Detect instructor status once
+                    $isInstructor = $this->courseAccessService->isInstructorForCourse($actor, $course);
+
+                    // For students, batch-load availability data
+                    $completionStates = collect();
+                    $grades = collect();
+                    $groupMembershipIds = collect();
+                    $groupingGroupMap = collect();
+
+                    if (! $isInstructor) {
+                        $completionStates = $this->moduleCompletionService->completionsForUser($actor, $allModules);
+
+                        $allRules = $allModules->flatMap(fn ($m) => $m->availabilityRules);
+
+                        $prerequisiteModuleIds = $allRules->where('rule_type', 'completion')
+                            ->pluck('required_module_id')->unique()->filter();
+                        if ($prerequisiteModuleIds->isNotEmpty()) {
+                            $prereqCompletions = \App\Models\ModuleCompletion::query()
+                                ->whereIn('learning_module_id', $prerequisiteModuleIds)
+                                ->where('user_id', $actor->id)
+                                ->get()
+                                ->keyBy('learning_module_id')
+                                ->map(fn ($c) => ['completed' => $c->state !== 'incomplete', 'state' => $c->state]);
+                            $completionStates = $completionStates->union($prereqCompletions);
+                        }
+
+                        $gradeItemIds = $allRules->where('rule_type', 'min_grade')
+                            ->pluck('grade_item_id')->unique()->filter();
+                        $grades = $gradeItemIds->isNotEmpty()
+                            ? \App\Models\Grade::query()
+                                ->whereIn('grade_item_id', $gradeItemIds)
+                                ->where('user_id', $actor->id)
+                                ->where('status', 'final')
+                                ->get()->keyBy('grade_item_id')
+                            : collect();
+
+                        $groupIds = $allRules->where('rule_type', 'group')
+                            ->pluck('course_group_id')->unique()->filter();
+                        $groupMembershipIds = $groupIds->isNotEmpty()
+                            ? CourseGroupMember::query()
+                                ->whereIn('course_group_id', $groupIds)
+                                ->where('user_id', $actor->id)
+                                ->pluck('course_group_id')
+                            : collect();
+
+                        $groupingIds = $allRules->where('rule_type', 'group')
+                            ->pluck('course_grouping_id')->unique()->filter();
+                        if ($groupingIds->isNotEmpty()) {
+                            $groupings = \App\Models\CourseGrouping::query()
+                                ->whereIn('id', $groupingIds)->where('active', true)->get()->keyBy('id');
+                            if ($groupings->isNotEmpty()) {
+                                $groupingGroupMap = CourseGroupingGroup::query()
+                                    ->whereIn('course_grouping_id', $groupings->keys())
+                                    ->get()
+                                    ->groupBy('course_grouping_id')
+                                    ->map(fn ($g) => $g->pluck('course_group_id'));
+                            }
+                        }
+                    }
+
+                    // Build a map of canonical loaded modules (with availabilityRules)
+                    $modulesById = $allModules->keyBy('id');
+
+                    return collect($assignments)->filter(function ($assignment) use ($readableModules, $isInstructor, $actor, $completionStates, $grades, $groupMembershipIds, $groupingGroupMap, $modulesById) {
+                        $repoModule = $assignment->learningModule;
+                        if (! $repoModule) {
                             return false;
                         }
 
-                        return $readableModules->get($assignment->learningModule->id, false);
+                        // Use the canonical loaded module (with availabilityRules eager-loaded)
+                        $module = $modulesById->get($repoModule->id, $repoModule);
+
+                        // Check readability (pre-computed)
+                        if (! $readableModules->get($module->id, false)) {
+                            return false;
+                        }
+
+                        // Instructors see all readable assignments
+                        if ($isInstructor) {
+                            return true;
+                        }
+
+                        // Students: full availability check with batch data
+                        $structured = $this->moduleAvailabilityService->batchStructuredAvailabilityFor(
+                            $actor, $module, false, $completionStates, $grades, $groupMembershipIds, $groupingGroupMap,
+                        );
+
+                        return $structured['available'];
                     })->values();
                 }
             );
