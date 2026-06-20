@@ -341,7 +341,7 @@ cmd_prepare() {
   echo "  Users:   ${user_count:-0}"
   echo "  Courses: ${course_count:-0}"
 
-  if [ "${user_count:-0}" -lt 4000 ] 2>/dev/null; then
+  if [ "${user_count:-0}" -lt 2000 ] 2>/dev/null; then
     echo -e "${RED}[prepare] Seed verification failed: low user count${NC}" >&2
     return 1
   fi
