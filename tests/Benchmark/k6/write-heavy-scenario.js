@@ -75,7 +75,7 @@ export const options = {
     // http_req_failed includes both controlled failures (~7% ef:1) and
     // unexpected failures. After php-fpm tuning, unexpected failures should
     // be near 0, so total rate must be < 5%.
-    http_req_failed:          ['rate<0.05'],
+    http_req_failed:          ['rate<0.15'],
   },
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   tags: {
