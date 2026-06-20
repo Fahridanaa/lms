@@ -178,9 +178,9 @@ cmd_preflight() {
     exit_code=1
   fi
 
-  echo -n "  BASE_URL reachable (${BASE_URL}): "
+  echo -n "  BASE_URL reachable (${BASE_URL}/up): "
   local http_code
-  http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${BASE_URL}/api/courses" 2>/dev/null || true)
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${BASE_URL}/up" 2>/dev/null || true)
   http_code="${http_code: -3}"
   if [ "${http_code}" = "000" ]; then
     echo -e "${RED}FAIL${NC} (unreachable)"
