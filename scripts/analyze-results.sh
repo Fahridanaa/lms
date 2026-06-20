@@ -102,12 +102,32 @@ for strategy in "${STRATEGIES[@]}"; do
       fi
 
       # Parse & rata-rata metrik dari semua iterasi menggunakan Python
-      METRICS=$(python3 - "${SUMMARY_FILES}" "${HIT_RATIO_FILES}" "${scenario}" <<'PYEOF'
-import sys, json, os
+METRICS=$(python3 - "${SUMMARY_FILES}" "${HIT_RATIO_FILES}" "${scenario}" <<'PYEOF'
+import sys, json, os, re
 
-summary_files    = [f for f in sys.argv[1].split(';') if f and os.path.exists(f)]
-hit_ratio_files  = [f for f in sys.argv[2].split(';') if f and os.path.exists(f)] if len(sys.argv) > 2 else []
+raw_summary_files = [f for f in sys.argv[1].split(';') if f and os.path.exists(f)]
+raw_hit_ratio_files = [f for f in sys.argv[2].split(';') if f and os.path.exists(f)] if len(sys.argv) > 2 else []
 scenario         = sys.argv[3] if len(sys.argv) > 3 else ""
+
+def latest_per_iteration(files):
+    grouped = {}
+    for f in files:
+        match = re.search(r'/iter(\d+)/', f.replace('\\', '/'))
+        key = int(match.group(1)) if match else f
+        current = grouped.get(key)
+        if current is None or os.path.basename(f) > os.path.basename(current):
+            grouped[key] = f
+
+    return [grouped[k] for k in sorted(grouped)]
+
+summary_files = latest_per_iteration(raw_summary_files)
+hit_ratio_files = [
+    f.replace('-summary.json', '-cache-hit-ratio.txt')
+    for f in summary_files
+    if os.path.exists(f.replace('-summary.json', '-cache-hit-ratio.txt'))
+]
+if not hit_ratio_files:
+    hit_ratio_files = latest_per_iteration(raw_hit_ratio_files)
 
 # Per-scenario mapping of read/write custom Trend metric names (from k6)
 SCENARIO_READ_METRICS = {
@@ -185,7 +205,14 @@ hit_ratios = []
 for hf in hit_ratio_files:
     try:
         with open(hf) as f:
-            hit_ratios.append(float(f.read().strip()))
+            content = f.read()
+        match = re.search(r'Cache Hit Ratio\s*:\s*([0-9]+(?:\.[0-9]+)?)%', content)
+        if match:
+            hit_ratios.append(float(match.group(1)))
+            continue
+        content = content.strip()
+        if re.fullmatch(r'[0-9]+(?:\.[0-9]+)?', content):
+            hit_ratios.append(float(content))
     except:
         pass
 avg_hr = round(sum(hit_ratios) / len(hit_ratios), 2) if hit_ratios else "N/A"

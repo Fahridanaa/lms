@@ -99,11 +99,24 @@ for strategy in "${STRATEGIES[@]}"; do
       fi
 
       # Parse & rata-rata metrik dari semua iterasi menggunakan Python
-      METRICS=$(python3 - "${RESOURCE_FILES}" <<'PYEOF'
-import sys, os
+METRICS=$(python3 - "${RESOURCE_FILES}" <<'PYEOF'
+import sys, os, re
 
 # Files are semicolon-delimited in sys.argv[1]
-files = [f for f in sys.argv[1].split(';') if f and os.path.exists(f)]
+raw_files = [f for f in sys.argv[1].split(';') if f and os.path.exists(f)]
+
+def latest_per_iteration(paths):
+    grouped = {}
+    for f in paths:
+        match = re.search(r'/iter(\d+)/', f.replace('\\', '/'))
+        key = int(match.group(1)) if match else f
+        current = grouped.get(key)
+        if current is None or os.path.basename(f) > os.path.basename(current):
+            grouped[key] = f
+
+    return [grouped[k] for k in sorted(grouped)]
+
+files = latest_per_iteration(raw_files)
 
 if not files:
     print("N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,0")

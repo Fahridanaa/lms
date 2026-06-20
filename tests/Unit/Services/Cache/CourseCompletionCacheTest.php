@@ -6,6 +6,7 @@ use App\Models\Course;
 use App\Models\CourseCompletionCriterion;
 use App\Models\CourseCompletionCriterionCompletion;
 use App\Models\User;
+use App\Services\Cache\NoCacheStrategy;
 use App\Services\CourseCompletionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -86,5 +87,18 @@ class CourseCompletionCacheTest extends TestCase
         $progress = $this->service->getUserProgress($this->course->id, $this->user->id);
 
         $this->assertSame(1, $progress['criteria_met']);
+    }
+
+    public function test_no_cache_strategy_does_not_write_progress_to_laravel_cache(): void
+    {
+        Cache::flush();
+
+        $service = new CourseCompletionService(new NoCacheStrategy);
+
+        $progress = $service->getUserProgress($this->course->id, $this->user->id);
+
+        $this->assertSame(1, $progress['criteria_total']);
+        $this->assertFalse(Cache::has("course_completion:progress:{$this->course->id}:{$this->user->id}"));
+        $this->assertFalse(Cache::has("lms:course_completion:progress:{$this->course->id}:{$this->user->id}"));
     }
 }

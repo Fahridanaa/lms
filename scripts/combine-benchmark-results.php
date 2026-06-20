@@ -38,7 +38,6 @@ if (! is_dir($outputDir) && ! mkdir($outputDir, 0775, true) && ! is_dir($outputD
 $strategies = ['no-cache', 'cache-aside', 'read-through', 'write-through'];
 $scenarios = ['read-heavy', 'write-heavy'];
 $vuLevels = [100, 250, 500, 750, 1000, 1500, 2000];
-$iterations = [1, 2, 3, 4, 5];
 $endpointDefinitions = [
     'assignment_detail_duration' => [
         'label' => 'Detail tugas',
@@ -308,20 +307,20 @@ function summarizeEndpointRows(array $rows): array
     return $summaries;
 }
 
-function cacheHitRatioForSummary(string $summaryPath, string $strategy): float|string
+function cacheHitRatioForSummary(string $summaryPath): float|string
 {
     $hitRatioPath = str_replace('-summary.json', '-cache-hit-ratio.txt', $summaryPath);
 
     if (is_file($hitRatioPath)) {
         $content = trim((string) file_get_contents($hitRatioPath));
 
+        if (preg_match('/Cache Hit Ratio\s*:\s*([0-9]+(?:\.[0-9]+)?)%/', $content, $matches) === 1) {
+            return round((float) $matches[1], 2);
+        }
+
         if (is_numeric($content)) {
             return round((float) $content, 2);
         }
-    }
-
-    if ($strategy === 'no-cache') {
-        return 0.0;
     }
 
     return '';
@@ -423,12 +422,11 @@ foreach ($inputDirs as $inputDir) {
 
     foreach ($strategies as $strategy) {
         foreach ($scenarios as $scenario) {
-            foreach ($iterations as $iteration) {
-                $iterationDir = "{$inputDir}/{$strategy}/{$scenario}/iter{$iteration}";
+            $iterationDirs = glob("{$inputDir}/{$strategy}/{$scenario}/iter*", GLOB_ONLYDIR) ?: [];
+            usort($iterationDirs, fn (string $left, string $right): int => (int) preg_replace('/\D+/', '', basename($left)) <=> (int) preg_replace('/\D+/', '', basename($right)));
 
-                if (! is_dir($iterationDir)) {
-                    continue;
-                }
+            foreach ($iterationDirs as $iterationDir) {
+                $iteration = (int) preg_replace('/\D+/', '', basename($iterationDir));
 
                 $redisMode = detectRedisMode($iterationDir, $fallbackMode);
 
@@ -465,7 +463,7 @@ foreach ($inputDirs as $inputDir) {
                         'throughput_rps' => is_numeric($throughput) ? round((float) $throughput, 2) : '',
                         'error_rate_pct' => round((float) $errorRate, 4),
                         'http_reqs_total' => $httpReqs,
-                        'cache_hit_ratio_pct' => cacheHitRatioForSummary($summaryPath, $strategy),
+                        'cache_hit_ratio_pct' => cacheHitRatioForSummary($summaryPath),
                         'validity_status' => validityStatus($errorRate),
                     ];
 

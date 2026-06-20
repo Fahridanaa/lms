@@ -13,14 +13,34 @@ $vu_levels = [100, 250, 500, 750, 1000, 1500, 2000];
 $output = [];
 $output[] = ['strategy', 'scenario', 'concurrent_users', 'iteration', 'avg_ms', 'p95_ms', 'p99_ms', 'throughput_rps', 'error_rate_pct', 'http_reqs_total', 'cache_hit_ratio_pct'];
 
+function cacheHitRatioForSummary(string $summaryPath): ?float
+{
+    $hitRatioPath = str_replace('-summary.json', '-cache-hit-ratio.txt', $summaryPath);
+
+    if (! is_file($hitRatioPath)) {
+        return null;
+    }
+
+    $content = trim((string) file_get_contents($hitRatioPath));
+
+    if (preg_match('/Cache Hit Ratio\s*:\s*([0-9]+(?:\.[0-9]+)?)%/', $content, $matches) === 1) {
+        return round((float) $matches[1], 2);
+    }
+
+    if (is_numeric($content)) {
+        return round((float) $content, 2);
+    }
+
+    return null;
+}
+
 foreach ($strategies as $strategy) {
     foreach ($scenarios as $scenario) {
-        for ($iter = 1; $iter <= 5; $iter++) {
-            $dir = "{$base}/{$strategy}/{$scenario}/iter{$iter}";
-            if (!is_dir($dir)) {
-                echo "WARNING: Missing {$dir}\n";
-                continue;
-            }
+        $dirs = glob("{$base}/{$strategy}/{$scenario}/iter*", GLOB_ONLYDIR) ?: [];
+        usort($dirs, fn (string $left, string $right): int => (int) preg_replace('/\D+/', '', basename($left)) <=> (int) preg_replace('/\D+/', '', basename($right)));
+
+        foreach ($dirs as $dir) {
+            $iter = (int) preg_replace('/\D+/', '', basename($dir));
 
             foreach ($vu_levels as $vu) {
                 $files = glob("{$dir}/{$vu}vu-*-summary.json");
@@ -45,43 +65,14 @@ foreach ($strategies as $strategy) {
                 $p95_ms = $req_duration['p(95)'] ?? null;
                 $p99_ms = $req_duration['p(99)'] ?? null;
 
-                // Extract throughput (http_reqs / duration)
                 $http_reqs = $json['metrics']['http_reqs']['values']['count'] ?? 0;
-                // Calculate duration from stages
-                $duration_sec = (60 + 300 + 30); // ramp-up + steady + ramp-down = 390s
-                $throughput_rps = $duration_sec > 0 ? round($http_reqs / $duration_sec, 2) : 0;
+                $throughput_rps = round((float) ($json['metrics']['http_reqs']['values']['rate'] ?? 0), 2);
 
                 // Extract error rate
                 $http_req_failed = $json['metrics']['http_req_failed']['values']['rate'] ?? 0;
                 $error_rate_pct = round($http_req_failed * 100, 4);
 
-                // Cache hit ratio — from the dedicated cache-hit-ratio file
-                $cache_dir = dirname($file);
-                $cache_hit_file = null;
-                $hit_files = glob(str_replace('-summary.json', '-cache-hit-ratio.txt', $file));
-                $cache_hit_pct = null;
-                if (!empty($hit_files)) {
-                    $content = trim(file_get_contents($hit_files[0]));
-                    if (is_numeric($content)) {
-                        $cache_hit_pct = round((float)$content, 2);
-                    }
-                }
-
-                // Fallback: look for redis.txt cache hit ratio section
-                if ($cache_hit_pct === null) {
-                    $redis_files = glob(str_replace('-summary.json', '-redis.txt', $file));
-                    if (!empty($redis_files)) {
-                        $redis_content = file_get_contents($redis_files[0]);
-                        if (preg_match('/Cache Hit Ratio\s*:\s*([\d.]+)%/', $redis_content, $m)) {
-                            $cache_hit_pct = round((float)$m[1], 2);
-                        }
-                    }
-                }
-
-                // Handle no-cache: no cache operations
-                if ($cache_hit_pct === null && $strategy === 'no-cache') {
-                    $cache_hit_pct = 0;
-                }
+                $cache_hit_pct = cacheHitRatioForSummary($file);
 
                 if ($avg_ms !== null) {
                     $output[] = [

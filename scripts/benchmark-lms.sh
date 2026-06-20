@@ -60,8 +60,7 @@ usage() {
   echo ""
   echo "Environment variables:"
   echo "  CLUSTER_MODE=true        Enable Redis Cluster mode (default: false)"
-  echo "  SKIP_PAGE_CACHE=true     Skip OS page cache clear (default: skip)"
-  echo "  CLEAR_PAGE_CACHE=true    Require OS page cache clear (fails if sudo unavailable)"
+  echo "  SKIP_PAGE_CACHE=true     Skip OS page cache clear (default: clear and fail on error)"
   echo "  SKIP_MYSQL_RESTART=true  Skip MySQL restart (default: restart)"
 }
 
@@ -169,7 +168,7 @@ cmd_preflight() {
   if [ "${SKIP_PAGE_CACHE:-false}" = "true" ]; then
     echo -e "${YELLOW}SKIPPED (explicit)${NC}"
     echo "PAGE_CACHE_RESULT=skipped-explicit"
-  elif [ "${CLEAR_PAGE_CACHE:-false}" = "true" ]; then
+  else
     if sudo -n sync && echo 3 | sudo -n tee /proc/sys/vm/drop_caches >/dev/null 2>&1; then
       echo -e "${GREEN}CLEARED${NC}"
       echo "PAGE_CACHE_RESULT=pass"
@@ -178,9 +177,6 @@ cmd_preflight() {
       echo "PAGE_CACHE_RESULT=fail"
       exit_code=1
     fi
-  else
-    echo -e "${YELLOW}SKIPPED (default; set CLEAR_PAGE_CACHE=true to enable)${NC}"
-    echo "PAGE_CACHE_RESULT=skipped-default"
   fi
 
   # 10. Result/artifact directory writable
@@ -311,20 +307,18 @@ cmd_prepare() {
   fi
 
   # 7. Clear OS page cache
-  # Policy: SKIP_PAGE_CACHE=true ⇒ skip; CLEAR_PAGE_CACHE=true ⇒ require clear; default ⇒ skip
+  # Policy: default requires clear; SKIP_PAGE_CACHE=true is the explicit escape hatch.
   # Uses narrow sudo commands compatible with passwordless sudo: sync + tee
   if [ "${SKIP_PAGE_CACHE:-false}" = "true" ]; then
     echo -e "${YELLOW}[prepare] OS page cache: skipped (SKIP_PAGE_CACHE=true)${NC}"
-  elif [ "${CLEAR_PAGE_CACHE:-false}" = "true" ]; then
-    echo "[prepare] Clearing OS page cache (CLEAR_PAGE_CACHE=true)..."
+  else
+    echo "[prepare] Clearing OS page cache..."
     if sudo -n sync && echo 3 | sudo -n tee /proc/sys/vm/drop_caches >/dev/null 2>&1; then
       echo -e "${GREEN}[prepare] OS page cache cleared${NC}"
     else
       echo -e "${RED}[prepare] Failed to clear OS page cache — check sudoers for /usr/bin/sync and /usr/bin/tee${NC}"
       return 1
     fi
-  else
-    echo -e "${YELLOW}[prepare] OS page cache: skipped (default; set CLEAR_PAGE_CACHE=true to enable)${NC}"
   fi
 
   # 8. Restart app and nginx

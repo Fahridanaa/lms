@@ -180,11 +180,18 @@ cmd_preflight() {
 
   echo -n "  BASE_URL reachable (${BASE_URL}): "
   local http_code
-  http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${BASE_URL}/api/courses" 2>/dev/null || echo "000")
-  if [ "${http_code}" != "000" ]; then
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${BASE_URL}/api/courses" 2>/dev/null || true)
+  http_code="${http_code: -3}"
+  if [ "${http_code}" = "000" ]; then
+    echo -e "${RED}FAIL${NC} (unreachable)"
+    exit_code=1
+  elif [[ "${http_code}" =~ ^5[0-9][0-9]$ ]]; then
+    echo -e "${RED}FAIL${NC} (HTTP ${http_code})"
+    exit_code=1
+  elif [[ "${http_code}" =~ ^[0-9][0-9][0-9]$ ]]; then
     echo -e "${GREEN}OK${NC} (HTTP ${http_code})"
   else
-    echo -e "${RED}FAIL${NC} (unreachable)"
+    echo -e "${RED}FAIL${NC} (invalid HTTP code: ${http_code:-empty})"
     exit_code=1
   fi
 
@@ -697,6 +704,7 @@ run_k6_for_level_remote() {
 
   {
     echo "=== Cache Hit Ratio ==="
+    echo "Strategy                : ${STRATEGY}"
     echo "Hits during benchmark   : ${hits_during}"
     echo "Misses during benchmark : ${misses_during}"
     echo "Total cache ops         : ${total_ops}"

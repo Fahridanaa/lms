@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Contracts\CacheStrategyInterface;
 use App\Models\Course;
 use App\Models\CourseCompletion;
 use App\Models\CourseCompletionCriterion;
@@ -10,10 +11,16 @@ use App\Models\Grade;
 use App\Models\LearningModule;
 use App\Models\User;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
 
 class CourseCompletionService
 {
+    private CacheStrategyInterface $cacheStrategy;
+
+    public function __construct(?CacheStrategyInterface $cacheStrategy = null)
+    {
+        $this->cacheStrategy = $cacheStrategy ?? app(CacheStrategyInterface::class);
+    }
+
     /**
      * Get all criteria for a course.
      *
@@ -35,7 +42,7 @@ class CourseCompletionService
     {
         $cacheKey = "course_completion:progress:{$courseId}:{$userId}";
 
-        return Cache::remember($cacheKey, 3600, function () use ($courseId, $userId) {
+        return $this->cacheStrategy->remember($cacheKey, function () use ($courseId, $userId) {
             $criteria = $this->getCriteria($courseId);
             $criteriaTotal = $criteria->count();
 
@@ -363,7 +370,7 @@ class CourseCompletionService
      */
     private function invalidateProgressCache(int $courseId, int $userId): void
     {
-        Cache::forget("course_completion:progress:{$courseId}:{$userId}");
-        Cache::forget("course_completion:state:{$courseId}:{$userId}");
+        $this->cacheStrategy->forget("course_completion:progress:{$courseId}:{$userId}");
+        $this->cacheStrategy->forget("course_completion:state:{$courseId}:{$userId}");
     }
 }

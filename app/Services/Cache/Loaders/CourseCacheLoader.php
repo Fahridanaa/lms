@@ -31,6 +31,20 @@ class CourseCacheLoader extends BaseCacheLoader
         protected GradeRepository $gradeRepository
     ) {}
 
+    public function supports(string $key): bool
+    {
+        if (! parent::supports($key)) {
+            return false;
+        }
+
+        $subkey = $this->extractSubkey($key);
+
+        return $subkey === null
+            || in_array($subkey, ['materials', 'assignments', 'gradebook', 'statistics'], true)
+            || str_starts_with((string) $subkey, 'top-performers:')
+            || (bool) preg_match('/^user:\d+:grades$/', (string) $subkey);
+    }
+
     public function load(string $key): mixed
     {
         $ids = $this->extractIds($key);

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Contracts\CacheStrategyInterface;
 use App\Models\Capability;
 use App\Models\Context;
 use App\Models\Role;
@@ -9,11 +10,12 @@ use App\Models\RoleAssignment;
 use App\Models\RoleCapability;
 use App\Models\User;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
 
 class AuthorizationService
 {
     private ContextService $contextService;
+
+    private CacheStrategyInterface $cacheStrategy;
 
     /**
      * @var array<string, bool> Request-scoped cache for role/capability checks
@@ -25,9 +27,10 @@ class AuthorizationService
      */
     private array $ancestorCache = [];
 
-    public function __construct(ContextService $contextService)
+    public function __construct(ContextService $contextService, ?CacheStrategyInterface $cacheStrategy = null)
     {
         $this->contextService = $contextService;
+        $this->cacheStrategy = $cacheStrategy ?? app(CacheStrategyInterface::class);
     }
 
     /**
@@ -62,7 +65,7 @@ class AuthorizationService
 
         $cacheKey = "auth:role_check:{$shortname}:{$context->id}:{$user->id}";
 
-        $result = Cache::remember($cacheKey, 3600, function () use ($user, $shortname, $context) {
+        $result = $this->cacheStrategy->remember($cacheKey, function () use ($user, $shortname, $context) {
             // Check exact context
             if ($this->userHasRoleAtContext($user, $shortname, $context)) {
                 return true;
@@ -97,7 +100,7 @@ class AuthorizationService
 
         $cacheKey = "auth:role_check_exact:{$shortname}:{$context->id}:{$user->id}";
 
-        $result = Cache::remember($cacheKey, 3600, function () use ($user, $shortname, $context) {
+        $result = $this->cacheStrategy->remember($cacheKey, function () use ($user, $shortname, $context) {
             /** @var Role|null $role */
             $role = Role::query()->where('shortname', $shortname)->first();
 
@@ -187,7 +190,7 @@ class AuthorizationService
 
         $cacheKey = "auth:cap_check:{$capability}:{$context->id}:{$user->id}";
 
-        $result = Cache::remember($cacheKey, 3600, function () use ($user, $capability, $context) {
+        $result = $this->cacheStrategy->remember($cacheKey, function () use ($user, $capability, $context) {
             // Check exact context
             if ($this->userHasCapabilityAtContext($user, $capability, $context)) {
                 return true;
@@ -222,7 +225,7 @@ class AuthorizationService
 
         $cacheKey = "auth:cap_check_exact:{$capability}:{$context->id}:{$user->id}";
 
-        $result = Cache::remember($cacheKey, 3600, function () use ($user, $capability, $context) {
+        $result = $this->cacheStrategy->remember($cacheKey, function () use ($user, $capability, $context) {
             // Find the capability
             $cap = Capability::query()->where('shortname', $capability)->first();
 
@@ -306,12 +309,12 @@ class AuthorizationService
         /** @var Context $ctx */
         foreach ($contexts as $ctx) {
             foreach ($roleShortnames as $shortname) {
-                Cache::forget("auth:role_check:{$shortname}:{$ctx->id}:{$user->id}");
-                Cache::forget("auth:role_check_exact:{$shortname}:{$ctx->id}:{$user->id}");
+                $this->cacheStrategy->forget("auth:role_check:{$shortname}:{$ctx->id}:{$user->id}");
+                $this->cacheStrategy->forget("auth:role_check_exact:{$shortname}:{$ctx->id}:{$user->id}");
             }
             foreach ($capShortnames as $shortname) {
-                Cache::forget("auth:cap_check:{$shortname}:{$ctx->id}:{$user->id}");
-                Cache::forget("auth:cap_check_exact:{$shortname}:{$ctx->id}:{$user->id}");
+                $this->cacheStrategy->forget("auth:cap_check:{$shortname}:{$ctx->id}:{$user->id}");
+                $this->cacheStrategy->forget("auth:cap_check_exact:{$shortname}:{$ctx->id}:{$user->id}");
             }
         }
 

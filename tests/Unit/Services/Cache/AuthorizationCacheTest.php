@@ -6,6 +6,7 @@ use App\Models\Context;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\AuthorizationService;
+use App\Services\Cache\NoCacheStrategy;
 use App\Services\ContextService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -162,5 +163,21 @@ class AuthorizationCacheTest extends TestCase
         );
 
         DB::disableQueryLog();
+    }
+
+    public function test_no_cache_strategy_does_not_write_role_check_to_laravel_cache(): void
+    {
+        Cache::flush();
+
+        $studentRole = Role::where('shortname', 'student')->first();
+        $service = new AuthorizationService($this->contextService, new NoCacheStrategy);
+
+        $service->assignRole($this->student, $studentRole, $this->courseContext);
+
+        $this->assertTrue(
+            $service->userHasRoleAtContext($this->student, 'student', $this->courseContext)
+        );
+        $this->assertFalse(Cache::has("auth:role_check_exact:student:{$this->courseContext->id}:{$this->student->id}"));
+        $this->assertFalse(Cache::has("lms:auth:role_check_exact:student:{$this->courseContext->id}:{$this->student->id}"));
     }
 }

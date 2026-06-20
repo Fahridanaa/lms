@@ -49,6 +49,11 @@ class CourseCacheLoaderTest extends TestCase
         $this->assertFalse($this->loader->supports('attempt:1'));
     }
 
+    public function test_does_not_claim_course_structure_keys(): void
+    {
+        $this->assertFalse($this->loader->supports('course:1:structure:2'));
+    }
+
     public function test_load_materials_delegates_to_repository(): void
     {
         $this->mockMaterialRepo->shouldReceive('getByCourse')
