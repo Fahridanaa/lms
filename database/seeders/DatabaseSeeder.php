@@ -44,6 +44,7 @@ use Illuminate\Support\Facades\DB;
 class DatabaseSeeder extends Seeder
 {
     private const BATCH_SIZE = 500;
+    private const QUESTIONS_PER_QUIZ = 20;
 
     private array $roleIdMap = [];
 
@@ -220,13 +221,13 @@ class DatabaseSeeder extends Seeder
         $this->command->info('  -> '.count($sectionIds).' sections, activities created');
 
         // ─── 6. Enrollments ────────────────────────────────────
-        $this->command->info('Creating enrollments (~100 per course)...');
+        $this->command->info('Creating enrollments (100-119 students per course)...');
         $enrollmentCount = 0;
         $enrolledUserIdsByCourse = [];
 
         mt_srand(42);
         foreach ($courseIds as $ci => $courseId) {
-            $count = mt_rand(80, 120);
+            $count = mt_rand(100, 119);
             $pool = $studentIds;
             shuffle($pool);
             $selected = array_slice($pool, 0, min($count, count($pool)));
@@ -1040,8 +1041,6 @@ class DatabaseSeeder extends Seeder
         ];
         $sectionPool = ['Fundamentals', 'Core Topics', 'Advanced Topics', 'Hands-On Lab', 'Final Project',
                         'Theory', 'Practice', 'Case Studies', 'Review', 'Assessment'];
-        $activityTypes = ['material', 'quiz', 'assignment'];
-
         $defs = [];
         mt_srand(999);
         for ($i = 0; $i < $count; $i++) {
@@ -1050,39 +1049,33 @@ class DatabaseSeeder extends Seeder
             $isActive = $i % 5 !== 0; // every 5th course is inactive
             $catId = $categoryIds[array_rand($categoryIds)];
 
-            $numSections = mt_rand(3, 6);
             $sectionNames = [];
-            for ($s = 0; $s < $numSections; $s++) {
+            for ($s = 0; $s < count($sectionPool); $s++) {
                 $sectionNames[] = ($s < count($sectionPool)) ? $sectionPool[$s] : 'Module '.($s + 1);
             }
 
             $activities = [];
-            $hasType = ['material' => false, 'quiz' => false, 'assignment' => false];
-            foreach ($sectionNames as $si => $sName) {
-                $numActs = mt_rand(1, 3);
-                $acts = [];
-                for ($ai = 0; $ai < $numActs; $ai++) {
-                    $atype = $activityTypes[array_rand($activityTypes)];
-                    $hasType[$atype] = true;
-                    $acts[] = [
-                        'type' => $atype,
-                        'title' => $topic.' - '.$sName.' '.($ai + 1),
-                        'visible' => true,
-                        'completion_enabled' => $atype !== 'material' || $ai === 0,
-                    ];
-                }
-                $activities[$sName] = $acts;
+            foreach ($sectionNames as $sName) {
+                $activities[$sName] = [];
             }
-            // Ensure at least one of each type per course (fixture validation requires it)
-            $firstSection = array_key_first($activities);
-            foreach (['material', 'quiz', 'assignment'] as $requiredType) {
-                if (!$hasType[$requiredType] && $firstSection !== null) {
-                    $activities[$firstSection][] = [
-                        'type' => $requiredType,
-                        'title' => $topic.' - '.$requiredType,
+
+            $activityPlan = [
+                'material' => $i < 17 ? 12 : 11,
+                'quiz' => $i < 39 ? 6 : 5,
+                'assignment' => $i < 34 ? 6 : 5,
+            ];
+            $activityIndex = 0;
+
+            foreach ($activityPlan as $type => $typeCount) {
+                for ($n = 1; $n <= $typeCount; $n++) {
+                    $sectionName = $sectionNames[$activityIndex % count($sectionNames)];
+                    $activities[$sectionName][] = [
+                        'type' => $type,
+                        'title' => $topic.' - '.ucfirst($type).' '.$n,
                         'visible' => true,
-                        'completion_enabled' => $requiredType === 'assignment',
+                        'completion_enabled' => $type !== 'material' || $n <= 3,
                     ];
+                    $activityIndex++;
                 }
             }
 
@@ -1145,8 +1138,8 @@ class DatabaseSeeder extends Seeder
                 'updated_at' => now(),
             ]);
 
-            // Questions (5 per quiz)
-            for ($qi = 1; $qi <= 5; $qi++) {
+            // Questions (20 per quiz)
+            for ($qi = 1; $qi <= self::QUESTIONS_PER_QUIZ; $qi++) {
                 $questionId = DB::table('questions')->insertGetId([
                     'quiz_id' => $qid,
                     'question_text' => 'Question '.$qi.': Sample question for '.$title.'?',
