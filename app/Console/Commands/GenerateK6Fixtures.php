@@ -1292,7 +1292,7 @@ export function headersFor(actorId) {
       "Content-Type": "application/json",
       "X-Benchmark-Actor-Id": `\${actorId}`,
     },
-    timeout: "30s",
+    timeout: "120s",
   };
 }
 
