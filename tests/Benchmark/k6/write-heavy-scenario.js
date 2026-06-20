@@ -72,9 +72,8 @@ export const options = {
     // http_req_failed{ef:1} tracks CONTROLLED failure requests (expect 403/404).
     // These always fail by design, so allow 100% failure rate.
     'http_req_failed{ef:1}': ['rate<1.01'],
-    // http_req_failed includes both controlled failures (~7% ef:1) and
-    // unexpected failures. After php-fpm tuning, unexpected failures should
-    // be near 0, so total rate must be < 5%.
+    // http_req_failed excludes controlled failures (tagged expected_response: false).
+    // Only unexpected failures count here — write collisions, 5xx, timeouts.
     http_req_failed:          ['rate<0.15'],
   },
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
@@ -182,7 +181,7 @@ export default function () {
 
     if (failureType < 0.20 && GROUP_RESTRICTED_MODULE_TARGETS.length > 0) {
       const target = pick(GROUP_RESTRICTED_MODULE_TARGETS);
-      const h = { ...headersFor(target.userId), tags: { ef: '1' } };
+      const h = { ...headersFor(target.userId), tags: { ef: '1', expected_response: false } };
       const res = http.get(`${BASE_URL}${activityPath(target)}`, h);
       const ok = check(res, {
         '[wh-cf-group] status 404': (r) => r.status === target.expectedStatus,
@@ -191,7 +190,7 @@ export default function () {
 
     } else if (failureType < 0.50 && SUSPENDED_ACCESS_TARGETS.length > 0) {
       const target = pick(SUSPENDED_ACCESS_TARGETS);
-      const h = { ...headersFor(target.userId), tags: { ef: '1' } };
+      const h = { ...headersFor(target.userId), tags: { ef: '1', expected_response: false } };
       const res = http.get(`${BASE_URL}/api/courses/${target.courseId}/structure`, h);
       const ok = check(res, {
         '[wh-cf-suspended] status 403': (r) => r.status === target.expectedStatus,
@@ -200,7 +199,7 @@ export default function () {
 
     } else if (failureType < 0.75 && NON_ENROLLED_ACCESS_TARGETS.length > 0) {
       const target = pick(NON_ENROLLED_ACCESS_TARGETS);
-      const h = { ...headersFor(target.userId), tags: { ef: '1' } };
+      const h = { ...headersFor(target.userId), tags: { ef: '1', expected_response: false } };
       const res = http.get(`${BASE_URL}/api/courses/${target.courseId}/structure`, h);
       const ok = check(res, {
         '[wh-cf-non-enrolled] status 403': (r) => r.status === target.expectedStatus,
@@ -210,7 +209,7 @@ export default function () {
     } else if (LOCKED_GRADE_TARGETS.length > 0) {
       // Attempt grade update on a locked grade item (expect 403)
       const target = pick(LOCKED_GRADE_TARGETS);
-      const h = { ...headersFor(target.instructorId), tags: { ef: '1' } };
+      const h = { ...headersFor(target.instructorId), tags: { ef: '1', expected_response: false } };
       const res = http.put(
         `${BASE_URL}/api/grades/${target.gradeId}`,
         JSON.stringify({ score: 85 }),
@@ -348,7 +347,7 @@ export default function () {
   // ── 5% — Controlled Failure: unauthorized grade update (expect 403) ──
   } else {
     const target = pick(UNAUTHORIZED_GRADE_UPDATE_TARGETS);
-    const h = { ...headersFor(target.instructorId), tags: { ef: '1' } };
+    const h = { ...headersFor(target.instructorId), tags: { ef: '1', expected_response: false } };
     const res = http.put(
       `${BASE_URL}/api/grades/${target.gradeId}`,
       JSON.stringify({

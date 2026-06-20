@@ -65,13 +65,10 @@ export const options = {
     { duration: '30s', target: 0 },
   ],
   thresholds: {
-    // http_req_failed{ef:1} tracks CONTROLLED failure requests (expect 403/404).
-    // These always fail by design, so allow 100% failure rate.
-    'http_req_failed{ef:1}': ['rate<1.01'],
-    // http_req_failed includes both controlled failures (~7% ef:1) and
-    // unexpected failures. After php-fpm tuning, unexpected failures should
-    // be near 0, so total rate must be < 5%.
-    http_req_failed:          ['rate<0.15'],
+    // http_req_failed excludes controlled failures (tagged expected_response: false).
+    // Only unexpected failures count here — 5xx, timeouts, connection errors.
+    // Controlled 403/404 don't count toward this threshold.
+    http_req_failed:          ['rate<0.05'],
   },
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   tags: {
@@ -195,7 +192,7 @@ export default function () {
     if (failureType < 0.20 && GROUP_RESTRICTED_MODULE_TARGETS.length > 0) {
       // Group-restricted module access (expect 404)
       const target = pick(GROUP_RESTRICTED_MODULE_TARGETS);
-      const h = { ...headersFor(target.userId), tags: { ef: '1' } };
+      const h = { ...headersFor(target.userId), tags: { ef: '1', expected_response: false } };
       const res = http.get(`${BASE_URL}${activityPath(target)}`, h);
       const ok = check(res, {
         '[cf-group-restricted] status 404': (r) => r.status === target.expectedStatus,
@@ -205,7 +202,7 @@ export default function () {
     } else if (failureType < 0.40 && PREREQUISITE_LOCKED_TARGETS.length > 0) {
       // Prerequisite-locked module (expect 404)
       const target = pick(PREREQUISITE_LOCKED_TARGETS);
-      const h = { ...headersFor(target.userId), tags: { ef: '1' } };
+      const h = { ...headersFor(target.userId), tags: { ef: '1', expected_response: false } };
       const res = http.get(`${BASE_URL}${activityPath(target)}`, h);
       const ok = check(res, {
         '[cf-prereq-locked] status 404': (r) => r.status === target.expectedStatus,
@@ -215,7 +212,7 @@ export default function () {
     } else if (failureType < 0.60 && MIN_GRADE_LOCKED_TARGETS.length > 0) {
       // Min-grade locked module (expect 404)
       const target = pick(MIN_GRADE_LOCKED_TARGETS);
-      const h = { ...headersFor(target.userId), tags: { ef: '1' } };
+      const h = { ...headersFor(target.userId), tags: { ef: '1', expected_response: false } };
       const res = http.get(`${BASE_URL}${activityPath(target)}`, h);
       const ok = check(res, {
         '[cf-min-grade-locked] status 404': (r) => r.status === target.expectedStatus,
@@ -225,7 +222,7 @@ export default function () {
     } else if (failureType < 0.80 && GROUPING_RESTRICTED_MODULE_TARGETS.length > 0) {
       // Grouping-restricted module access (expect 404)
       const target = pick(GROUPING_RESTRICTED_MODULE_TARGETS);
-      const h = { ...headersFor(target.userId), tags: { ef: '1' } };
+      const h = { ...headersFor(target.userId), tags: { ef: '1', expected_response: false } };
       const res = http.get(`${BASE_URL}${activityPath(target)}`, h);
       const ok = check(res, {
         '[cf-grouping-restricted] status 404': (r) => r.status === (target.expectedStatus || 404),
@@ -235,7 +232,7 @@ export default function () {
     } else if (SUSPENDED_ACCESS_TARGETS.length > 0) {
       // Suspended student tries to read (expect 403)
       const target = pick(SUSPENDED_ACCESS_TARGETS);
-      const h = { ...headersFor(target.userId), tags: { ef: '1' } };
+      const h = { ...headersFor(target.userId), tags: { ef: '1', expected_response: false } };
       const res = http.get(`${BASE_URL}/api/courses/${target.courseId}/structure`, h);
       const ok = check(res, {
         '[cf-suspended] status 403': (r) => r.status === target.expectedStatus,
@@ -245,7 +242,7 @@ export default function () {
     } else if (NON_ENROLLED_ACCESS_TARGETS.length > 0) {
       // Non-enrolled student tries to read (expect 403)
       const target = pick(NON_ENROLLED_ACCESS_TARGETS);
-      const h = { ...headersFor(target.userId), tags: { ef: '1' } };
+      const h = { ...headersFor(target.userId), tags: { ef: '1', expected_response: false } };
       const res = http.get(`${BASE_URL}/api/courses/${target.courseId}/structure`, h);
       const ok = check(res, {
         '[cf-non-enrolled] status 403': (r) => r.status === target.expectedStatus,
