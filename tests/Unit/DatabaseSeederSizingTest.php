@@ -14,18 +14,34 @@ class DatabaseSeederSizingTest extends TestCase
     {
         $seeder = new DatabaseSeeder;
         $reflection = new ReflectionClass($seeder);
-        $instructorIds = range(1, 100);
+        $instructorIds = range(1, 40);
         $categoryIds = range(1, 10);
 
         $detailedCourseDefs = $reflection->getMethod('detailedCourseDefs')->invoke($seeder, $instructorIds, $categoryIds);
         $generatedCourseDefs = $reflection->getMethod('generatedCourseDefs')->invoke($seeder, $instructorIds, $categoryIds, 40);
-        $counts = $this->countActivities([...$detailedCourseDefs, ...$generatedCourseDefs]);
+        $courseDefs = $reflection->getMethod('withBenchmarkActivityTargets')->invoke($seeder, [...$detailedCourseDefs, ...$generatedCourseDefs]);
+        $counts = $this->countActivities($courseDefs);
 
-        $this->assertSame(50, count($detailedCourseDefs) + count($generatedCourseDefs));
-        $this->assertSame(500, $counts['material']);
-        $this->assertSame(250, $counts['quiz']);
-        $this->assertSame(250, $counts['assignment']);
-        $this->assertSame(20, $reflection->getReflectionConstant('QUESTIONS_PER_QUIZ')->getValue());
+        $this->assertSame(40, $reflection->getReflectionConstant('INSTRUCTOR_COUNT')->getValue());
+        $this->assertSame(1960, $reflection->getReflectionConstant('STUDENT_COUNT')->getValue());
+        $this->assertSame(30, $reflection->getReflectionConstant('MIN_STUDENTS_PER_COURSE')->getValue());
+        $this->assertSame(60, $reflection->getReflectionConstant('MAX_STUDENTS_PER_COURSE')->getValue());
+        $this->assertSame(3, $reflection->getReflectionConstant('QUIZ_ATTEMPTS_PER_STUDENT')->getValue());
+        $this->assertSame(25, $reflection->getReflectionConstant('MIN_QUESTIONS_PER_QUIZ')->getValue());
+        $this->assertSame(50, $reflection->getReflectionConstant('MAX_QUESTIONS_PER_QUIZ')->getValue());
+
+        $this->assertSame(50, count($courseDefs));
+        $this->assertSame(600, $counts['material']);
+        $this->assertSame(200, $counts['quiz']);
+        $this->assertSame(600, $counts['assignment']);
+
+        foreach ($courseDefs as $courseDef) {
+            $courseCounts = $this->countActivities([$courseDef]);
+
+            $this->assertSame(12, $courseCounts['material']);
+            $this->assertSame(4, $courseCounts['quiz']);
+            $this->assertSame(12, $courseCounts['assignment']);
+        }
     }
 
     /**

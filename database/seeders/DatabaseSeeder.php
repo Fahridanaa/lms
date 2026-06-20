@@ -44,7 +44,16 @@ use Illuminate\Support\Facades\DB;
 class DatabaseSeeder extends Seeder
 {
     private const BATCH_SIZE = 500;
-    private const QUESTIONS_PER_QUIZ = 20;
+    private const INSTRUCTOR_COUNT = 40;
+    private const STUDENT_COUNT = 1960;
+    private const MIN_STUDENTS_PER_COURSE = 30;
+    private const MAX_STUDENTS_PER_COURSE = 60;
+    private const MATERIALS_PER_COURSE = 12;
+    private const QUIZZES_PER_COURSE = 4;
+    private const ASSIGNMENTS_PER_COURSE = 12;
+    private const MIN_QUESTIONS_PER_QUIZ = 25;
+    private const MAX_QUESTIONS_PER_QUIZ = 50;
+    private const QUIZ_ATTEMPTS_PER_STUDENT = 3;
 
     private array $roleIdMap = [];
 
@@ -61,9 +70,9 @@ class DatabaseSeeder extends Seeder
         $this->seedRoleAssignments($systemContextId);
 
         // ─── 2. Users ─────────────────────────────────────────
-        $this->command->info('Creating 5,000 users (100 instructors + 4,900 students)...');
-        $instructorIds = $this->bulkInsertUsers('instructor', 100);
-        $studentIds = $this->bulkInsertUsers('student', 4900);
+        $this->command->info('Creating 2,000 users (40 instructors + 1,960 students)...');
+        $instructorIds = $this->bulkInsertUsers('instructor', self::INSTRUCTOR_COUNT);
+        $studentIds = $this->bulkInsertUsers('student', self::STUDENT_COUNT);
         $allUserIds = array_merge($instructorIds, $studentIds);
         $this->command->info('  -> '.count($allUserIds).' users created');
 
@@ -83,7 +92,7 @@ class DatabaseSeeder extends Seeder
         // --- 4b. Generated courses (indices 10-49) ---
         $generatedDefs = $this->generatedCourseDefs($instructorIds, $categoryIds, 40);
 
-        $allCourseDefs = array_merge($detailedDefs, $generatedDefs);
+        $allCourseDefs = $this->withBenchmarkActivityTargets(array_merge($detailedDefs, $generatedDefs));
 
         foreach ($allCourseDefs as $ci => $def) {
             $courseIds[] = DB::table('courses')->insertGetId([
@@ -221,13 +230,13 @@ class DatabaseSeeder extends Seeder
         $this->command->info('  -> '.count($sectionIds).' sections, activities created');
 
         // ─── 6. Enrollments ────────────────────────────────────
-        $this->command->info('Creating enrollments (100-119 students per course)...');
+        $this->command->info('Creating enrollments (30-60 students per course)...');
         $enrollmentCount = 0;
         $enrolledUserIdsByCourse = [];
 
         mt_srand(42);
         foreach ($courseIds as $ci => $courseId) {
-            $count = mt_rand(100, 119);
+            $count = mt_rand(self::MIN_STUDENTS_PER_COURSE, self::MAX_STUDENTS_PER_COURSE);
             $pool = $studentIds;
             shuffle($pool);
             $selected = array_slice($pool, 0, min($count, count($pool)));
@@ -453,8 +462,8 @@ class DatabaseSeeder extends Seeder
         }
         $this->command->info('  -> '.$groupCount.' groups, '.$groupMemberCount.' members');
 
-        // ─── 10. Quiz Attempts (~25,000) ──────────────────────
-        $this->command->info('Creating quiz attempts (~25,000)...');
+        // ─── 10. Quiz Attempts ─────────────────────────────────
+        $this->command->info('Creating quiz attempts (up to 3 per student per quiz)...');
         $attemptCount = 0;
         $quizIdToCourse = [];
         foreach ($courseIds as $ci => $courseId) {
@@ -468,30 +477,32 @@ class DatabaseSeeder extends Seeder
             $courseId = $courseIds[$ci];
             $enrolled = $enrolledUserIdsByCourse[$courseId] ?? [];
             if (empty($enrolled)) continue;
-            $sample = array_slice($enrolled, 0, min(100, count($enrolled)));
+            $sample = $enrolled;
 
             foreach ($qids as $qid) {
                 $batch = [];
                 foreach ($sample as $uid) {
-                    $score = mt_rand(40, 100);
-                    $batch[] = [
-                        'quiz_id' => $qid,
-                        'user_id' => $uid,
-                        'answers' => '[]',
-                        'score' => $score,
-                        'status' => 'finished',
-                        'attempt_number' => 1,
-                        'started_at' => now()->subDays(mt_rand(1, 30)),
-                        'completed_at' => now()->subDays(mt_rand(0, 5)),
-                        'submitted_at' => now()->subDays(mt_rand(0, 5)),
-                        'expires_at' => null,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ];
-                    if (count($batch) >= self::BATCH_SIZE) {
-                        DB::table('quiz_attempts')->insert($batch);
-                        $attemptCount += count($batch);
-                        $batch = [];
+                    for ($attemptNumber = 1; $attemptNumber <= self::QUIZ_ATTEMPTS_PER_STUDENT; $attemptNumber++) {
+                        $score = mt_rand(40, 100);
+                        $batch[] = [
+                            'quiz_id' => $qid,
+                            'user_id' => $uid,
+                            'answers' => '[]',
+                            'score' => $score,
+                            'status' => 'finished',
+                            'attempt_number' => $attemptNumber,
+                            'started_at' => now()->subDays(mt_rand(1, 30)),
+                            'completed_at' => now()->subDays(mt_rand(0, 5)),
+                            'submitted_at' => now()->subDays(mt_rand(0, 5)),
+                            'expires_at' => null,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ];
+                        if (count($batch) >= self::BATCH_SIZE) {
+                            DB::table('quiz_attempts')->insert($batch);
+                            $attemptCount += count($batch);
+                            $batch = [];
+                        }
                     }
                 }
                 if (!empty($batch)) {
@@ -502,8 +513,8 @@ class DatabaseSeeder extends Seeder
         }
         $this->command->info('  -> '.$attemptCount.' quiz attempts');
 
-        // ─── 11. Submissions (~12,500) ────────────────────────
-        $this->command->info('Creating submissions (~12,500)...');
+        // ─── 11. Submissions ───────────────────────────────────
+        $this->command->info('Creating submissions (1 per enrolled student per assignment)...');
         $submissionCount = 0;
 
         mt_srand(789);
@@ -511,7 +522,7 @@ class DatabaseSeeder extends Seeder
             $courseId = $courseIds[$ci];
             $enrolled = $enrolledUserIdsByCourse[$courseId] ?? [];
             if (empty($enrolled)) continue;
-            $sample = array_slice($enrolled, 0, min(50, count($enrolled)));
+            $sample = $enrolled;
 
             foreach ($aids as $aid) {
                 $batch = [];
@@ -1060,9 +1071,9 @@ class DatabaseSeeder extends Seeder
             }
 
             $activityPlan = [
-                'material' => $i < 17 ? 12 : 11,
-                'quiz' => $i < 39 ? 6 : 5,
-                'assignment' => $i < 34 ? 6 : 5,
+                'material' => self::MATERIALS_PER_COURSE,
+                'quiz' => self::QUIZZES_PER_COURSE,
+                'assignment' => self::ASSIGNMENTS_PER_COURSE,
             ];
             $activityIndex = 0;
 
@@ -1090,6 +1101,54 @@ class DatabaseSeeder extends Seeder
             ];
         }
         return $defs;
+    }
+
+    private function withBenchmarkActivityTargets(array $courseDefs): array
+    {
+        foreach ($courseDefs as &$courseDef) {
+            $byType = ['material' => [], 'quiz' => [], 'assignment' => []];
+
+            foreach ($courseDef['activities'] as $activities) {
+                foreach ($activities as $activity) {
+                    $byType[$activity['type']][] = $activity;
+                }
+            }
+
+            $targets = [
+                'material' => self::MATERIALS_PER_COURSE,
+                'quiz' => self::QUIZZES_PER_COURSE,
+                'assignment' => self::ASSIGNMENTS_PER_COURSE,
+            ];
+
+            $normalized = [];
+            foreach ($targets as $type => $target) {
+                $activities = array_slice($byType[$type], 0, $target);
+                for ($sequence = count($activities) + 1; $sequence <= $target; $sequence++) {
+                    $activities[] = $this->generatedActivity($courseDef['name'], $type, $sequence);
+                }
+                array_push($normalized, ...$activities);
+            }
+
+            $sections = array_values($courseDef['sections']);
+            $courseDef['activities'] = array_fill_keys($sections, []);
+
+            foreach ($normalized as $index => $activity) {
+                $courseDef['activities'][$sections[$index % count($sections)]][] = $activity;
+            }
+        }
+        unset($courseDef);
+
+        return $courseDefs;
+    }
+
+    private function generatedActivity(string $courseName, string $type, int $sequence): array
+    {
+        return [
+            'type' => $type,
+            'title' => $courseName.' - '.ucfirst($type).' '.$sequence,
+            'visible' => true,
+            'completion_enabled' => $type !== 'material' || $sequence <= 3,
+        ];
     }
 
     private function generateCourseDefs(array $instructorIds, array $categoryIds): array
@@ -1128,7 +1187,7 @@ class DatabaseSeeder extends Seeder
                 'is_active' => $visible,
                 'available_from' => $spec['available_from'] ?? null,
                 'available_until' => $spec['available_until'] ?? null,
-                'max_attempts' => 2,
+                'max_attempts' => self::QUIZ_ATTEMPTS_PER_STUDENT,
                 'grading_method' => 'highest',
                 'grace_period' => 0,
                 'overdue_handling' => 'auto_submit',
@@ -1138,8 +1197,9 @@ class DatabaseSeeder extends Seeder
                 'updated_at' => now(),
             ]);
 
-            // Questions (20 per quiz)
-            for ($qi = 1; $qi <= self::QUESTIONS_PER_QUIZ; $qi++) {
+            $questionCount = mt_rand(self::MIN_QUESTIONS_PER_QUIZ, self::MAX_QUESTIONS_PER_QUIZ);
+
+            for ($qi = 1; $qi <= $questionCount; $qi++) {
                 $questionId = DB::table('questions')->insertGetId([
                     'quiz_id' => $qid,
                     'question_text' => 'Question '.$qi.': Sample question for '.$title.'?',
@@ -1397,7 +1457,7 @@ class DatabaseSeeder extends Seeder
             DB::table('quiz_overrides')->insert([
                 'quiz_id' => $firstQuiz->id,
                 'user_id' => $sampleStudent->id,
-                'max_attempts' => 5,
+                'max_attempts' => self::QUIZ_ATTEMPTS_PER_STUDENT,
                 'time_limit' => 60,
                 'grace_period' => 5,
                 'created_at' => now(),
@@ -1635,7 +1695,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->command->info('');
         $this->command->info('Seeding complete!');
-        $this->command->info('- Users: '.DB::table('users')->count().' (100 instructors, 4900 students)');
+        $this->command->info('- Users: '.DB::table('users')->count().' (40 instructors, 1960 students)');
         $this->command->info('- Courses: '.DB::table('courses')->count());
         $this->command->info('- Sections: '.DB::table('course_sections')->count());
         $this->command->info('- Enrollments: '.DB::table('course_enrollments')->count());
