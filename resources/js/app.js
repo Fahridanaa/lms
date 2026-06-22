@@ -16,7 +16,7 @@ if (dashboard && window.benchmarkData) {
     const ANALYSIS_VU = data.researchSummary?.analysis_vu ?? 1500;
     const SATURATION_VU = data.researchSummary?.saturation_vu ?? 2000;
     const simulationStrategies = data.strategies;
-    const tabs = ['benchmark', 'result', 'statistics'];
+    const tabs = ['benchmark', 'result', 'compare', 'statistics'];
     const strategyColors = {
         'no-cache': '#f05424',
         'cache-aside': '#b98200',
@@ -152,11 +152,13 @@ if (dashboard && window.benchmarkData) {
             button.setAttribute('tabindex', isActive ? '0' : '-1');
         });
 
-        toggle('[data-scenario-controls]', state.tab !== 'result');
+        const hasBenchmarkFilters = !['result', 'compare'].includes(state.tab);
+
+        toggle('[data-scenario-controls]', hasBenchmarkFilters);
         toggle('[data-vu-controls]', state.tab === 'benchmark');
         toggle('[data-redis-controls]', state.tab === 'statistics');
-        toggle('[data-metric-controls]', state.tab !== 'result');
-        toggle('[data-filter-controls]', state.tab !== 'result');
+        toggle('[data-metric-controls]', hasBenchmarkFilters);
+        toggle('[data-filter-controls]', hasBenchmarkFilters);
     }
 
     function tabIndexFromKey(key, currentIndex) {

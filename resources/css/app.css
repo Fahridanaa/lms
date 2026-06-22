@@ -127,7 +127,7 @@
 
     .benchmark-tabs {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         overflow: hidden;
         border: 1px solid var(--bench-line);
         border-radius: 6px;
@@ -493,9 +493,11 @@
     .result-report {
         display: grid;
         gap: 1.25rem;
+        min-width: 0;
     }
 
     .report-section {
+        min-width: 0;
         scroll-margin-top: 8.5rem;
     }
 
@@ -974,6 +976,24 @@
         font-variant-numeric: tabular-nums;
     }
 
+    #compare-panel .simulation-table-wrap,
+    #compare-panel .flowchart-list,
+    #compare-panel .flowchart-card,
+    #compare-panel .flowchart-pair {
+        min-width: 0;
+    }
+
+    #compare-panel .simulation-table {
+        min-width: 52rem;
+    }
+
+    #compare-panel .simulation-table th,
+    #compare-panel .simulation-table td {
+        overflow-wrap: anywhere;
+        text-align: left;
+        white-space: normal;
+    }
+
     .simulation-table {
         width: 100%;
         min-width: 68rem;
@@ -1092,6 +1112,53 @@
     }
 
     .significance-matrix th,
+
+    .flowchart-list {
+        display: grid;
+        gap: 1rem;
+        margin-top: 1.25rem;
+    }
+
+    .flowchart-card {
+        overflow: hidden;
+        border: 1px solid var(--bench-line);
+        border-radius: 8px;
+        background: var(--bench-panel);
+        box-shadow: 0 18px 44px rgba(11, 27, 67, 0.06);
+    }
+
+    .flowchart-card summary {
+        display: grid;
+        grid-template-columns: 7rem minmax(0, 1fr);
+        gap: 1rem;
+        align-items: center;
+        padding: 1rem;
+        cursor: pointer;
+    }
+
+    .flowchart-card summary span {
+        color: var(--bench-accent);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .flowchart-card summary strong {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        font-size: 0.95rem;
+        line-height: 1.35;
+    }
+
+    .flowchart-card .mermaid {
+        margin: 0;
+        padding: 1rem;
+        border-top: 1px solid var(--bench-line);
+        background: #ffffff;
+        overflow-x: auto;
+    }
+
     .significance-matrix td {
         border: 1px solid var(--bench-line);
         padding: 0.78rem;
@@ -1106,6 +1173,81 @@
     .significance-matrix th:first-child,
     .significance-matrix td:first-child {
         text-align: left;
+    }
+
+
+    .flowchart-list {
+        display: grid;
+        gap: 1rem;
+        margin-top: 1.25rem;
+    }
+
+    .flowchart-card {
+        overflow: hidden;
+        border: 1px solid var(--bench-line);
+        border-radius: 8px;
+        background: var(--bench-panel);
+        box-shadow: 0 18px 44px rgba(11, 27, 67, 0.06);
+    }
+
+    .flowchart-card summary {
+        display: grid;
+        grid-template-columns: 7rem minmax(0, 1fr);
+        gap: 1rem;
+        align-items: center;
+        padding: 1rem;
+        cursor: pointer;
+    }
+
+    .flowchart-card summary span {
+        color: var(--bench-accent);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .flowchart-card summary strong {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        font-size: 0.95rem;
+        line-height: 1.35;
+    }
+
+    .flowchart-card .mermaid {
+        margin: 0;
+        padding: 1rem;
+        border-top: 1px solid var(--bench-line);
+        background: #ffffff;
+        overflow-x: auto;
+    }
+
+
+    .flowchart-pair {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+        min-width: 0;
+        border-top: 1px solid var(--bench-line);
+        padding: 1rem;
+        background: #ffffff;
+    }
+
+    .flowchart-pair article {
+        min-width: 0;
+        border: 1px solid var(--bench-line);
+        border-radius: 8px;
+        background: #ffffff;
+    }
+
+    .flowchart-pair h3 {
+        margin: 0;
+        padding: 0.85rem 1rem;
+        border-bottom: 1px solid var(--bench-line);
+        color: var(--bench-accent);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem;
+        text-transform: uppercase;
     }
 
     .significance-matrix td {
@@ -1147,7 +1289,8 @@
         .mode-chart-grid,
         .result-report-layout,
         .score-summary-grid,
-        .statistics-layout {
+        .statistics-layout,
+        .flowchart-pair {
             grid-template-columns: 1fr;
         }
 

@@ -143,19 +143,23 @@ cmd_preflight() {
   # 8. Redis mode
   echo -n "[preflight] Redis mode: "
   if [ "${CLUSTER_MODE:-false}" = "true" ]; then
-    echo -n "cluster → "
-    if require_redis_cluster "${PROJECT_DIR}" &>/dev/null; then
+    echo -n "cluster -> "
+    redis_mode_output=$(require_redis_cluster "${PROJECT_DIR}" 2>&1)
+    if [ $? -eq 0 ]; then
       echo -e "${GREEN}OK${NC}"
     else
       echo -e "${RED}FAIL${NC}"
+      printf '%s\n' "${redis_mode_output}"
       exit_code=1
     fi
   else
-    echo -n "single → "
-    if require_redis_single "${PROJECT_DIR}" &>/dev/null; then
+    echo -n "single -> "
+    redis_mode_output=$(require_redis_single "${PROJECT_DIR}" 2>&1)
+    if [ $? -eq 0 ]; then
       echo -e "${GREEN}OK${NC}"
     else
       echo -e "${RED}FAIL${NC}"
+      printf '%s\n' "${redis_mode_output}"
       exit_code=1
     fi
   fi

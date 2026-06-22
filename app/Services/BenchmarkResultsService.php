@@ -277,7 +277,7 @@ class BenchmarkResultsService
             'trade_offs' => $this->tradeOffs(),
             'recommendation' => $this->recommendation($overallWinner, $workloadWinners),
             'threats_to_validity' => [
-                'LMS Mini merepresentasikan alur akademik inti, tetapi belum mencakup seluruh kompleksitas LMS produksi.',
+                'LMS Purwarupa merepresentasikan alur akademik inti, tetapi belum mencakup seluruh kompleksitas LMS produksi.',
                 'Workload dibentuk melalui skenario k6 sehingga perilaku pengguna nyata dapat memiliki variasi yang lebih lebar.',
                 'Pengujian dilakukan pada lingkungan VPS terbatas; hasil absolut dapat berubah pada perangkat keras atau jaringan berbeda.',
                 'Redis Cluster digunakan sebagai pembanding skalabilitas, bukan sebagai fokus utama optimasi aplikasi.',

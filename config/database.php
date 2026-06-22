@@ -2,6 +2,9 @@
 
 use Illuminate\Support\Str;
 
+$redisClusterHosts = array_values(array_filter(array_map('trim', explode(',', (string) env('REDIS_CLUSTER_HOSTS', '')))));
+$redisClusterHost = fn (int $index, string $fallback): string => (string) (env("REDIS_CLUSTER_HOST_{$index}") ?: ($redisClusterHosts[$index - 1] ?? $fallback));
+
 return [
 
     /*
@@ -162,21 +165,21 @@ return [
         'clusters' => [
             'default' => [
                 [
-                    'host' => env('REDIS_CLUSTER_HOST_1', 'redis-c1'),
+                    'host' => $redisClusterHost(1, 'redis-c1'),
                     'port' => env('REDIS_CLUSTER_PORT', 6379),
                     'username' => env('REDIS_USERNAME'),
                     'password' => env('REDIS_PASSWORD'),
                     'database' => env('REDIS_DB', '0'),
                 ],
                 [
-                    'host' => env('REDIS_CLUSTER_HOST_2', 'redis-c2'),
+                    'host' => $redisClusterHost(2, 'redis-c2'),
                     'port' => env('REDIS_CLUSTER_PORT', 6379),
                     'username' => env('REDIS_USERNAME'),
                     'password' => env('REDIS_PASSWORD'),
                     'database' => env('REDIS_DB', '0'),
                 ],
                 [
-                    'host' => env('REDIS_CLUSTER_HOST_3', 'redis-c3'),
+                    'host' => $redisClusterHost(3, 'redis-c3'),
                     'port' => env('REDIS_CLUSTER_PORT', 6379),
                     'username' => env('REDIS_USERNAME'),
                     'password' => env('REDIS_PASSWORD'),
@@ -185,21 +188,21 @@ return [
             ],
             'cache' => [
                 [
-                    'host' => env('REDIS_CLUSTER_HOST_1', 'redis-c1'),
+                    'host' => $redisClusterHost(1, 'redis-c1'),
                     'port' => env('REDIS_CLUSTER_PORT', 6379),
                     'username' => env('REDIS_USERNAME'),
                     'password' => env('REDIS_PASSWORD'),
                     'database' => env('REDIS_CACHE_DB', '1'),
                 ],
                 [
-                    'host' => env('REDIS_CLUSTER_HOST_2', 'redis-c2'),
+                    'host' => $redisClusterHost(2, 'redis-c2'),
                     'port' => env('REDIS_CLUSTER_PORT', 6379),
                     'username' => env('REDIS_USERNAME'),
                     'password' => env('REDIS_PASSWORD'),
                     'database' => env('REDIS_CACHE_DB', '1'),
                 ],
                 [
-                    'host' => env('REDIS_CLUSTER_HOST_3', 'redis-c3'),
+                    'host' => $redisClusterHost(3, 'redis-c3'),
                     'port' => env('REDIS_CLUSTER_PORT', 6379),
                     'username' => env('REDIS_USERNAME'),
                     'password' => env('REDIS_PASSWORD'),
