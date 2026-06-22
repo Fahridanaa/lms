@@ -144,8 +144,7 @@ cmd_preflight() {
   echo -n "[preflight] Redis mode: "
   if [ "${CLUSTER_MODE:-false}" = "true" ]; then
     echo -n "cluster -> "
-    redis_mode_output=$(require_redis_cluster "${PROJECT_DIR}" 2>&1)
-    if [ $? -eq 0 ]; then
+    if redis_mode_output=$(require_redis_cluster "${PROJECT_DIR}" 2>&1); then
       echo -e "${GREEN}OK${NC}"
     else
       echo -e "${RED}FAIL${NC}"
@@ -154,8 +153,7 @@ cmd_preflight() {
     fi
   else
     echo -n "single -> "
-    redis_mode_output=$(require_redis_single "${PROJECT_DIR}" 2>&1)
-    if [ $? -eq 0 ]; then
+    if redis_mode_output=$(require_redis_single "${PROJECT_DIR}" 2>&1); then
       echo -e "${GREEN}OK${NC}"
     else
       echo -e "${RED}FAIL${NC}"
