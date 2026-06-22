@@ -282,12 +282,15 @@ require_redis_cluster() {
   echo -e "  ${GREEN}✓ Cluster state: ok${NC}"
 
   # 4. Check Laravel config exposes clusters
-  if ! docker compose exec -T app php artisan config:show database.redis.clusters 2>/dev/null | grep -qE "^\s+database.redis.clusters"; then
-    echo -e "  ${RED}✗ Laravel config does not expose database.redis.clusters${NC}"
+  local cluster_config
+  cluster_config=$(_laravel_config "database.redis.clusters")
+  if [ -z "${cluster_config}" ] || [ "${cluster_config}" = "[]" ]; then
+    echo -e "  ${RED}x Laravel config does not expose database.redis.clusters${NC}"
+    echo -e "     ${YELLOW}Fix: docker compose exec -T app php artisan optimize:clear && docker compose restart app${NC}"
     _diagnostic_output "cluster"
     return 1
   fi
-  echo -e "  ${GREEN}✓ Laravel config exposes clusters${NC}"
+  echo -e "${GREEN}OK Laravel config exposes clusters${NC}"
 
   echo -e "${GREEN}[mode-check] ✓ Redis Cluster verified${NC}"
   return 0
