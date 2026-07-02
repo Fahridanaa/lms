@@ -1,0 +1,6 @@
+=== Cache Hit Ratio ===
+Strategy                : cache-aside
+Hits during benchmark   : 41671
+Misses during benchmark : 104324
+Total cache ops         : 145995
+Cache Hit Ratio         : 28.5400%

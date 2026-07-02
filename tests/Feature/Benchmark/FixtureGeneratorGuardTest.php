@@ -21,15 +21,19 @@ class FixtureGeneratorGuardTest extends TestCase
     use RefreshDatabase;
     use BenchmarkFixtureSetup;
 
+    private array $fixtures = [];
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->setUpBenchmarkFixtures();
+        $this->fixtures = $this->parseFixturePools($this->fixturesContent);
     }
 
     protected function tearDown(): void
     {
         $this->tearDownBenchmarkFixtures();
+        $this->fixtures = [];
         parent::tearDown();
     }
 
@@ -63,33 +67,29 @@ class FixtureGeneratorGuardTest extends TestCase
     public function generated_required_pools_are_non_empty(): void
     {
         $requiredPools = [
-            'GROUP_RESTRICTED_MODULE_TARGETS',
-            'PREREQUISITE_LOCKED_TARGETS',
-            'PREREQUISITE_UNLOCK_TARGETS',
-            'MIN_GRADE_LOCKED_TARGETS',
-            'HIDDEN_MODULE_TARGETS',
-            'LOCKED_GRADE_TARGETS',
-            'SUSPENDED_ACCESS_TARGETS',
-            'NON_ENROLLED_ACCESS_TARGETS',
-            'QUIZ_DETAIL_ATTEMPT_TARGETS',
-            'GROUPING_RESTRICTED_MODULE_TARGETS',
-            'COURSE_COMPLETION_CHECK_TARGETS',
+            'ENROLLED_PAIRS',
+            'INSTRUCTOR_COURSE_PAIRS',
+            'READABLE_MATERIAL_TARGETS',
+            'READABLE_QUIZ_TARGETS',
+            'READABLE_ASSIGNMENT_TARGETS',
+            'WRITABLE_MATERIAL_DOWNLOAD_TARGETS',
+            'WRITABLE_ASSIGNMENT_SUBMISSION_TARGETS',
+            'WRITABLE_QUIZ_ATTEMPT_TARGETS',
+            'GRADING_TARGETS',
+            'GRADE_UPDATE_TARGETS',
+            'UNAUTHORIZED_GRADE_UPDATE_TARGETS',
         ];
 
         foreach ($requiredPools as $pool) {
-            preg_match("/const {$pool} = (\[.*?\]);/s", $this->fixturesContent, $matches);
-            $this->assertNotEmpty($matches, "{$pool} not found in generated fixtures");
-            $this->assertNotEmpty(json_decode($matches[1], true), "{$pool} is empty");
+            $this->assertArrayHasKey($pool, $this->fixtures, "{$pool} not found in generated fixtures");
+            $this->assertNotEmpty($this->fixtures[$pool], "{$pool} is empty");
         }
     }
 
     #[Test]
     public function grade_update_targets_include_max_score(): void
     {
-        preg_match('/const GRADE_UPDATE_TARGETS = (\[.*?\]);/s', $this->fixturesContent, $matches);
-        $this->assertNotEmpty($matches, 'GRADE_UPDATE_TARGETS not found in generated fixtures');
-
-        $targets = json_decode($matches[1], true);
+        $targets = $this->fixtures['GRADE_UPDATE_TARGETS'] ?? [];
         $this->assertNotEmpty($targets);
 
         foreach ($targets as $i => $target) {
@@ -113,10 +113,7 @@ class FixtureGeneratorGuardTest extends TestCase
     #[Test]
     public function writable_quiz_attempt_targets_include_answers(): void
     {
-        preg_match('/const WRITABLE_QUIZ_ATTEMPT_TARGETS = (\[.*?\]);/s', $this->fixturesContent, $matches);
-        $this->assertNotEmpty($matches, 'WRITABLE_QUIZ_ATTEMPT_TARGETS not found in generated fixtures');
-
-        $targets = json_decode($matches[1], true);
+        $targets = $this->fixtures['WRITABLE_QUIZ_ATTEMPT_TARGETS'] ?? [];
         $this->assertNotEmpty($targets);
 
         $validOptions = ['A', 'B', 'C', 'D'];
@@ -153,10 +150,7 @@ class FixtureGeneratorGuardTest extends TestCase
     #[Test]
     public function unauthorized_grade_update_targets_include_max_score_and_expected_status(): void
     {
-        preg_match('/const UNAUTHORIZED_GRADE_UPDATE_TARGETS = (\[.*?\]);/s', $this->fixturesContent, $matches);
-        $this->assertNotEmpty($matches, 'UNAUTHORIZED_GRADE_UPDATE_TARGETS not found in generated fixtures');
-
-        $targets = json_decode($matches[1], true);
+        $targets = $this->fixtures['UNAUTHORIZED_GRADE_UPDATE_TARGETS'] ?? [];
         $this->assertNotEmpty($targets);
 
         foreach ($targets as $i => $target) {
@@ -182,6 +176,10 @@ class FixtureGeneratorGuardTest extends TestCase
     #[Test]
     public function writable_quiz_target_answers_fallback_for_invalid_correct_answer(): void
     {
+        if (User::count() === 0) {
+            $this->seed(\Database\Seeders\DatabaseSeeder::class);
+        }
+
         $instructor = User::factory()->create(['role' => 'instructor']);
         $student = User::factory()->create(['role' => 'student']);
 
@@ -230,11 +228,8 @@ class FixtureGeneratorGuardTest extends TestCase
         $content = file_get_contents($outputPath);
         @unlink($outputPath);
 
-        // Parse WRITABLE_QUIZ_ATTEMPT_TARGETS
-        preg_match('/const WRITABLE_QUIZ_ATTEMPT_TARGETS = (\[.*?\]);/s', $content, $matches);
-        $this->assertNotEmpty($matches, 'WRITABLE_QUIZ_ATTEMPT_TARGETS not found');
-
-        $targets = json_decode($matches[1], true);
+        $targets = $this->parseFixturePools($content)['WRITABLE_QUIZ_ATTEMPT_TARGETS'] ?? [];
+        $this->assertNotEmpty($targets, 'WRITABLE_QUIZ_ATTEMPT_TARGETS not found');
 
         // Find our custom quiz target
         $ourTarget = null;

@@ -9,18 +9,18 @@ class BenchmarkResultsServiceTest extends TestCase
 {
     public function test_it_parses_and_normalizes_benchmark_csv_rows(): void
     {
-        $path = storage_path('framework/testing/benchmark-results');
+        $path = sys_get_temp_dir().'/lms-benchmark-results-service-test';
 
         if (! is_dir($path)) {
             mkdir($path, 0777, true);
         }
 
         file_put_contents($path.'/metrics-summary.csv', implode(PHP_EOL, [
-            'strategy,scenario,concurrent_users,avg_ms,p90_ms,p95_ms,p99_ms,max_ms,throughput_rps,error_rate_pct,http_reqs_total,cache_hit_ratio_pct,iterations_averaged,read_avg_ms,write_avg_ms,redis_mode,validity_status',
-            'no-cache,read-heavy,1500,300,330,350,400,500,100,1,1000,0,5,300,400,single,valid',
-            'cache-aside,read-heavy,1500,100,120,140,160,200,180,0.1,1000,80,5,100,120,single,valid',
-            'read-through,read-heavy,1500,110,130,150,170,210,170,0.2,1000,75,5,110,150,single,valid',
-            'write-through,read-heavy,1500,120,140,160,180,220,160,0.3,1000,70,5,120,100,single,valid',
+            'strategy,scenario,concurrent_users,avg_ms,p90_ms,p95_ms,p99_ms,max_ms,throughput_rps,error_rate_pct,unexpected_error_rate_pct,controlled_error_rate_pct,validity_status,http_reqs_total,cache_hit_ratio_pct,iterations_averaged,read_avg_ms,write_avg_ms,redis_mode',
+            'no-cache,read-heavy,1500,300,330,350,400,500,100,9,4,5,valid,1000,0,5,300,400,single',
+            'cache-aside,read-heavy,1500,100,120,140,160,200,180,8,0.4,7.6,valid,1000,80,5,100,120,single',
+            'read-through,read-heavy,1500,110,130,150,170,210,170,8.2,0.8,7.4,valid,1000,75,5,110,150,single',
+            'write-through,read-heavy,1500,120,140,160,180,220,160,8.5,1,7.5,valid,1000,70,5,120,100,single',
         ]));
         file_put_contents($path.'/resources-summary.csv', implode(PHP_EOL, [
             'strategy,scenario,concurrent_users,cpu_avg_pct,cpu_max_pct,mem_avg_mb,mem_max_mb,mem_avg_pct,mem_max_pct,disk_read_avg_mb_s,disk_read_max_mb_s,disk_write_avg_mb_s,disk_write_max_mb_s,iterations_averaged,redis_mode',
@@ -58,6 +58,8 @@ class BenchmarkResultsServiceTest extends TestCase
         $this->assertSame('no-cache', $data['metrics'][0]['strategy']);
         $this->assertSame(1500, $data['metrics'][0]['concurrent_users']);
         $this->assertSame(300, $data['metrics'][0]['avg_ms']);
+        $this->assertSame(9, $data['metrics'][0]['error_rate_pct']);
+        $this->assertSame(4, $data['metrics'][0]['unexpected_error_rate_pct']);
         $this->assertSame(0, $data['metrics'][0]['cache_hit_ratio_pct']);
         $this->assertSame('gradebook_duration', $data['endpoints'][0]['endpoint_key']);
         $this->assertSame('/api/courses/{courseId}/gradebook', $data['endpoints'][0]['path_pattern']);

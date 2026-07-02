@@ -1,0 +1,25 @@
+=== Before k6 ===
+CONTAINER ID   NAME             CPU %     MEM USAGE / LIMIT    MEM %     NET I/O           BLOCK I/O         PIDS
+2483240f7666   lms-redis-c5-1   0.59%     11.54MiB / 7.75GiB   0.15%     42.5GB / 1.2GB    219MB / 48.1GB    8
+24839de5b208   lms-redis-c2-1   0.49%     10.01MiB / 7.75GiB   0.13%     26.4GB / 94.1GB   218MB / 27.4GB    8
+e158d7c59cfc   lms-redis-c3-1   0.54%     11.05MiB / 7.75GiB   0.14%     53.4GB / 200GB    200MB / 59GB      8
+215c2ee3de54   lms-redis-c6-1   0.53%     9.75MiB / 7.75GiB    0.12%     24.6GB / 1.19GB   201MB / 27.4GB    8
+afb3ff01d0b4   lms-redis-c1-1   3.06%     11.61MiB / 7.75GiB   0.15%     44.6GB / 172GB    213MB / 48.1GB    8
+7362d8b2b940   lms-redis-c4-1   0.49%     11.76MiB / 7.75GiB   0.15%     51.3GB / 1.24GB   198MB / 59GB      8
+05e24c1758e3   lms-nginx-1      0.00%     5.539MiB / 7.75GiB   0.07%     2.11MB / 2.17MB   3.07MB / 4.1kB    5
+d9a79f3b3bab   lms-app-1        0.01%     106.7MiB / 7.75GiB   1.34%     1.19GB / 224MB    33.8MB / 12.8MB   17
+cef75e64e2ed   lms-redis-1      0.41%     15.72MiB / 7.75GiB   0.20%     582GB / 269GB     521MB / 14GB      6
+2308ef2efa4f   lms-mysql-1      0.73%     681.3MiB / 7.75GiB   8.58%     213MB / 1.18GB    186MB / 16.6MB    44
+
+=== After k6 ===
+CONTAINER ID   NAME             CPU %     MEM USAGE / LIMIT    MEM %     NET I/O           BLOCK I/O         PIDS
+2483240f7666   lms-redis-c5-1   2.96%     138.7MiB / 7.75GiB   1.75%     43.3GB / 1.2GB    220MB / 49GB      8
+24839de5b208   lms-redis-c2-1   2.94%     125MiB / 7.75GiB     1.57%     26.8GB / 95.6GB   220MB / 27.9GB    8
+e158d7c59cfc   lms-redis-c3-1   2.96%     143.5MiB / 7.75GiB   1.81%     54.1GB / 203GB    201MB / 59.9GB    8
+215c2ee3de54   lms-redis-c6-1   3.01%     123.8MiB / 7.75GiB   1.56%     25GB / 1.2GB      202MB / 27.9GB    8
+afb3ff01d0b4   lms-redis-c1-1   0.57%     137.8MiB / 7.75GiB   1.74%     45.4GB / 175GB    214MB / 49GB      8
+7362d8b2b940   lms-redis-c4-1   0.42%     143MiB / 7.75GiB     1.80%     52GB / 1.25GB     200MB / 59.9GB    8
+05e24c1758e3   lms-nginx-1      0.00%     7.484MiB / 7.75GiB   0.09%     2.07GB / 2.09GB   4.44MB / 1.45MB   5
+d9a79f3b3bab   lms-app-1        0.85%     348.9MiB / 7.75GiB   4.40%     6.95GB / 4.37GB   34.8MB / 27.9MB   53
+cef75e64e2ed   lms-redis-1      2.74%     15.72MiB / 7.75GiB   0.20%     582GB / 269GB     521MB / 14GB      6
+2308ef2efa4f   lms-mysql-1      1.88%     822.2MiB / 7.75GiB   10.36%    395MB / 1.98GB    227MB / 733MB     52

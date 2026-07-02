@@ -14,14 +14,12 @@ use App\Models\QuizAttemptStepData;
 use App\Models\User;
 use App\Services\CourseAccessService;
 use App\Services\ModuleAvailabilityService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Feature\Benchmark\Concerns\BenchmarkFixtureSetup;
 use Tests\TestCase;
 
 class FixtureValidityTest extends TestCase
 {
-    use RefreshDatabase;
     use BenchmarkFixtureSetup;
 
     private array $fixtures = [];
@@ -29,7 +27,7 @@ class FixtureValidityTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->setUpBenchmarkFixtures();
+        $this->setUpBenchmarkFixtures(migrateFresh: true);
         $this->fixtures = $this->parseFixtures($this->generatedFixturePath);
     }
 
@@ -42,65 +40,7 @@ class FixtureValidityTest extends TestCase
 
     private function parseFixtures(string $path): array
     {
-        $content = file_get_contents($path);
-
-        preg_match_all('/^const (\w+) = (.+);$/m', $content, $matches, PREG_SET_ORDER);
-
-        $fixtures = [];
-        foreach ($matches as $match) {
-            $name = $match[1];
-            $json = trim($match[2]);
-
-            if ($json[0] !== '[' && $json[0] !== '{') {
-                continue;
-            }
-
-            $start = $json[0];
-            $end = $start === '[' ? ']' : '}';
-            $depth = 0;
-            $inString = false;
-            $escaped = false;
-
-            for ($i = 0; $i < strlen($json); $i++) {
-                $ch = $json[$i];
-
-                if ($escaped) {
-                    $escaped = false;
-
-                    continue;
-                }
-                if ($ch === '\\') {
-                    $escaped = true;
-
-                    continue;
-                }
-                if ($ch === '"') {
-                    $inString = ! $inString;
-
-                    continue;
-                }
-                if ($inString) {
-                    continue;
-                }
-
-                if ($ch === $start) {
-                    $depth++;
-                } elseif ($ch === $end) {
-                    $depth--;
-                    if ($depth === 0) {
-                        $json = substr($json, 0, $i + 1);
-                        break;
-                    }
-                }
-            }
-
-            $data = json_decode($json, true);
-            if (is_array($data)) {
-                $fixtures[$name] = $data;
-            }
-        }
-
-        return $fixtures;
+        return $this->parseFixturePools(file_get_contents($path));
     }
 
     #[Test]

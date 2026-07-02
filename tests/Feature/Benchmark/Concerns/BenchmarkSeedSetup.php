@@ -3,26 +3,29 @@
 namespace Tests\Feature\Benchmark\Concerns;
 
 use Database\Seeders\DatabaseSeeder;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 
 trait BenchmarkSeedSetup
 {
+    private static bool $benchmarkSeeded = false;
+
     /**
-     * Flush cache and seed the benchmark dataset.
-     *
-     * Call from setUp() after parent::setUp().
-     *
-     * Unlike BenchmarkFixtureSetup, this does NOT generate k6 fixture data.
-     * It is intended for tests that only need to validate seeded database state.
+     * Flush cache and seed the benchmark dataset once per test class.
      */
-    protected function setUpBenchmarkSeed(): void
+    protected function setUpBenchmarkSeed(bool $migrateFresh = false): void
     {
         Cache::flush();
 
-        // Explicitly seed every time a benchmark seed test runs.
-        // This ensures the database has the full deterministic benchmark
-        // dataset regardless of whether another RefreshDatabase test class
-        // migrated the database first in the same PHPUnit process.
+        if (self::$benchmarkSeeded) {
+            return;
+        }
+
+        if ($migrateFresh) {
+            Artisan::call('migrate:fresh', ['--force' => true]);
+        }
+
         $this->seed(DatabaseSeeder::class);
+        self::$benchmarkSeeded = true;
     }
 }

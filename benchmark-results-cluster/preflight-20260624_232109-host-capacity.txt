@@ -1,0 +1,55 @@
+=============================================
+ Remote Preflight Host Capacity Snapshot
+=============================================
+Timestamp: 2026-06-24T23:21:09+07:00
+
+--- k6 VPS ---
+
+--- CPU ---
+4
+
+--- Memory ---
+               total        used        free      shared  buff/cache   available
+Mem:           7.8Gi       248Mi       6.6Gi       2.0Mi       971Mi       7.3Gi
+Swap:          2.0Gi          0B       2.0Gi
+
+--- Disk ---
+Filesystem     Type   Size  Used Avail Use% Mounted on
+tmpfs          tmpfs  794M  1.1M  793M   1% /run
+/dev/sda3      xfs    100G  7.6G   93G   8% /
+tmpfs          tmpfs  3.9G     0  3.9G   0% /dev/shm
+tmpfs          tmpfs  5.0M     0  5.0M   0% /run/lock
+tmpfs          tmpfs  3.9G     0  3.9G   0% /run/qemu
+/dev/sda2      vfat   110M   512  110M   1% /boot/efi
+tmpfs          tmpfs  794M     0  794M   0% /run/user/1000
+
+--- k6 Version ---
+k6 v2.0.0 (commit/8c3be52cc1, go1.26.3, linux/amd64)
+
+--- k6 Location ---
+k6 runs: REMOTE — resource metrics represent server-side load only.
+
+--- LMS VPS (via SSH) ---
+
+4
+               total        used        free      shared  buff/cache   available
+Mem:           7.8Gi       1.8Gi       5.6Gi        28Mi       365Mi       5.7Gi
+Swap:          2.0Gi          0B       2.0Gi
+Filesystem     Type   Size  Used Avail Use% Mounted on
+tmpfs          tmpfs  794M  1.9M  792M   1% /run
+/dev/sda3      xfs    100G   65G   36G  65% /
+tmpfs          tmpfs  3.9G     0  3.9G   0% /dev/shm
+tmpfs          tmpfs  5.0M     0  5.0M   0% /run/lock
+tmpfs          tmpfs  3.9G     0  3.9G   0% /run/qemu
+/dev/sda2      vfat   110M   512  110M   1% /boot/efi
+tmpfs          tmpfs  794M     0  794M   0% /run/user/1000
+app
+mysql
+nginx
+redis
+redis-c1
+redis-c2
+redis-c3
+redis-c4
+redis-c5
+redis-c6

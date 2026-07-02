@@ -1,0 +1,25 @@
+redis_mode,scenario,metric,target_vu,alpha,n_no_cache,n_cache_aside,n_read_through,n_write_through,f_statistic,p_value,is_significant,decision,skip_reason
+cluster,read-heavy,avg_ms,1500,0.05,3,3,3,2,,,False,skipped,each strategy needs at least 3 valid iterations
+cluster,read-heavy,p95_ms,1500,0.05,3,3,3,2,,,False,skipped,each strategy needs at least 3 valid iterations
+cluster,read-heavy,p99_ms,1500,0.05,3,3,3,2,,,False,skipped,each strategy needs at least 3 valid iterations
+cluster,read-heavy,throughput_rps,1500,0.05,3,3,3,2,,,False,skipped,each strategy needs at least 3 valid iterations
+cluster,read-heavy,cache_hit_ratio_pct,1500,0.05,0,3,3,2,,,False,skipped,each strategy needs at least 3 valid iterations
+cluster,read-heavy,unexpected_error_rate_pct,1500,0.05,3,3,3,2,,,False,skipped,each strategy needs at least 3 valid iterations
+cluster,write-heavy,avg_ms,1500,0.05,3,3,3,3,1.3691094016302963,0.32012514672744247,False,not significant,
+cluster,write-heavy,p95_ms,1500,0.05,3,3,3,3,1.0349408601576569,0.4276310636942748,False,not significant,
+cluster,write-heavy,p99_ms,1500,0.05,3,3,3,3,1.3224881829075066,0.3330489057326351,False,not significant,
+cluster,write-heavy,throughput_rps,1500,0.05,3,3,3,3,1.3704452299726826,0.3197636394337388,False,not significant,
+cluster,write-heavy,cache_hit_ratio_pct,1500,0.05,0,3,3,3,,,False,skipped,each strategy needs at least 3 valid iterations
+cluster,write-heavy,unexpected_error_rate_pct,1500,0.05,3,3,3,3,0.33953391300113217,0.7975792472364138,False,not significant,
+single,read-heavy,avg_ms,1500,0.05,3,3,3,3,2.076806301084636,0.18174129532765956,False,not significant,
+single,read-heavy,p95_ms,1500,0.05,3,3,3,3,2.1358725202172097,0.17385552911099805,False,not significant,
+single,read-heavy,p99_ms,1500,0.05,3,3,3,3,1.595503497854742,0.265210713574518,False,not significant,
+single,read-heavy,throughput_rps,1500,0.05,3,3,3,3,1.9449318531269262,0.20097684642073305,False,not significant,
+single,read-heavy,cache_hit_ratio_pct,1500,0.05,0,3,3,3,,,False,skipped,each strategy needs at least 3 valid iterations
+single,read-heavy,unexpected_error_rate_pct,1500,0.05,3,3,3,3,0.8737581683319791,0.49385932977926794,False,not significant,
+single,write-heavy,avg_ms,1500,0.05,3,3,2,2,,,False,skipped,each strategy needs at least 3 valid iterations
+single,write-heavy,p95_ms,1500,0.05,3,3,2,2,,,False,skipped,each strategy needs at least 3 valid iterations
+single,write-heavy,p99_ms,1500,0.05,3,3,2,2,,,False,skipped,each strategy needs at least 3 valid iterations
+single,write-heavy,throughput_rps,1500,0.05,3,3,2,2,,,False,skipped,each strategy needs at least 3 valid iterations
+single,write-heavy,cache_hit_ratio_pct,1500,0.05,0,3,2,2,,,False,skipped,each strategy needs at least 3 valid iterations
+single,write-heavy,unexpected_error_rate_pct,1500,0.05,3,3,2,2,,,False,skipped,each strategy needs at least 3 valid iterations

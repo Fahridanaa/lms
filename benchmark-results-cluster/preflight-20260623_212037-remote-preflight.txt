@@ -1,0 +1,14 @@
+=== Remote Preflight Evidence ===
+Timestamp        : 2026-06-23T21:20:37+07:00
+LMS SSH host     : fahri@103.191.63.144
+k6 hostname      : k6bench
+LMS project dir  : /var/www/lms
+k6 project dir   : /home/fahri/lms
+Base URL         : http://103.191.63.144
+Redis mode       : cluster
+Result dir       : /home/fahri/lms/benchmark-results-cluster
+Remote artifact  : /tmp/lms-benchmark-artifacts
+Page cache policy : clear-required
+Page cache status : pass
+Exit code        : 0
+Status           : PASS

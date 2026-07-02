@@ -44,7 +44,7 @@ echo ""
 # ─────────────────────────────────────────────
 # Buat header CSV
 # ─────────────────────────────────────────────
-echo "strategy,scenario,concurrent_users,avg_ms,p90_ms,p95_ms,p99_ms,max_ms,throughput_rps,error_rate_pct,http_reqs_total,cache_hit_ratio_pct,iterations_averaged,read_avg_ms,write_avg_ms,redis_mode" > "${OUTPUT_CSV}"
+echo "strategy,scenario,concurrent_users,avg_ms,p90_ms,p95_ms,p99_ms,max_ms,throughput_rps,error_rate_pct,unexpected_error_rate_pct,controlled_error_rate_pct,validity_status,http_reqs_total,cache_hit_ratio_pct,iterations_averaged,read_avg_ms,write_avg_ms,redis_mode" > "${OUTPUT_CSV}"
 
 # ─────────────────────────────────────────────
 # Parse setiap summary JSON
@@ -161,6 +161,7 @@ for sf in summary_files:
         dur    = m.get("http_req_duration", {}).get("values", {})
         reqs   = m.get("http_reqs",         {}).get("values", {})
         failed = m.get("http_req_failed",   {}).get("values", {})
+        errors = m.get("errors",            {}).get("values", {})
         # Extract per-endpoint read/write averages from custom Trend metrics
         def trend_avg(metric_name):
             try:
@@ -181,6 +182,11 @@ for sf in summary_files:
                 if v is not None:
                     write_trends.append(v)
 
+        total_reqs = get_metric(reqs, "count")
+        error_pct = (get_metric(failed, "rate") or 0) * 100
+        unexpected_count = get_metric(errors, "passes") or 0
+        unexpected_error_pct = (unexpected_count / total_reqs * 100) if total_reqs else 0
+
         collected.append({
             'avg_ms':     get_metric(dur, "avg"),
             'p90_ms':     get_metric(dur, "p(90)"),
@@ -188,8 +194,10 @@ for sf in summary_files:
             'p99_ms':     get_metric(dur, "p(99)"),
             'max_ms':     get_metric(dur, "max"),
             'throughput': get_metric(reqs, "rate"),
-            'total_reqs': get_metric(reqs, "count"),
-            'error_pct':  (get_metric(failed, "rate") or 0) * 100,
+            'total_reqs': total_reqs,
+            'error_pct':  error_pct,
+            'unexpected_error_pct': unexpected_error_pct,
+            'controlled_error_pct': max(error_pct - unexpected_error_pct, 0),
             'read_avg':   round(sum(read_trends) / len(read_trends), 2) if read_trends else None,
             'write_avg':  round(sum(write_trends) / len(write_trends), 2) if write_trends else None,
         })
@@ -218,7 +226,9 @@ for hf in hit_ratio_files:
 avg_hr = round(sum(hit_ratios) / len(hit_ratios), 2) if hit_ratios else "N/A"
 
 n = len(collected)
-print(f"{avg_key('avg_ms')},{avg_key('p90_ms')},{avg_key('p95_ms')},{avg_key('p99_ms')},{avg_key('max_ms')},{avg_key('throughput')},{avg_key('error_pct')},{avg_key('total_reqs')},{avg_hr},{n},{avg_key('read_avg')},{avg_key('write_avg')}")
+unexpected_error_pct = avg_key('unexpected_error_pct')
+validity_status = "saturated" if unexpected_error_pct != "N/A" and unexpected_error_pct > 5 else "valid"
+print(f"{avg_key('avg_ms')},{avg_key('p90_ms')},{avg_key('p95_ms')},{avg_key('p99_ms')},{avg_key('max_ms')},{avg_key('throughput')},{avg_key('error_pct')},{unexpected_error_pct},{avg_key('controlled_error_pct')},{validity_status},{avg_key('total_reqs')},{avg_hr},{n},{avg_key('read_avg')},{avg_key('write_avg')}")
 PYEOF
 )
 

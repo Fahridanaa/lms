@@ -1,0 +1,6 @@
+=== Cache Hit Ratio ===
+Strategy                : no-cache
+Hits during benchmark   : 0
+Misses during benchmark : 0
+Total cache ops         : 0
+Cache Hit Ratio         : N/A (no cache ops)

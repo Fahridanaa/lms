@@ -15,7 +15,17 @@ class DatabaseSeederSizingTest extends TestCase
         $seeder = new DatabaseSeeder;
         $reflection = new ReflectionClass($seeder);
         $instructorIds = range(1, 40);
-        $categoryIds = range(1, 10);
+        $categoryIds = [
+            'Web Development' => 1,
+            'Data Science' => 2,
+            'Programming' => 3,
+            'Computer Science' => 4,
+            'Cloud Computing' => 5,
+            'Cybersecurity' => 6,
+            'UI/UX Design' => 7,
+            'DevOps' => 8,
+            'Artificial Intelligence' => 9,
+        ];
 
         $detailedCourseDefs = $reflection->getMethod('detailedCourseDefs')->invoke($seeder, $instructorIds, $categoryIds);
         $generatedCourseDefs = $reflection->getMethod('generatedCourseDefs')->invoke($seeder, $instructorIds, $categoryIds, 40);

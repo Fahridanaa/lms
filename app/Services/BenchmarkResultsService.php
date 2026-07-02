@@ -44,7 +44,7 @@ class BenchmarkResultsService
         ],
         'error_rate' => [
             'label' => 'Keandalan',
-            'metric' => 'error_rate_pct',
+            'metric' => 'unexpected_error_rate_pct',
             'weight' => 0.10,
             'direction' => 'lower',
         ],
@@ -128,7 +128,8 @@ class BenchmarkResultsService
                 'p99_ms' => 'Latensi P99',
                 'throughput_rps' => 'Throughput',
                 'cache_hit_ratio_pct' => 'Rasio cache hit',
-                'error_rate_pct' => 'Tingkat error',
+                'unexpected_error_rate_pct' => 'Error tidak terduga',
+                'error_rate_pct' => 'Total error',
             ],
             'strategyLabels' => [
                 'no-cache' => 'Tanpa Cache',
@@ -413,7 +414,7 @@ class BenchmarkResultsService
                 'winner_label' => (string) $winner['label'],
                 'latency_pct' => $this->percentageChange($this->numericValue($baselineRow['avg_ms'] ?? null), $this->numericValue($winnerRow['avg_ms'] ?? null), 'lower'),
                 'throughput_pct' => $this->percentageChange($this->numericValue($baselineRow['throughput_rps'] ?? null), $this->numericValue($winnerRow['throughput_rps'] ?? null), 'higher'),
-                'error_rate_pct' => $this->percentageChange($this->numericValue($baselineRow['error_rate_pct'] ?? null), $this->numericValue($winnerRow['error_rate_pct'] ?? null), 'lower'),
+                'error_rate_pct' => $this->percentageChange($this->numericValue($baselineRow['unexpected_error_rate_pct'] ?? null), $this->numericValue($winnerRow['unexpected_error_rate_pct'] ?? null), 'lower'),
             ];
         }
 
@@ -462,7 +463,7 @@ class BenchmarkResultsService
                     'redis_label' => $this->redisModeLabel($redisMode),
                     'avg_latency_ms' => $this->average($metricRows, 'avg_ms'),
                     'avg_throughput_rps' => $this->average($metricRows, 'throughput_rps'),
-                    'avg_error_rate_pct' => $this->average($metricRows, 'error_rate_pct'),
+                    'avg_error_rate_pct' => $this->average($metricRows, 'unexpected_error_rate_pct'),
                     'saturated_iterations' => array_sum(array_map(fn (array $row): int => (int) ($row['saturated'] ?? 0), $saturationRows)),
                     'total_iterations' => array_sum(array_map(fn (array $row): int => (int) ($row['total_iterations'] ?? 0), $saturationRows)),
                 ];
@@ -681,7 +682,7 @@ class BenchmarkResultsService
             'throughput' => $this->scoreDimension('throughput', $this->numericValue($metricRow['throughput_rps'] ?? null)),
             'cache_hit_ratio' => $this->scoreDimension('cache_hit_ratio', $this->numericValue($metricRow['cache_hit_ratio_pct'] ?? null)),
             'resource_efficiency' => $this->scoreDimension('resource_efficiency', $this->resourceEfficiency($resourceRow)),
-            'error_rate' => $this->scoreDimension('error_rate', $this->numericValue($metricRow['error_rate_pct'] ?? null)),
+            'error_rate' => $this->scoreDimension('error_rate', $this->numericValue($metricRow['unexpected_error_rate_pct'] ?? null)),
         ];
     }
 

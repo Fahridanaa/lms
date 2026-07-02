@@ -1,0 +1,6 @@
+=== Cache Hit Ratio ===
+Strategy                : write-through
+Hits during benchmark   : 44223
+Misses during benchmark : 109848
+Total cache ops         : 154071
+Cache Hit Ratio         : 28.7000%

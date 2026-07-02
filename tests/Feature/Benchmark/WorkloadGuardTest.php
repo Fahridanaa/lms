@@ -310,6 +310,40 @@ class WorkloadGuardTest extends TestCase
         $this->assertStringContainsString('wh-cascade-post', $source);
     }
 
+    #[Test]
+    public function endpoint_outputs_track_current_k6_trends(): void
+    {
+        $combineScript = file_get_contents(base_path('scripts/combine-benchmark-results.php'));
+        $dashboardScript = file_get_contents(base_path('resources/js/app.js'));
+
+        $expectedMetrics = [
+            'course_structure_duration',
+            'material_detail_duration',
+            'quiz_detail_duration',
+            'assignment_detail_duration',
+            'gradebook_duration',
+            'user_grades_duration',
+            'material_list_duration',
+            'course_completion_duration',
+            'quiz_attempt_result_duration',
+            'start_attempt_duration',
+            'submit_assignment_duration',
+            'read_activity_duration',
+            'cascade_read_duration',
+            'submit_quiz_duration',
+            'material_download_duration',
+            'marker_grade_duration',
+            'grade_submission_duration',
+            'grade_update_duration',
+        ];
+
+        foreach ($expectedMetrics as $metric) {
+            $this->assertStringContainsString($metric, $combineScript);
+            $this->assertStringContainsString($metric, $dashboardScript);
+        }
+
+        $this->assertStringNotContainsString('materials_list_duration', $combineScript.$dashboardScript);
+    }
     // ─── Helper Methods ────────────────────────────────────
 
     /**

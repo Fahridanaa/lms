@@ -3,56 +3,36 @@
 namespace Database\Seeders;
 
 use App\Models\Assignment;
-use App\Models\AssignmentAllocatedMarker;
 use App\Models\Context;
 use App\Models\Course;
-use App\Models\CourseCategory;
-use App\Models\CourseCompletion;
-use App\Models\CourseCompletionCriterion;
-use App\Models\CourseCompletionCriterionCompletion;
-use App\Models\CourseEnrollment;
-use App\Models\CourseEnrolmentMethod;
-use App\Models\CourseGroup;
-use App\Models\CourseGrouping;
-use App\Models\CourseGroupingGroup;
-use App\Models\CourseGroupMember;
-use App\Models\CourseSection;
-use App\Models\FileRecord;
 use App\Models\Grade;
-use App\Models\GradeItem;
-use App\Models\LearningModule;
-use App\Models\Material;
-use App\Models\ModuleAvailabilityRule;
-use App\Models\ModuleCompletion;
-use App\Models\Question;
 use App\Models\Quiz;
-use App\Models\QuizAttempt;
-use App\Models\QuizAttemptQuestion;
-use App\Models\QuizAttemptStep;
-use App\Models\QuizAttemptStepData;
-use App\Models\QuizGrade;
-use App\Models\QuizOverride;
-use App\Models\AssignmentOverride;
-use App\Models\QuizQuestionSlot;
 use App\Models\Role;
-use App\Models\RoleAssignment;
-use App\Models\Submission;
-use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
 class DatabaseSeeder extends Seeder
 {
     private const BATCH_SIZE = 500;
+
     private const INSTRUCTOR_COUNT = 40;
+
     private const STUDENT_COUNT = 1960;
+
     private const MIN_STUDENTS_PER_COURSE = 30;
+
     private const MAX_STUDENTS_PER_COURSE = 60;
+
     private const MATERIALS_PER_COURSE = 12;
+
     private const QUIZZES_PER_COURSE = 4;
+
     private const ASSIGNMENTS_PER_COURSE = 12;
+
     private const MIN_QUESTIONS_PER_QUIZ = 25;
+
     private const MAX_QUESTIONS_PER_QUIZ = 50;
+
     private const QUIZ_ATTEMPTS_PER_STUDENT = 3;
 
     private array $roleIdMap = [];
@@ -172,7 +152,9 @@ class DatabaseSeeder extends Seeder
             $sortOrder = 0;
             foreach ($def['activities'] as $sectionTitle => $acts) {
                 $secId = $sectionNameToId[$sectionTitle] ?? null;
-                if (!$secId) continue;
+                if (! $secId) {
+                    continue;
+                }
 
                 foreach ($acts as $act) {
                     $type = $act['type'];
@@ -182,9 +164,13 @@ class DatabaseSeeder extends Seeder
 
                     $activityId = $this->insertActivity($type, $aTitle, $courseId, $visible, $act);
 
-                    if ($type === 'quiz') $createdQuizIds[$ci][] = $activityId;
-                    elseif ($type === 'assignment') $createdAssignmentIds[$ci][] = $activityId;
-                    elseif ($type === 'material') $createdMaterialIds[$ci][] = $activityId;
+                    if ($type === 'quiz') {
+                        $createdQuizIds[$ci][] = $activityId;
+                    } elseif ($type === 'assignment') {
+                        $createdAssignmentIds[$ci][] = $activityId;
+                    } elseif ($type === 'material') {
+                        $createdMaterialIds[$ci][] = $activityId;
+                    }
 
                     // Learning Module
                     $moduleId = DB::table('learning_modules')->insertGetId([
@@ -261,7 +247,7 @@ class DatabaseSeeder extends Seeder
                     $batch = [];
                 }
             }
-            if (!empty($batch)) {
+            if (! empty($batch)) {
                 DB::table('course_enrollments')->insert($batch);
                 $enrollmentCount += count($batch);
             }
@@ -287,7 +273,7 @@ class DatabaseSeeder extends Seeder
                     $raBatch = [];
                 }
             }
-            if (!empty($raBatch)) {
+            if (! empty($raBatch)) {
                 DB::table('role_assignments')->insert($raBatch);
             }
 
@@ -363,11 +349,15 @@ class DatabaseSeeder extends Seeder
         $compCount = 0;
         foreach ($courseIds as $ci => $courseId) {
             $enrolled = $enrolledUserIdsByCourse[$courseId] ?? [];
-            if (empty($enrolled)) continue;
+            if (empty($enrolled)) {
+                continue;
+            }
             $sample = array_slice($enrolled, 0, min(5, count($enrolled)));
 
             foreach ($moduleIds[$ci] ?? [] as $mod) {
-                if (!$mod['completion_enabled']) continue;
+                if (! $mod['completion_enabled']) {
+                    continue;
+                }
                 foreach ($sample as $uid) {
                     DB::table('module_completions')->insert([
                         'learning_module_id' => $mod['id'],
@@ -396,7 +386,7 @@ class DatabaseSeeder extends Seeder
         // ─── 9. Groups ─────────────────────────────────────────
         $this->command->info('Creating groups...');
         $groupNames = ['Group A', 'Group B', 'Alpha', 'Beta', 'Gamma', 'Team 1', 'Workshop 1', 'Workshop 2',
-                       'Lab A', 'Lab B', 'Lab C', 'Study Group', 'Project Team', 'Section 1', 'Section 2', 'Cohort 1'];
+            'Lab A', 'Lab B', 'Lab C', 'Study Group', 'Project Team', 'Section 1', 'Section 2', 'Cohort 1'];
         $groupCount = 0;
         $groupMemberCount = 0;
 
@@ -420,7 +410,7 @@ class DatabaseSeeder extends Seeder
 
             // Group members — split enrolled students across groups
             $enrolled = $enrolledUserIdsByCourse[$courseId] ?? [];
-            if (!empty($gIds) && !empty($enrolled)) {
+            if (! empty($gIds) && ! empty($enrolled)) {
                 $chunks = array_chunk($enrolled, (int) ceil(count($enrolled) / count($gIds)));
                 foreach ($gIds as $gi => $gId) {
                     $chunk = $chunks[$gi] ?? [];
@@ -433,7 +423,7 @@ class DatabaseSeeder extends Seeder
                             'updated_at' => now(),
                         ];
                     }
-                    if (!empty($gmBatch)) {
+                    if (! empty($gmBatch)) {
                         DB::table('course_group_members')->insert($gmBatch);
                         $groupMemberCount += count($gmBatch);
                     }
@@ -441,7 +431,7 @@ class DatabaseSeeder extends Seeder
             }
 
             // Course groupings for some courses
-            if (!empty($gIds) && $ci % 3 === 0) {
+            if (! empty($gIds) && $ci % 3 === 0) {
                 $groupingId = DB::table('course_groupings')->insertGetId([
                     'course_id' => $courseId,
                     'name' => 'Cohort '.($ci),
@@ -476,7 +466,9 @@ class DatabaseSeeder extends Seeder
         foreach ($createdQuizIds as $ci => $qids) {
             $courseId = $courseIds[$ci];
             $enrolled = $enrolledUserIdsByCourse[$courseId] ?? [];
-            if (empty($enrolled)) continue;
+            if (empty($enrolled)) {
+                continue;
+            }
             $sample = $enrolled;
 
             foreach ($qids as $qid) {
@@ -505,7 +497,7 @@ class DatabaseSeeder extends Seeder
                         }
                     }
                 }
-                if (!empty($batch)) {
+                if (! empty($batch)) {
                     DB::table('quiz_attempts')->insert($batch);
                     $attemptCount += count($batch);
                 }
@@ -521,7 +513,9 @@ class DatabaseSeeder extends Seeder
         foreach ($createdAssignmentIds as $ci => $aids) {
             $courseId = $courseIds[$ci];
             $enrolled = $enrolledUserIdsByCourse[$courseId] ?? [];
-            if (empty($enrolled)) continue;
+            if (empty($enrolled)) {
+                continue;
+            }
             $sample = $enrolled;
 
             foreach ($aids as $aid) {
@@ -548,7 +542,7 @@ class DatabaseSeeder extends Seeder
                         $batch = [];
                     }
                 }
-                if (!empty($batch)) {
+                if (! empty($batch)) {
                     DB::table('submissions')->insert($batch);
                     $submissionCount += count($batch);
                 }
@@ -569,10 +563,14 @@ class DatabaseSeeder extends Seeder
                 $batch = [];
                 foreach ($attempts as $attempt) {
                     $courseId = $quizIdToCourse[$attempt->quiz_id] ?? null;
-                    if (!$courseId) continue;
+                    if (! $courseId) {
+                        continue;
+                    }
 
                     $giId = $gradeItemIdsByCourse[$courseId]['quiz_'.$attempt->quiz_id] ?? null;
-                    if (!$giId) continue;
+                    if (! $giId) {
+                        continue;
+                    }
 
                     $batch[] = [
                         'user_id' => $attempt->user_id,
@@ -594,7 +592,7 @@ class DatabaseSeeder extends Seeder
                         $batch = [];
                     }
                 }
-                if (!empty($batch)) {
+                if (! empty($batch)) {
                     DB::table('grades')->insert($batch);
                     $gradeCount += count($batch);
                 }
@@ -611,10 +609,14 @@ class DatabaseSeeder extends Seeder
                 $batch = [];
                 foreach ($submissions as $sub) {
                     $courseId = DB::table('assignments')->where('id', $sub->assignment_id)->value('course_id');
-                    if (!$courseId) continue;
+                    if (! $courseId) {
+                        continue;
+                    }
 
                     $giId = $gradeItemIdsByCourse[$courseId]['assignment_'.$sub->assignment_id] ?? null;
-                    if (!$giId) continue;
+                    if (! $giId) {
+                        continue;
+                    }
 
                     $maxScore = DB::table('assignments')->where('id', $sub->assignment_id)->value('max_score') ?: 100;
 
@@ -638,7 +640,7 @@ class DatabaseSeeder extends Seeder
                         $batch = [];
                     }
                 }
-                if (!empty($batch)) {
+                if (! empty($batch)) {
                     DB::table('grades')->insert($batch);
                     $gradeCount += count($batch);
                 }
@@ -686,6 +688,7 @@ class DatabaseSeeder extends Seeder
         if ($existing) {
             return $existing->id;
         }
+
         return DB::table('contexts')->insertGetId([
             'contextlevel' => Context::LEVEL_SYSTEM,
             'instance_id' => 0,
@@ -716,7 +719,7 @@ class DatabaseSeeder extends Seeder
 
         for ($i = 1; $i <= $count; $i++) {
             $hashIdx = ($i - 1) % 50;
-            if (!isset($hashCache[$hashIdx])) {
+            if (! isset($hashCache[$hashIdx])) {
                 $hashCache[$hashIdx] = bcrypt('password');
             }
 
@@ -739,7 +742,7 @@ class DatabaseSeeder extends Seeder
             }
         }
 
-        if (!empty($batch)) {
+        if (! empty($batch)) {
             $ids = array_merge($ids, $this->insertAndGetIds('users', $batch));
         }
 
@@ -748,11 +751,14 @@ class DatabaseSeeder extends Seeder
 
     private function insertAndGetIds(string $table, array $rows): array
     {
-        if (empty($rows)) return [];
+        if (empty($rows)) {
+            return [];
+        }
         DB::table($table)->insert($rows);
 
         // Get the last inserted IDs
         $firstId = DB::getPdo()->lastInsertId();
+
         return range($firstId, $firstId + count($rows) - 1);
     }
 
@@ -799,9 +805,9 @@ class DatabaseSeeder extends Seeder
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
-                $ids[] = $id;
+                $ids[$name] = $id;
 
-                if (!empty($def['children'])) {
+                if (! empty($def['children'])) {
                     $walk($def['children'], $id, $depth + 1, $path ? $path.'/'.$id : (string) $id);
                 }
             }
@@ -817,222 +823,217 @@ class DatabaseSeeder extends Seeder
 
     private function detailedCourseDefs(array $instructorIds, array $categoryIds): array
     {
-        $catIndex = function (string $name) {
-            $map = [
-                'Web Development' => 3, 'Data Science' => 2, 'Programming' => 2,
-                'Computer Science' => 1, 'Cloud Computing' => 8, 'Cybersecurity' => 4,
-                'UI/UX Design' => 6, 'DevOps' => 7, 'Artificial Intelligence' => 9,
-            ];
-            return $map[$name] ?? null;
+        $catIndex = function (string $name) use ($categoryIds) {
+            return $categoryIds[$name] ?? null;
         };
 
         return [
             ['name' => 'Web Development Fundamentals',
-             'description' => 'Course description for Web Development Fundamentals.',
-             'instructor_id' => $instructorIds[0], 'is_active' => true,
-             'course_category_id' => $catIndex('Web Development'),
-             'sections' => ['Introduction', 'Core Concepts', 'Final Project'],
-             'activities' => [
-                 'Introduction' => [
-                     ['type' => 'material', 'title' => 'Course Overview', 'visible' => true, 'completion_enabled' => true],
-                     ['type' => 'material', 'title' => 'Development Environment Setup', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Core Concepts' => [
-                     ['type' => 'material', 'title' => 'HTML Fundamentals', 'visible' => true, 'completion_enabled' => false],
-                     ['type' => 'material', 'title' => 'CSS Styling Guide', 'visible' => true, 'completion_enabled' => true],
-                     ['type' => 'assignment', 'title' => 'Build a Personal Page', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Final Project' => [
-                     ['type' => 'quiz', 'title' => 'HTML & CSS Basics Quiz', 'visible' => true, 'completion_enabled' => true],
-                     ['type' => 'assignment', 'title' => 'Final Project: Portfolio Site', 'visible' => true, 'completion_enabled' => true],
-                 ],
-             ]],
+                'description' => 'Course description for Web Development Fundamentals.',
+                'instructor_id' => $instructorIds[0], 'is_active' => true,
+                'course_category_id' => $catIndex('Web Development'),
+                'sections' => ['Introduction', 'Core Concepts', 'Final Project'],
+                'activities' => [
+                    'Introduction' => [
+                        ['type' => 'material', 'title' => 'Course Overview', 'visible' => true, 'completion_enabled' => true],
+                        ['type' => 'material', 'title' => 'Development Environment Setup', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Core Concepts' => [
+                        ['type' => 'material', 'title' => 'HTML Fundamentals', 'visible' => true, 'completion_enabled' => false],
+                        ['type' => 'material', 'title' => 'CSS Styling Guide', 'visible' => true, 'completion_enabled' => true],
+                        ['type' => 'assignment', 'title' => 'Build a Personal Page', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Final Project' => [
+                        ['type' => 'quiz', 'title' => 'HTML & CSS Basics Quiz', 'visible' => true, 'completion_enabled' => true],
+                        ['type' => 'assignment', 'title' => 'Final Project: Portfolio Site', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                ]],
             ['name' => 'Data Science with Python',
-             'description' => 'Course description for Data Science with Python.',
-             'instructor_id' => $instructorIds[0], 'is_active' => true,
-             'course_category_id' => $catIndex('Data Science'),
-             'sections' => ['Setup', 'Data Wrangling', 'Visualization', 'Statistics', 'Final Project'],
-             'activities' => [
-                 'Setup' => [
-                     ['type' => 'material', 'title' => 'Python Environment Setup', 'visible' => true, 'completion_enabled' => true],
-                     ['type' => 'material', 'title' => 'Jupyter Notebooks Guide', 'visible' => true, 'completion_enabled' => false],
-                 ],
-                 'Data Wrangling' => [
-                     ['type' => 'material', 'title' => 'Pandas Fundamentals', 'visible' => true, 'completion_enabled' => true],
-                     ['type' => 'assignment', 'title' => 'Data Cleaning Exercise', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Visualization' => [
-                     ['type' => 'material', 'title' => 'Matplotlib & Seaborn', 'visible' => false, 'completion_enabled' => false],
-                     ['type' => 'quiz', 'title' => 'Data Wrangling Quiz', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Statistics' => [
-                     ['type' => 'material', 'title' => 'Descriptive Statistics', 'visible' => true, 'completion_enabled' => false],
-                     ['type' => 'quiz', 'title' => 'Statistics Fundamentals Quiz', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Final Project' => [
-                     ['type' => 'assignment', 'title' => 'Data Analysis Report', 'visible' => true, 'completion_enabled' => true],
-                 ],
-             ]],
+                'description' => 'Course description for Data Science with Python.',
+                'instructor_id' => $instructorIds[0], 'is_active' => true,
+                'course_category_id' => $catIndex('Data Science'),
+                'sections' => ['Setup', 'Data Wrangling', 'Visualization', 'Statistics', 'Final Project'],
+                'activities' => [
+                    'Setup' => [
+                        ['type' => 'material', 'title' => 'Python Environment Setup', 'visible' => true, 'completion_enabled' => true],
+                        ['type' => 'material', 'title' => 'Jupyter Notebooks Guide', 'visible' => true, 'completion_enabled' => false],
+                    ],
+                    'Data Wrangling' => [
+                        ['type' => 'material', 'title' => 'Pandas Fundamentals', 'visible' => true, 'completion_enabled' => true],
+                        ['type' => 'assignment', 'title' => 'Data Cleaning Exercise', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Visualization' => [
+                        ['type' => 'material', 'title' => 'Matplotlib & Seaborn', 'visible' => false, 'completion_enabled' => false],
+                        ['type' => 'quiz', 'title' => 'Data Wrangling Quiz', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Statistics' => [
+                        ['type' => 'material', 'title' => 'Descriptive Statistics', 'visible' => true, 'completion_enabled' => false],
+                        ['type' => 'quiz', 'title' => 'Statistics Fundamentals Quiz', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Final Project' => [
+                        ['type' => 'assignment', 'title' => 'Data Analysis Report', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                ]],
             ['name' => 'Mobile App Development',
-             'description' => 'Course description for Mobile App Development.',
-             'instructor_id' => $instructorIds[1], 'is_active' => true,
-             'course_category_id' => $catIndex('Programming'),
-             'sections' => ['Getting Started', 'UI Components', 'Navigation', 'Publishing'],
-             'activities' => [
-                 'Getting Started' => [
-                     ['type' => 'material', 'title' => 'Environment Setup', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'UI Components' => [
-                     ['type' => 'material', 'title' => 'Layouts & Views', 'visible' => true, 'completion_enabled' => true],
-                     ['type' => 'assignment', 'title' => 'Build a Login Screen', 'visible' => true, 'completion_enabled' => true],
-                     ['type' => 'quiz', 'title' => 'UI Components Quiz', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Navigation' => [
-                     ['type' => 'material', 'title' => 'Navigation Patterns', 'visible' => true, 'completion_enabled' => false],
-                     ['type' => 'assignment', 'title' => 'Multi-Screen App', 'visible' => false, 'completion_enabled' => false],
-                 ],
-                 'Publishing' => [
-                     ['type' => 'material', 'title' => 'App Store Deployment', 'visible' => true, 'completion_enabled' => false],
-                 ],
-             ]],
+                'description' => 'Course description for Mobile App Development.',
+                'instructor_id' => $instructorIds[1], 'is_active' => true,
+                'course_category_id' => $catIndex('Programming'),
+                'sections' => ['Getting Started', 'UI Components', 'Navigation', 'Publishing'],
+                'activities' => [
+                    'Getting Started' => [
+                        ['type' => 'material', 'title' => 'Environment Setup', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'UI Components' => [
+                        ['type' => 'material', 'title' => 'Layouts & Views', 'visible' => true, 'completion_enabled' => true],
+                        ['type' => 'assignment', 'title' => 'Build a Login Screen', 'visible' => true, 'completion_enabled' => true],
+                        ['type' => 'quiz', 'title' => 'UI Components Quiz', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Navigation' => [
+                        ['type' => 'material', 'title' => 'Navigation Patterns', 'visible' => true, 'completion_enabled' => false],
+                        ['type' => 'assignment', 'title' => 'Multi-Screen App', 'visible' => false, 'completion_enabled' => false],
+                    ],
+                    'Publishing' => [
+                        ['type' => 'material', 'title' => 'App Store Deployment', 'visible' => true, 'completion_enabled' => false],
+                    ],
+                ]],
             ['name' => 'Database Design & SQL',
-             'description' => 'Course description for Database Design & SQL.',
-             'instructor_id' => $instructorIds[1], 'is_active' => true,
-             'course_category_id' => $catIndex('Computer Science'),
-             'sections' => ['ER Modeling', 'Normalization', 'SELECT Queries', 'Joins', 'Indexes', 'Transactions'],
-             'activities' => [
-                 'ER Modeling' => [
-                     ['type' => 'material', 'title' => 'Entity-Relationship Diagrams', 'visible' => true, 'completion_enabled' => true],
-                     ['type' => 'assignment', 'title' => 'Design an ER Diagram', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Normalization' => [
-                     ['type' => 'material', 'title' => 'Normal Forms (1NF-3NF)', 'visible' => true, 'completion_enabled' => true],
-                     ['type' => 'quiz', 'title' => 'Normalization Quiz', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'SELECT Queries' => [
-                     ['type' => 'material', 'title' => 'Basic SELECT & WHERE', 'visible' => true, 'completion_enabled' => false],
-                     ['type' => 'assignment', 'title' => 'SQL Query Exercises', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Joins' => [
-                     ['type' => 'material', 'title' => 'INNER, LEFT, RIGHT, FULL Joins', 'visible' => true, 'completion_enabled' => false],
-                     ['type' => 'quiz', 'title' => 'Joins & Relationships Quiz', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Indexes' => [
-                     ['type' => 'material', 'title' => 'Indexing Strategies', 'visible' => true, 'completion_enabled' => false],
-                 ],
-                 'Transactions' => [
-                     ['type' => 'material', 'title' => 'ACID & Transactions', 'visible' => true, 'completion_enabled' => false],
-                 ],
-             ]],
+                'description' => 'Course description for Database Design & SQL.',
+                'instructor_id' => $instructorIds[1], 'is_active' => true,
+                'course_category_id' => $catIndex('Computer Science'),
+                'sections' => ['ER Modeling', 'Normalization', 'SELECT Queries', 'Joins', 'Indexes', 'Transactions'],
+                'activities' => [
+                    'ER Modeling' => [
+                        ['type' => 'material', 'title' => 'Entity-Relationship Diagrams', 'visible' => true, 'completion_enabled' => true],
+                        ['type' => 'assignment', 'title' => 'Design an ER Diagram', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Normalization' => [
+                        ['type' => 'material', 'title' => 'Normal Forms (1NF-3NF)', 'visible' => true, 'completion_enabled' => true],
+                        ['type' => 'quiz', 'title' => 'Normalization Quiz', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'SELECT Queries' => [
+                        ['type' => 'material', 'title' => 'Basic SELECT & WHERE', 'visible' => true, 'completion_enabled' => false],
+                        ['type' => 'assignment', 'title' => 'SQL Query Exercises', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Joins' => [
+                        ['type' => 'material', 'title' => 'INNER, LEFT, RIGHT, FULL Joins', 'visible' => true, 'completion_enabled' => false],
+                        ['type' => 'quiz', 'title' => 'Joins & Relationships Quiz', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Indexes' => [
+                        ['type' => 'material', 'title' => 'Indexing Strategies', 'visible' => true, 'completion_enabled' => false],
+                    ],
+                    'Transactions' => [
+                        ['type' => 'material', 'title' => 'ACID & Transactions', 'visible' => true, 'completion_enabled' => false],
+                    ],
+                ]],
             ['name' => 'Machine Learning Foundations',
-             'description' => 'Course description for Machine Learning Foundations.',
-             'instructor_id' => $instructorIds[2], 'is_active' => true,
-             'course_category_id' => $catIndex('Data Science'),
-             'sections' => ['Intro', 'Regression', 'Classification', 'Clustering', 'Neural Networks', 'Evaluation', 'Capstone'],
-             'activities' => [
-                 'Intro' => [
-                     ['type' => 'material', 'title' => 'What is ML?', 'visible' => true, 'completion_enabled' => true],
-                     ['type' => 'quiz', 'title' => 'ML Concepts Quiz', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Regression' => [
-                     ['type' => 'material', 'title' => 'Linear Regression', 'visible' => true, 'completion_enabled' => true],
-                     ['type' => 'assignment', 'title' => 'Regression Analysis', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Classification' => [
-                     ['type' => 'material', 'title' => 'Logistic Regression & Decision Trees', 'visible' => true, 'completion_enabled' => false],
-                     ['type' => 'assignment', 'title' => 'Classification Task', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Clustering' => [
-                     ['type' => 'material', 'title' => 'K-Means & Hierarchical Clustering', 'visible' => true, 'completion_enabled' => false],
-                     ['type' => 'quiz', 'title' => 'Clustering Quiz', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Neural Networks' => [
-                     ['type' => 'material', 'title' => 'Neural Network Basics', 'visible' => false, 'completion_enabled' => false],
-                 ],
-                 'Evaluation' => [
-                     ['type' => 'material', 'title' => 'Model Evaluation Metrics', 'visible' => true, 'completion_enabled' => false],
-                 ],
-                 'Capstone' => [
-                     ['type' => 'assignment', 'title' => 'ML Capstone Project', 'visible' => true, 'completion_enabled' => true],
-                 ],
-             ]],
+                'description' => 'Course description for Machine Learning Foundations.',
+                'instructor_id' => $instructorIds[2], 'is_active' => true,
+                'course_category_id' => $catIndex('Data Science'),
+                'sections' => ['Intro', 'Regression', 'Classification', 'Clustering', 'Neural Networks', 'Evaluation', 'Capstone'],
+                'activities' => [
+                    'Intro' => [
+                        ['type' => 'material', 'title' => 'What is ML?', 'visible' => true, 'completion_enabled' => true],
+                        ['type' => 'quiz', 'title' => 'ML Concepts Quiz', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Regression' => [
+                        ['type' => 'material', 'title' => 'Linear Regression', 'visible' => true, 'completion_enabled' => true],
+                        ['type' => 'assignment', 'title' => 'Regression Analysis', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Classification' => [
+                        ['type' => 'material', 'title' => 'Logistic Regression & Decision Trees', 'visible' => true, 'completion_enabled' => false],
+                        ['type' => 'assignment', 'title' => 'Classification Task', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Clustering' => [
+                        ['type' => 'material', 'title' => 'K-Means & Hierarchical Clustering', 'visible' => true, 'completion_enabled' => false],
+                        ['type' => 'quiz', 'title' => 'Clustering Quiz', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Neural Networks' => [
+                        ['type' => 'material', 'title' => 'Neural Network Basics', 'visible' => false, 'completion_enabled' => false],
+                    ],
+                    'Evaluation' => [
+                        ['type' => 'material', 'title' => 'Model Evaluation Metrics', 'visible' => true, 'completion_enabled' => false],
+                    ],
+                    'Capstone' => [
+                        ['type' => 'assignment', 'title' => 'ML Capstone Project', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                ]],
             ['name' => 'Cloud Architecture',
-             'description' => 'Course description for Cloud Architecture.',
-             'instructor_id' => $instructorIds[2], 'is_active' => false,
-             'course_category_id' => $catIndex('Cloud Computing'),
-             'sections' => ['Overview', 'AWS Basics', 'Case Study'],
-             'activities' => [
-                 'Overview' => [['type' => 'material', 'title' => 'Cloud Computing Overview', 'visible' => true, 'completion_enabled' => false]],
-                 'AWS Basics' => [['type' => 'material', 'title' => 'AWS Core Services', 'visible' => true, 'completion_enabled' => false]],
-                 'Case Study' => [['type' => 'material', 'title' => 'Architecture Case Study', 'visible' => true, 'completion_enabled' => false]],
-             ]],
+                'description' => 'Course description for Cloud Architecture.',
+                'instructor_id' => $instructorIds[2], 'is_active' => false,
+                'course_category_id' => $catIndex('Cloud Computing'),
+                'sections' => ['Overview', 'AWS Basics', 'Case Study'],
+                'activities' => [
+                    'Overview' => [['type' => 'material', 'title' => 'Cloud Computing Overview', 'visible' => true, 'completion_enabled' => false]],
+                    'AWS Basics' => [['type' => 'material', 'title' => 'AWS Core Services', 'visible' => true, 'completion_enabled' => false]],
+                    'Case Study' => [['type' => 'material', 'title' => 'Architecture Case Study', 'visible' => true, 'completion_enabled' => false]],
+                ]],
             ['name' => 'Cybersecurity Essentials',
-             'description' => 'Course description for Cybersecurity Essentials.',
-             'instructor_id' => $instructorIds[3], 'is_active' => true,
-             'course_category_id' => $catIndex('Cybersecurity'),
-             'sections' => ['Threat Model', 'Network Security', 'Cryptography', 'Incident Response'],
-             'activities' => [
-                 'Threat Model' => [
-                     ['type' => 'material', 'title' => 'Threat Modeling Overview', 'visible' => true, 'completion_enabled' => true],
-                     ['type' => 'assignment', 'title' => 'Threat Model Document', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Network Security' => [
-                     ['type' => 'material', 'title' => 'Firewalls & IDS', 'visible' => true, 'completion_enabled' => false],
-                     ['type' => 'quiz', 'title' => 'Network Security Quiz', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Cryptography' => [
-                     ['type' => 'material', 'title' => 'Symmetric & Asymmetric Crypto', 'visible' => true, 'completion_enabled' => false],
-                     ['type' => 'assignment', 'title' => 'Implement a Caesar Cipher', 'visible' => false, 'completion_enabled' => false],
-                 ],
-                 'Incident Response' => [
-                     ['type' => 'material', 'title' => 'Incident Response Plan', 'visible' => true, 'completion_enabled' => false],
-                 ],
-             ]],
+                'description' => 'Course description for Cybersecurity Essentials.',
+                'instructor_id' => $instructorIds[3], 'is_active' => true,
+                'course_category_id' => $catIndex('Cybersecurity'),
+                'sections' => ['Threat Model', 'Network Security', 'Cryptography', 'Incident Response'],
+                'activities' => [
+                    'Threat Model' => [
+                        ['type' => 'material', 'title' => 'Threat Modeling Overview', 'visible' => true, 'completion_enabled' => true],
+                        ['type' => 'assignment', 'title' => 'Threat Model Document', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Network Security' => [
+                        ['type' => 'material', 'title' => 'Firewalls & IDS', 'visible' => true, 'completion_enabled' => false],
+                        ['type' => 'quiz', 'title' => 'Network Security Quiz', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Cryptography' => [
+                        ['type' => 'material', 'title' => 'Symmetric & Asymmetric Crypto', 'visible' => true, 'completion_enabled' => false],
+                        ['type' => 'assignment', 'title' => 'Implement a Caesar Cipher', 'visible' => false, 'completion_enabled' => false],
+                    ],
+                    'Incident Response' => [
+                        ['type' => 'material', 'title' => 'Incident Response Plan', 'visible' => true, 'completion_enabled' => false],
+                    ],
+                ]],
             ['name' => 'UI/UX Design Principles',
-             'description' => 'Course description for UI/UX Design Principles.',
-             'instructor_id' => $instructorIds[3], 'is_active' => true,
-             'course_category_id' => $catIndex('UI/UX Design'),
-             'sections' => ['Design Thinking', 'Wireframing', 'Prototyping', 'User Testing', 'Portfolio'],
-             'activities' => [
-                 'Design Thinking' => [['type' => 'material', 'title' => 'Design Thinking Process', 'visible' => true, 'completion_enabled' => true]],
-                 'Wireframing' => [
-                     ['type' => 'material', 'title' => 'Wireframing Tools & Techniques', 'visible' => true, 'completion_enabled' => true],
-                     ['type' => 'assignment', 'title' => 'Create Wireframes', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Prototyping' => [
-                     ['type' => 'material', 'title' => 'Interactive Prototyping', 'visible' => true, 'completion_enabled' => false],
-                     ['type' => 'quiz', 'title' => 'UX Principles Quiz', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'User Testing' => [
-                     ['type' => 'material', 'title' => 'Conducting User Tests', 'visible' => true, 'completion_enabled' => false],
-                     ['type' => 'assignment', 'title' => 'Usability Test Report', 'visible' => false, 'completion_enabled' => false],
-                 ],
-                 'Portfolio' => [['type' => 'material', 'title' => 'Building Your Portfolio', 'visible' => true, 'completion_enabled' => false]],
-             ]],
+                'description' => 'Course description for UI/UX Design Principles.',
+                'instructor_id' => $instructorIds[3], 'is_active' => true,
+                'course_category_id' => $catIndex('UI/UX Design'),
+                'sections' => ['Design Thinking', 'Wireframing', 'Prototyping', 'User Testing', 'Portfolio'],
+                'activities' => [
+                    'Design Thinking' => [['type' => 'material', 'title' => 'Design Thinking Process', 'visible' => true, 'completion_enabled' => true]],
+                    'Wireframing' => [
+                        ['type' => 'material', 'title' => 'Wireframing Tools & Techniques', 'visible' => true, 'completion_enabled' => true],
+                        ['type' => 'assignment', 'title' => 'Create Wireframes', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Prototyping' => [
+                        ['type' => 'material', 'title' => 'Interactive Prototyping', 'visible' => true, 'completion_enabled' => false],
+                        ['type' => 'quiz', 'title' => 'UX Principles Quiz', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'User Testing' => [
+                        ['type' => 'material', 'title' => 'Conducting User Tests', 'visible' => true, 'completion_enabled' => false],
+                        ['type' => 'assignment', 'title' => 'Usability Test Report', 'visible' => false, 'completion_enabled' => false],
+                    ],
+                    'Portfolio' => [['type' => 'material', 'title' => 'Building Your Portfolio', 'visible' => true, 'completion_enabled' => false]],
+                ]],
             ['name' => 'DevOps & CI/CD',
-             'description' => 'Course description for DevOps & CI/CD.',
-             'instructor_id' => $instructorIds[4], 'is_active' => true,
-             'course_category_id' => $catIndex('DevOps'),
-             'sections' => ['CI Fundamentals', 'Pipeline Setup', 'Monitoring'],
-             'activities' => [
-                 'CI Fundamentals' => [['type' => 'material', 'title' => 'Continuous Integration Concepts', 'visible' => true, 'completion_enabled' => true]],
-                 'Pipeline Setup' => [
-                     ['type' => 'material', 'title' => 'Building a CI Pipeline', 'visible' => true, 'completion_enabled' => true],
-                     ['type' => 'assignment', 'title' => 'GitHub Actions Pipeline', 'visible' => true, 'completion_enabled' => true],
-                     ['type' => 'quiz', 'title' => 'CI/CD Concepts Quiz', 'visible' => true, 'completion_enabled' => true],
-                 ],
-                 'Monitoring' => [['type' => 'material', 'title' => 'Application Monitoring', 'visible' => true, 'completion_enabled' => false]],
-             ]],
+                'description' => 'Course description for DevOps & CI/CD.',
+                'instructor_id' => $instructorIds[4], 'is_active' => true,
+                'course_category_id' => $catIndex('DevOps'),
+                'sections' => ['CI Fundamentals', 'Pipeline Setup', 'Monitoring'],
+                'activities' => [
+                    'CI Fundamentals' => [['type' => 'material', 'title' => 'Continuous Integration Concepts', 'visible' => true, 'completion_enabled' => true]],
+                    'Pipeline Setup' => [
+                        ['type' => 'material', 'title' => 'Building a CI Pipeline', 'visible' => true, 'completion_enabled' => true],
+                        ['type' => 'assignment', 'title' => 'GitHub Actions Pipeline', 'visible' => true, 'completion_enabled' => true],
+                        ['type' => 'quiz', 'title' => 'CI/CD Concepts Quiz', 'visible' => true, 'completion_enabled' => true],
+                    ],
+                    'Monitoring' => [['type' => 'material', 'title' => 'Application Monitoring', 'visible' => true, 'completion_enabled' => false]],
+                ]],
             ['name' => 'Artificial Intelligence Intro',
-             'description' => 'Course description for Artificial Intelligence Intro.',
-             'instructor_id' => $instructorIds[4], 'is_active' => false,
-             'course_category_id' => $catIndex('Artificial Intelligence'),
-             'sections' => ['History', 'Tools', 'Ethics'],
-             'activities' => [
-                 'History' => [['type' => 'material', 'title' => 'History of AI', 'visible' => true, 'completion_enabled' => false]],
-                 'Tools' => [['type' => 'material', 'title' => 'AI Tools & Libraries', 'visible' => true, 'completion_enabled' => false]],
-                 'Ethics' => [['type' => 'material', 'title' => 'AI Ethics', 'visible' => true, 'completion_enabled' => false]],
-             ]],
+                'description' => 'Course description for Artificial Intelligence Intro.',
+                'instructor_id' => $instructorIds[4], 'is_active' => false,
+                'course_category_id' => $catIndex('Artificial Intelligence'),
+                'sections' => ['History', 'Tools', 'Ethics'],
+                'activities' => [
+                    'History' => [['type' => 'material', 'title' => 'History of AI', 'visible' => true, 'completion_enabled' => false]],
+                    'Tools' => [['type' => 'material', 'title' => 'AI Tools & Libraries', 'visible' => true, 'completion_enabled' => false]],
+                    'Ethics' => [['type' => 'material', 'title' => 'AI Ethics', 'visible' => true, 'completion_enabled' => false]],
+                ]],
         ];
     }
 
@@ -1051,7 +1052,7 @@ class DatabaseSeeder extends Seeder
             'Game Development', 'AR/VR Development', 'Cross-Platform Dev', 'Desktop Applications',
         ];
         $sectionPool = ['Fundamentals', 'Core Topics', 'Advanced Topics', 'Hands-On Lab', 'Final Project',
-                        'Theory', 'Practice', 'Case Studies', 'Review', 'Assessment'];
+            'Theory', 'Practice', 'Case Studies', 'Review', 'Assessment'];
         $defs = [];
         mt_srand(999);
         for ($i = 0; $i < $count; $i++) {
@@ -1100,6 +1101,7 @@ class DatabaseSeeder extends Seeder
                 'activities' => $activities,
             ];
         }
+
         return $defs;
     }
 
@@ -1252,9 +1254,13 @@ class DatabaseSeeder extends Seeder
     {
         // Only apply detailed rules for first 10 courses
         foreach ($moduleIds as $ci => $mods) {
-            if ($ci >= 10) continue;
+            if ($ci >= 10) {
+                continue;
+            }
             $courseId = $courseIds[$ci] ?? null;
-            if (!$courseId) continue;
+            if (! $courseId) {
+                continue;
+            }
 
             // Build a title → module_id map for this course
             $titleToModId = [];
@@ -1321,7 +1327,9 @@ class DatabaseSeeder extends Seeder
         $targetCourses = [0, 1, 3, 7, 8];
         foreach ($targetCourses as $ci) {
             $courseId = $courseIds[$ci] ?? null;
-            if (!$courseId) continue;
+            if (! $courseId) {
+                continue;
+            }
 
             $mods = $moduleIds[$ci] ?? [];
 
@@ -1370,7 +1378,9 @@ class DatabaseSeeder extends Seeder
             ->where('course_id', $courseId)
             ->get();
 
-        if ($criteria->isEmpty()) return;
+        if ($criteria->isEmpty()) {
+            return;
+        }
 
         $activeStudentIds = DB::table('course_enrollments')
             ->where('course_id', $courseId)
@@ -1484,8 +1494,8 @@ class DatabaseSeeder extends Seeder
             ->where('status', 'finished')
             ->whereNotExists(function ($q) {
                 $q->select(DB::raw(1))
-                  ->from('quiz_attempt_questions')
-                  ->whereColumn('quiz_attempt_questions.quiz_attempt_id', 'quiz_attempts.id');
+                    ->from('quiz_attempt_questions')
+                    ->whereColumn('quiz_attempt_questions.quiz_attempt_id', 'quiz_attempts.id');
             })
             ->orderBy('id')
             ->chunk(200, function ($attempts) {
@@ -1513,7 +1523,7 @@ class DatabaseSeeder extends Seeder
                         }
                     }
                 }
-                if (!empty($qBatch)) {
+                if (! empty($qBatch)) {
                     DB::table('quiz_attempt_questions')->insert($qBatch);
                 }
 
@@ -1535,7 +1545,7 @@ class DatabaseSeeder extends Seeder
                         $sBatch = [];
                     }
                 }
-                if (!empty($sBatch)) {
+                if (! empty($sBatch)) {
                     DB::table('quiz_attempt_steps')->insert($sBatch);
                 }
             });
@@ -1593,7 +1603,7 @@ class DatabaseSeeder extends Seeder
                 ->limit(3)
                 ->get();
 
-            $otherInstructors = array_values(array_filter($instructorIds, fn($iid) => $iid !== $assignment->course_instructor_id));
+            $otherInstructors = array_values(array_filter($instructorIds, fn ($iid) => $iid !== $assignment->course_instructor_id));
             $markers = array_slice($otherInstructors, 0, 2);
 
             foreach ($submissions as $sub) {
@@ -1634,7 +1644,7 @@ class DatabaseSeeder extends Seeder
                     $batch = [];
                 }
             }
-            if (!empty($batch)) {
+            if (! empty($batch)) {
                 DB::table('file_records')->insert($batch);
             }
         });
@@ -1662,7 +1672,7 @@ class DatabaseSeeder extends Seeder
                     $batch = [];
                 }
             }
-            if (!empty($batch)) {
+            if (! empty($batch)) {
                 DB::table('file_records')->insert($batch);
             }
         });

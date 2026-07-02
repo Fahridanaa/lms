@@ -25,19 +25,30 @@ if (dashboard && window.benchmarkData) {
     };
     const scenarioEndpointKeys = {
         'read-heavy': [
-            'quiz_detail_duration',
-            'materials_list_duration',
+            'course_structure_duration',
             'material_detail_duration',
+            'quiz_detail_duration',
+            'assignment_detail_duration',
             'gradebook_duration',
+            'user_grades_duration',
+            'material_list_duration',
+            'course_completion_duration',
+            'quiz_attempt_result_duration',
             'start_attempt_duration',
             'submit_assignment_duration',
         ],
         'write-heavy': [
-            'assignment_detail_duration',
+            'course_structure_duration',
             'gradebook_duration',
+            'read_activity_duration',
+            'user_grades_duration',
+            'cascade_read_duration',
             'submit_assignment_duration',
             'submit_quiz_duration',
+            'material_download_duration',
+            'marker_grade_duration',
             'grade_submission_duration',
+            'grade_update_duration',
         ],
     };
     const metricUnits = {
@@ -48,6 +59,7 @@ if (dashboard && window.benchmarkData) {
         max_ms: 'ms',
         throughput_rps: 'rps',
         cache_hit_ratio_pct: '%',
+        unexpected_error_rate_pct: '%',
         error_rate_pct: '%',
         cpu_avg_pct: '%',
         mem_avg_mb: 'MB',

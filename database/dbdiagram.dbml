@@ -1,0 +1,775 @@
+Table assignment_allocated_markers {
+  id bigint [pk]
+  assignment_id bigint [not null]
+  submission_id bigint [not null]
+  student_id bigint [not null]
+  marker_id bigint [not null]
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table assignment_marks {
+  id bigint [pk]
+  assignment_id bigint [not null]
+  submission_id bigint [not null]
+  marker_id bigint [not null]
+  score decimal
+  feedback text
+  workflow_state varchar [not null]
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table assignment_overrides {
+  id bigint [pk]
+  assignment_id bigint [not null]
+  user_id bigint
+  course_group_id bigint
+  available_from timestamp
+  due_date timestamp
+  cutoff_date timestamp
+  max_attempts int
+  reason varchar
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table assignments {
+  id bigint [pk]
+  course_id bigint [not null]
+  title varchar [not null]
+  description text
+  due_date timestamp [not null]
+  max_score int [not null]
+  is_active boolean [not null]
+  created_at timestamp
+  updated_at timestamp
+  deleted_at timestamp
+  available_from timestamp
+  cutoff_date timestamp
+  max_attempts int [not null]
+  allow_late_submission boolean [not null]
+  submission_type varchar [not null]
+  marking_allocation_enabled boolean [not null]
+  marker_count int [not null]
+  multi_mark_method varchar
+  anonymous_marking_enabled boolean [not null]
+  hide_grader_from_student boolean [not null]
+
+}
+
+Table cache {
+  key varchar [pk]
+  value mediumtext [not null]
+  expiration int [not null]
+}
+
+Table cache_locks {
+  key varchar [pk]
+  owner varchar [not null]
+  expiration int [not null]
+}
+
+Table capabilities {
+  id bigint [pk]
+  name varchar [not null]
+  shortname varchar [unique, not null]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table contexts {
+  id bigint [pk]
+  contextlevel tinyint [not null]
+  instance_id bigint [not null]
+  path varchar [not null]
+  depth smallint [not null]
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table course_categories {
+  id bigint [pk]
+  parent_id bigint
+  name varchar [not null]
+  description text
+  sort_order int [not null]
+  visible boolean [not null]
+  depth int [not null]
+  path varchar
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table course_completion_criteria {
+  id bigint [pk]
+  course_id bigint [not null]
+  criteriatype varchar [not null]
+  module_instance_id bigint
+  grade_item_id bigint
+  pass_threshold decimal
+  time_end timestamp
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table course_completion_criterion_completions {
+  id bigint [pk]
+  course_completion_criterion_id bigint [not null]
+  user_id bigint [not null]
+  completed boolean [not null]
+  completed_at timestamp
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table course_completions {
+  id bigint [pk]
+  course_id bigint [not null]
+  user_id bigint [not null]
+  timeenrolled timestamp
+  timestarted timestamp
+  timecompleted timestamp
+  reaggregate boolean [not null]
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table course_enrollments {
+  id bigint [pk]
+  user_id bigint [not null]
+  course_id bigint [not null]
+  enrolled_at timestamp [not null]
+  created_at timestamp
+  updated_at timestamp
+  role varchar [not null]
+  status varchar [not null]
+  starts_at timestamp
+  ends_at timestamp
+
+}
+
+Table course_enrolment_methods {
+  id bigint [pk]
+  course_id bigint [not null]
+  method varchar [not null]
+  status varchar [not null]
+  default_role varchar [not null]
+  starts_at timestamp
+  ends_at timestamp
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table course_group_members {
+  id bigint [pk]
+  course_group_id bigint [not null]
+  user_id bigint [not null]
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table course_grouping_groups {
+  id bigint [pk]
+  course_grouping_id bigint [not null]
+  course_group_id bigint [not null]
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table course_groupings {
+  id bigint [pk]
+  course_id bigint [not null]
+  name varchar [not null]
+  sort_order int [not null]
+  active boolean [not null]
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table course_groups {
+  id bigint [pk]
+  course_id bigint [not null]
+  name varchar [not null]
+  sort_order int [not null]
+  active boolean [not null]
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table course_sections {
+  id bigint [pk]
+  course_id bigint [not null]
+  title varchar [not null]
+  summary text
+  sort_order int [not null]
+  visible boolean [not null]
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table courses {
+  id bigint [pk]
+  name varchar [not null]
+  description text
+  instructor_id bigint [not null]
+  is_active boolean [not null]
+  created_at timestamp
+  updated_at timestamp
+  deleted_at timestamp
+  course_category_id bigint
+
+}
+
+Table failed_jobs {
+  id bigint [pk]
+  uuid varchar [unique, not null]
+  connection text [not null]
+  queue text [not null]
+  payload longtext [not null]
+  exception longtext [not null]
+  failed_at timestamp [not null]
+}
+
+Table file_records {
+  id bigint [pk]
+  owner_type varchar [not null]
+  owner_id bigint [not null]
+  uploader_id bigint
+  component varchar
+  file_path varchar [not null]
+  mime_type varchar
+  file_size bigint [not null]
+  checksum varchar
+  revision int [not null]
+  visible boolean [not null]
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table grade_categories {
+  id bigint [pk]
+  course_id bigint [not null]
+  parent_id bigint
+  name varchar [not null]
+  depth int [not null]
+  path varchar
+  aggregation_method varchar [not null]
+  weight decimal [not null]
+  hidden boolean [not null]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table grade_category_histories {
+  id bigint [pk]
+  grade_category_id bigint [not null]
+  action varchar
+  old_name varchar
+  new_name varchar
+  old_weight decimal
+  new_weight decimal
+  old_hidden boolean
+  new_hidden boolean
+  old_aggregation_method varchar
+  new_aggregation_method varchar
+  old_parent_id bigint
+  new_parent_id bigint
+  changed_by bigint
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table grade_histories {
+  id bigint [pk]
+  grade_id bigint [not null]
+  action varchar
+  old_score decimal
+  new_score decimal
+  old_percentage decimal
+  new_percentage decimal
+  old_status varchar
+  new_status varchar
+  old_feedback text
+  new_feedback text
+  changed_by bigint
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table grade_item_histories {
+  id bigint [pk]
+  grade_item_id bigint [not null]
+  action varchar
+  old_name varchar
+  new_name varchar
+  old_max_score decimal
+  new_max_score decimal
+  old_pass_score decimal
+  new_pass_score decimal
+  old_weight decimal
+  new_weight decimal
+  old_hidden boolean
+  new_hidden boolean
+  old_locked boolean
+  new_locked boolean
+  old_category_id bigint
+  new_category_id bigint
+  changed_by bigint
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table grade_items {
+  id bigint [pk]
+  course_id bigint [not null]
+  item_type varchar
+  item_id bigint
+  name varchar [not null]
+  max_score decimal [not null]
+  pass_score decimal
+  weight decimal [not null]
+  hidden boolean [not null]
+  locked boolean [not null]
+  source varchar
+  grade_category_id bigint
+  sort_order int
+
+}
+
+Table gradebook_recalculations {
+  id bigint [pk]
+  course_id bigint [not null]
+  reason varchar [not null]
+  source_type varchar [not null]
+  source_id bigint [not null]
+  marked_at timestamp
+  recalculated_at timestamp
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table grades {
+  id bigint [pk]
+  user_id bigint [not null]
+  course_id bigint [not null]
+  gradeable_type varchar [not null]
+  gradeable_id bigint [not null]
+  score decimal [not null]
+  max_score decimal [not null]
+  percentage decimal [not null]
+  created_at timestamp
+  updated_at timestamp
+  deleted_at timestamp
+  grader_id bigint
+  feedback text
+  status varchar [not null]
+  source varchar [not null]
+  grade_item_id bigint
+
+}
+
+Table job_batches {
+  id varchar [pk]
+  name varchar [not null]
+  total_jobs int [not null]
+  pending_jobs int [not null]
+  failed_jobs int [not null]
+  failed_job_ids longtext [not null]
+  options mediumtext
+  cancelled_at int
+  created_at int [not null]
+  finished_at int
+}
+
+Table jobs {
+  id bigint [pk]
+  queue varchar [not null]
+  payload longtext [not null]
+  attempts tinyint [not null]
+  reserved_at int
+  available_at int [not null]
+  created_at int [not null]
+}
+
+Table learning_modules {
+  id bigint [pk]
+  course_id bigint [not null]
+  module_type varchar [not null]
+  module_id bigint [not null]
+  visible boolean [not null]
+  available_from timestamp
+  available_until timestamp
+  sort_order int [not null]
+  completion_enabled boolean [not null]
+  completion_rule varchar
+  created_at timestamp
+  updated_at timestamp
+  course_section_id bigint
+
+}
+
+Table materials {
+  id bigint [pk]
+  course_id bigint [not null]
+  title varchar [not null]
+  file_path varchar [not null]
+  file_size bigint [not null]
+  type varchar [not null]
+  is_active boolean [not null]
+  created_at timestamp
+  updated_at timestamp
+  deleted_at timestamp
+  mime_type varchar
+  revision int [not null]
+  checksum varchar
+
+}
+
+Table module_availability_rules {
+  id bigint [pk]
+  learning_module_id bigint [not null]
+  rule_type varchar [not null]
+  required_module_id bigint
+  grade_item_id bigint
+  course_group_id bigint
+  operator varchar
+  value varchar
+  created_at timestamp
+  updated_at timestamp
+  condition_group int
+  course_grouping_id bigint
+
+}
+
+Table module_completions {
+  id bigint [pk]
+  learning_module_id bigint [not null]
+  user_id bigint [not null]
+  state varchar [not null]
+  completed_at timestamp
+  source varchar
+  override_by bigint
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table password_reset_tokens {
+  email varchar [pk]
+  token varchar [not null]
+  created_at timestamp
+}
+
+Table questions {
+  id bigint [pk]
+  quiz_id bigint [not null]
+  question_text text [not null]
+  options json [not null]
+  correct_answer varchar [not null]
+  points int [not null]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table quiz_attempt_questions {
+  id bigint [pk]
+  quiz_attempt_id bigint [not null]
+  quiz_question_slot_id bigint [not null]
+  question_id bigint [not null]
+  slot int [not null]
+  max_points decimal [not null]
+  score decimal
+  state varchar [not null]
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table quiz_attempt_step_data {
+  id bigint [pk]
+  quiz_attempt_step_id bigint [not null]
+  name varchar [not null]
+  value text
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table quiz_attempt_steps {
+  id bigint [pk]
+  quiz_attempt_question_id bigint [not null]
+  sequence_number int [not null]
+  state varchar [not null]
+  score decimal
+  user_id bigint
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table quiz_attempts {
+  id bigint [pk]
+  quiz_id bigint [not null]
+  user_id bigint [not null]
+  answers json [not null]
+  score decimal
+  started_at timestamp
+  completed_at timestamp
+  created_at timestamp
+  updated_at timestamp
+  deleted_at timestamp
+  active_attempt tinyint
+  status varchar [not null]
+  attempt_number int [not null]
+  submitted_at timestamp
+  expires_at timestamp
+
+}
+
+Table quiz_grades {
+  id bigint [pk]
+  quiz_id bigint [not null]
+  user_id bigint [not null]
+  grade decimal [not null]
+  max_score decimal [not null]
+  percentage decimal [not null]
+  grading_method varchar [not null]
+  attempt_count int [not null]
+  last_attempt_id bigint
+  graded_at timestamp
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table quiz_overrides {
+  id bigint [pk]
+  quiz_id bigint [not null]
+  user_id bigint
+  course_group_id bigint
+  available_from timestamp
+  available_until timestamp
+  time_limit int
+  max_attempts int
+  grace_period int
+  reason varchar
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table quiz_question_slots {
+  id bigint [pk]
+  quiz_id bigint [not null]
+  question_id bigint [not null]
+  slot int [not null]
+  page int [not null]
+  max_points decimal [not null]
+  require_previous boolean [not null]
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table quizzes {
+  id bigint [pk]
+  course_id bigint [not null]
+  title varchar [not null]
+  description text
+  time_limit int [not null]
+  passing_score decimal [not null]
+  is_active boolean [not null]
+  created_at timestamp
+  updated_at timestamp
+  deleted_at timestamp
+  available_from timestamp
+  available_until timestamp
+  max_attempts int [not null]
+  grading_method varchar [not null]
+  shuffle_questions boolean [not null]
+  shuffle_answers boolean [not null]
+  grace_period int [not null]
+  overdue_handling varchar [not null]
+  delay_between_attempts int [not null]
+  review_visibility varchar [not null]
+
+}
+
+Table role_assignments {
+  id bigint [pk]
+  role_id bigint [not null]
+  context_id bigint [not null]
+  user_id bigint [not null]
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table role_capabilities {
+  id bigint [pk]
+  role_id bigint [not null]
+  capability_id bigint [not null]
+  created_at timestamp
+  updated_at timestamp
+
+}
+
+Table roles {
+  id bigint [pk]
+  name varchar [not null]
+  shortname varchar [unique, not null]
+  archetype varchar [not null]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table sessions {
+  id varchar [pk]
+  user_id bigint
+  ip_address varchar
+  user_agent text
+  payload longtext [not null]
+  last_activity int [not null]
+}
+
+Table submissions {
+  id bigint [pk]
+  assignment_id bigint [not null]
+  user_id bigint [not null]
+  file_path varchar [not null]
+  score decimal
+  feedback text
+  submitted_at timestamp [not null]
+  graded_at timestamp
+  created_at timestamp
+  updated_at timestamp
+  deleted_at timestamp
+  grader_id bigint
+  status varchar [not null]
+  attempt_number int [not null]
+  is_latest boolean [not null]
+  returned_at timestamp
+  reopened_at timestamp
+  late boolean [not null]
+
+}
+
+Table users {
+  id bigint [pk]
+  name varchar [not null]
+  email varchar [unique, not null]
+  role varchar [not null]
+  email_verified_at timestamp
+  password varchar [not null]
+  remember_token varchar
+  created_at timestamp
+  updated_at timestamp
+}
+
+Ref: courses.instructor_id > users.id
+Ref: course_enrollments.user_id > users.id
+Ref: course_enrollments.course_id > courses.id
+Ref: quizzes.course_id > courses.id
+Ref: questions.quiz_id > quizzes.id
+Ref: quiz_attempts.quiz_id > quizzes.id
+Ref: quiz_attempts.user_id > users.id
+Ref: materials.course_id > courses.id
+Ref: assignments.course_id > courses.id
+Ref: submissions.assignment_id > assignments.id
+Ref: submissions.user_id > users.id
+Ref: grades.user_id > users.id
+Ref: grades.course_id > courses.id
+Ref: learning_modules.course_id > courses.id
+Ref: quiz_question_slots.quiz_id > quizzes.id
+Ref: quiz_question_slots.question_id > questions.id
+Ref: submissions.grader_id > users.id
+Ref: grades.grader_id > users.id
+Ref: course_sections.course_id > courses.id
+Ref: learning_modules.course_section_id > course_sections.id
+Ref: course_groups.course_id > courses.id
+Ref: course_group_members.course_group_id > course_groups.id
+Ref: course_group_members.user_id > users.id
+Ref: module_completions.learning_module_id > learning_modules.id
+Ref: module_completions.user_id > users.id
+Ref: module_completions.override_by > users.id
+Ref: module_availability_rules.learning_module_id > learning_modules.id
+Ref: module_availability_rules.required_module_id > learning_modules.id
+Ref: module_availability_rules.course_group_id > course_groups.id
+Ref: grade_items.course_id > courses.id
+Ref: grades.grade_item_id > grade_items.id
+Ref: module_availability_rules.grade_item_id > grade_items.id
+Ref: assignment_overrides.assignment_id > assignments.id
+Ref: assignment_overrides.user_id > users.id
+Ref: assignment_overrides.course_group_id > course_groups.id
+Ref: quiz_overrides.quiz_id > quizzes.id
+Ref: quiz_overrides.user_id > users.id
+Ref: quiz_overrides.course_group_id > course_groups.id
+Ref: file_records.uploader_id > users.id
+Ref: quiz_attempt_questions.quiz_attempt_id > quiz_attempts.id
+Ref: quiz_attempt_questions.quiz_question_slot_id > quiz_question_slots.id
+Ref: quiz_attempt_questions.question_id > questions.id
+Ref: quiz_attempt_steps.quiz_attempt_question_id > quiz_attempt_questions.id
+Ref: quiz_attempt_steps.user_id > users.id
+Ref: quiz_attempt_step_data.quiz_attempt_step_id > quiz_attempt_steps.id
+Ref: quiz_grades.quiz_id > quizzes.id
+Ref: quiz_grades.user_id > users.id
+Ref: quiz_grades.last_attempt_id > quiz_attempts.id
+Ref: grade_categories.course_id > courses.id
+Ref: grade_categories.parent_id > grade_categories.id
+Ref: grade_item_histories.grade_item_id > grade_items.id
+Ref: grade_item_histories.old_category_id > grade_categories.id
+Ref: grade_item_histories.new_category_id > grade_categories.id
+Ref: grade_item_histories.changed_by > users.id
+Ref: grade_category_histories.grade_category_id > grade_categories.id
+Ref: grade_category_histories.old_parent_id > grade_categories.id
+Ref: grade_category_histories.new_parent_id > grade_categories.id
+Ref: grade_category_histories.changed_by > users.id
+Ref: grade_histories.grade_id > grades.id
+Ref: grade_histories.changed_by > users.id
+Ref: grade_items.grade_category_id > grade_categories.id
+Ref: assignment_allocated_markers.assignment_id > assignments.id
+Ref: assignment_allocated_markers.submission_id > submissions.id
+Ref: assignment_allocated_markers.student_id > users.id
+Ref: assignment_allocated_markers.marker_id > users.id
+Ref: assignment_marks.assignment_id > assignments.id
+Ref: assignment_marks.submission_id > submissions.id
+Ref: assignment_marks.marker_id > users.id
+Ref: course_categories.parent_id > course_categories.id
+Ref: course_groupings.course_id > courses.id
+Ref: course_grouping_groups.course_grouping_id > course_groupings.id
+Ref: course_grouping_groups.course_group_id > course_groups.id
+Ref: courses.course_category_id > course_categories.id
+Ref: module_availability_rules.course_grouping_id > course_groupings.id
+Ref: role_assignments.role_id > roles.id
+Ref: role_assignments.context_id > contexts.id
+Ref: role_assignments.user_id > users.id
+Ref: course_completion_criteria.course_id > courses.id
+Ref: course_completion_criteria.module_instance_id > learning_modules.id
+Ref: course_completion_criteria.grade_item_id > grade_items.id
+Ref: course_completion_criterion_completions.user_id > users.id
+Ref: course_completions.course_id > courses.id
+Ref: course_completions.user_id > users.id
+Ref: role_capabilities.role_id > roles.id
+Ref: role_capabilities.capability_id > capabilities.id
+Ref: gradebook_recalculations.course_id > courses.id
+Ref: course_enrolment_methods.course_id > courses.id
