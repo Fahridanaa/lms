@@ -378,11 +378,11 @@
                                         <div class="flowchart-pair">
                                             <article>
                                                 <h3>Alur Moodle</h3>
-                                                <pre class="mermaid">{{ $flowchart['moodle_diagram'] }}</pre>
+                                                <pre class="mermaid">{!! $flowchart['moodle_diagram'] !!}</pre>
                                             </article>
                                             <article>
                                                 <h3>Alur LMS Purwarupa</h3>
-                                                <pre class="mermaid">{{ $flowchart['lms_diagram'] }}</pre>
+                                                <pre class="mermaid">{!! $flowchart['lms_diagram'] !!}</pre>
                                             </article>
                                         </div>
                                     </details>
@@ -745,7 +745,8 @@
         @endunless
 
         <script type="module">
-            if (document.querySelector('.mermaid')) {
+            const mermaids = document.querySelectorAll('.mermaid');
+            if (mermaids.length) {
                 import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs')
                     .then(({ default: mermaid }) => {
                         mermaid.initialize({
@@ -760,7 +761,20 @@
                             },
                         });
 
-                        return mermaid.run({ querySelector: '.mermaid' });
+                        const renderAll = () => mermaid.run({ querySelector: '.mermaid' });
+
+                        renderAll();
+
+                        document.querySelectorAll('details.flowchart-card').forEach((details) => {
+                            details.addEventListener('toggle', () => {
+                                if (details.open) {
+                                    const unprocessed = details.querySelectorAll('.mermaid:not([data-processed])');
+                                    if (unprocessed.length) {
+                                        mermaid.run({ nodes: Array.from(unprocessed) });
+                                    }
+                                }
+                            });
+                        });
                     })
                     .catch(() => {});
             }
