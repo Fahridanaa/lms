@@ -70,7 +70,7 @@ const LOCKED_GRADE_TARGETS = new SharedArray('LOCKED_GRADE_TARGETS', () => [{"gr
 
 const QUIZ_OVERRIDE_TARGETS = new SharedArray('QUIZ_OVERRIDE_TARGETS', () => [{"userId":41,"quizId":1,"courseId":1,"maxAttempts":5,"timeLimit":60}]);
 
-const ASSIGNMENT_OVERRIDE_TARGETS = new SharedArray('ASSIGNMENT_OVERRIDE_TARGETS', () => [{"userId":41,"assignmentId":1,"courseId":1,"dueDate":"2026-07-31T11:43:52.000000Z","maxAttempts":5}]);
+const ASSIGNMENT_OVERRIDE_TARGETS = new SharedArray('ASSIGNMENT_OVERRIDE_TARGETS', () => [{"userId":41,"assignmentId":1,"courseId":1,"dueDate":"2026-08-16T16:33:48.000000Z","maxAttempts":5}]);
 
 const SUSPENDED_ACCESS_TARGETS = new SharedArray('SUSPENDED_ACCESS_TARGETS', () => []);
 
@@ -185,6 +185,6 @@ export function activityPath(target) {
 }
 
 // Metadata
-// Generated at: 2026-06-27T07:28:27+00:00
+// Generated at: 2026-07-12T16:51:37+00:00
 // Source: GenerateK6Fixtures.php
 // Regenerate: sail artisan db:seed --class=DatabaseSeeder && sail artisan benchmark:generate-k6-fixtures
