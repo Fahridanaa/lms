@@ -272,10 +272,8 @@ class GradebookService
 
         return $this->cacheStrategy
             ->tags(["user:{$userId}:grades", "instructor:{$actor->id}"])
-            ->get("user:{$userId}:grades:instructor:{$actor->id}", function () use ($userId, $actor, $taughtCourseIds) {
-                return $this->gradeRepository->getUserGrades($userId)
-                    ->filter(fn ($grade) => $taughtCourseIds->contains($grade->course_id))
-                    ->values();
+            ->get("user:{$userId}:grades:instructor:{$actor->id}", function () use ($userId, $taughtCourseIds) {
+                return $this->gradeRepository->getUserGradesInCourses($userId, $taughtCourseIds->all());
             });
     }
 

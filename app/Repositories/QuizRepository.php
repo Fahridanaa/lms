@@ -36,6 +36,7 @@ class QuizRepository extends BaseRepository
             ->with(['course', 'learningModule'])
             ->where('is_active', true)
             ->whereHas('course', fn ($q) => $q->where('is_active', true))
+            ->whereHas('learningModule', fn ($q) => $q->where('is_active', true)->where('visible', true))
             ->paginate($perPage, ['*'], 'page', $page);
     }
 
@@ -52,7 +53,7 @@ class QuizRepository extends BaseRepository
      */
     public function getQuestions(int $quizId): Collection
     {
-        return \App\Models\QuizQuestion::where('quiz_id', $quizId)->get();
+        return \App\Models\Question::where('quiz_id', $quizId)->get();
     }
 
     /**

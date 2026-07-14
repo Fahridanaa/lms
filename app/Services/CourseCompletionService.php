@@ -200,8 +200,27 @@ class CourseCompletionService
             ->where('grade_item_id', $gradeItemId)
             ->get();
 
+        if ($gradeCriteria->isEmpty()) {
+            return;
+        }
+
+        // Batch-load grades for ALL matching criteria at once (eliminates N+1)
+        $gradeItemIds = $gradeCriteria->pluck('grade_item_id')->unique()->filter();
+        $batchGrades = $gradeItemIds->isNotEmpty()
+            ? Grade::query()
+                ->whereIn('grade_item_id', $gradeItemIds)
+                ->where('user_id', $userId)
+                ->where('status', 'final')
+                ->get()
+                ->keyBy('grade_item_id')
+            : collect();
+
         foreach ($gradeCriteria as $criterion) {
-            if ($this->evaluateGradeCriterion($criterion, $userId)) {
+            $grade = $batchGrades->get($criterion->grade_item_id);
+            $threshold = $criterion->pass_threshold ?? 0;
+            $isMet = $grade !== null && $grade->score !== null && $grade->score >= $threshold;
+
+            if ($isMet) {
                 CourseCompletionCriterionCompletion::query()->updateOrCreate(
                     [
                         'course_completion_criterion_id' => $criterion->id,

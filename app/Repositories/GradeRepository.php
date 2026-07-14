@@ -25,6 +25,24 @@ class GradeRepository extends BaseRepository
             ->orderBy('created_at', 'desc')
             ->get();
     }
+    /**
+     * Get user's grades scoped to specific course IDs (no PHP filtering).
+     * Used by instructor view to avoid loading grades from non-taught courses.
+     */
+    public function getUserGradesInCourses(int $userId, array $courseIds): Collection
+    {
+        if (empty($courseIds)) {
+            return new Collection();
+        }
+
+        return $this->model->newQuery()
+            ->with(['course', 'gradeable'])
+            ->where('user_id', $userId)
+            ->whereIn('course_id', $courseIds)
+            ->where('status', 'final')
+            ->orderBy('created_at', 'desc')
+            ->get();
+    }
 
     /**
      * Get user's grades for a specific course
