@@ -1,131 +1,270 @@
-# Thesis Evidence
+# Analisis CPU Bottleneck pada LMS Application
 
-## Moodle-Inspired Controlled LMS Benchmark — Implementation Complete
+## Ringkasan Benchmark
 
-This document captures the evidence from the Moodle-inspired controlled LMS
-benchmark implementation for use in thesis writing.
+**CPU 100% di semua skenario, bahkan di 100 VU.** Data dari `resources-summary.csv`:
 
-### New Table Counts (from deterministic seed)
+| VU | cpu_avg_pct | cpu_max_pct | mem_avg_pct | Disk R (MB/s) | Disk W (MB/s) | Throughput (req/s) |
+|----|------------|------------|------------|--------------|--------------|------------------|
+| 100 | 86-91% | 100% | 16-26% | 0.1-0.14 | 1.6-16 | 57-67 |
+| 250 | 93-95% | 100% | 17-30% | 0.1-0.2 | 1.7-13 | 58-69 |
+| 500 | 95-96% | 100% | 18-30% | 0.1-0.28 | 1.7-15 | 59-72 |
+| 750 | 96-97% | 100% | 18-31% | 0.1-0.2 | 1.8-14 | 58-68 |
+| 1000 | 97-98% | 100% | 19-31% | 0.1-0.46 | 1.6-14 | 60-72 |
+| 1500 | 97-98% | 100% | 19-31% | 0.1-0.14 | 1.7-14 | 59-69 |
+| 2000 | 98% | 100% | 19-31% | 0.1-0.2 | 1.6-14 | 61-71 |
 
-| Table | Rows |
-|-------|------|
-| `quiz_attempt_questions` | 250 |
-| `quiz_attempt_steps` | 250 |
-| `quiz_attempt_step_data` | 0 (created by live submission) |
-| `quiz_grades` | 55 |
-| `grade_categories` | 12 |
-| `grade_histories` | 0 (created by live updates) |
-| `grade_item_histories` | 0 |
-| `grade_category_histories` | 0 |
-| `assignment_allocated_markers` | 18 |
-| `assignment_marks` | 0 |
-| `course_categories` | 12 |
-| `course_groupings` | 4 |
-| `course_grouping_groups` | 10 |
+**Throughput stuck at ~60-72 req/s regardless of VU count.** Adding more users only increases latency (300ms → 26s), never throughput.
 
-### Fixture Target Pool Counts
+---
 
-| Pool | Count | Purpose |
-|------|-------|---------|
-| READABLE_MATERIAL_TARGETS | 591 | Actor-specific material reads |
-| READABLE_QUIZ_TARGETS | 175 | Actor-specific quiz reads |
-| READABLE_ASSIGNMENT_TARGETS | 160 | Actor-specific assignment reads |
-| WRITABLE_MATERIAL_DOWNLOAD_TARGETS | 591 | Material download writes |
-| WRITABLE_ASSIGNMENT_SUBMISSION_TARGETS | 121 | Assignment submission writes |
-| WRITABLE_QUIZ_ATTEMPT_TARGETS | 175 | Quiz attempt start writes |
-| GRADING_TARGETS | 48 | Instructor grading |
-| GRADE_UPDATE_TARGETS | 98 | Grade update + history writes |
-| QUIZ_DETAIL_ATTEMPT_TARGETS | 50 | Normalized quiz detail reads |
-| QUIZ_AGGREGATE_GRADE_TARGETS | 55 | Quiz aggregate grade writes |
-| GRADE_CATEGORY_READ_TARGETS | 8 | Gradebook with category hierarchy |
-| MARKER_GRADE_TARGETS | 18 | Multi-marker grading fan-out |
-| GROUPING_RESTRICTED_MODULE_TARGETS | 9 | Grouping-based controlled failure |
-| NESTED_AVAILABILITY_LOCKED_TARGETS | 22 | Nested AND/OR blocked access |
-| NESTED_AVAILABILITY_UNLOCK_TARGETS | 3 | Nested AND/OR granted access |
+## Root Cause #1: Gradebook Endpoint — Heavy Aggregation per Request
 
-### Workload Percentages
+**Endpoint:** `GET /api/courses/{courseId}/gradebook`  
+**Avg latency at 100 VU:** 1.5-4s (no-cache), 2015ms (cache-aside)  
+**Avg latency at 1500 VU:** ~24s  
 
-- Read-heavy: 80% read / 20% write
-- Write-heavy: 40% read / 60% write
+Di `GradebookService::getCourseGradebook()` (line 112-225), satu request melakukan:
 
-### Benchmark-Relevant Complexity Per Workload Branch
+1. **Query 1:** `activeStudentIds()` — SELECT semua enrollment untuk course
+2. **Query 2:** `GradeItem::where('course_id')` — load semua grade items
+3. **Query 3:** Aggregasi JOIN `grades` × `grade_items` dengan `SUM/COALESCE` — rata-rata semua student
+4. **Query 4:** `User::whereIn(ids)` — load info student
+5. **Query 5:** Load grades per student dengan `with('gradeItem')` — **ini load SEMUA grade rows**
+6. **Query 6:** `GradeCategory::with('gradeItems')` — load kategori
 
-**Read-heavy exercises:**
-- Course structure with nested availability and groupings
-- Gradebook with categories
-- Quiz attempt review using normalized detail
-- Controlled access failures for grouping/nested availability
+**Masalah: Query #5 memuat semua grade untuk semua student dalam satu course.** Untuk 500 student × 20 grade item = 10,000 row. Data ini lalu di-group-by di PHP.
 
-**Write-heavy exercises:**
-- Quiz start and submit with normalized attempt detail
-- Quiz aggregate grade update
-- Assignment submission
-- Marker grading
-- Grade update with history
-- Completion cascade that changes availability
+**Masalah: `buildCategoryTree()` (line 568-594)** — recursive closure yang traverse parent-child tree di PHP untuk setiap request.
 
-### Cache Invalidation Matrix
+**Masalah: Cache miss = semua query di atas jalan.** Cache-aside hanya membantu setelah miss pertama, tapi miss pertama tetap lambat dan CPU-heavy. Di no-cache strategy, setiap request mengeksekusi semua ini.
 
-| Write Action | Invalidated Tags |
-|---|---|
-| Quiz submit | attempt detail, quiz aggregate grade, gradebook, user grade, course structure |
-| Marker grade | submission, marker queue, gradebook, user grade, grade history |
-| Grade update | grade history, gradebook, user grade, course structure |
-| Completion write | course structure, availability-dependent reads |
+---
 
-### Test Results
+## Root Cause #2: Course Structure — Banyak Query per Request
 
-| Test Suite | Count | Status |
-|---|---|---|
-| Authorization | 27 | PASS |
-| Availability | 36 | PASS |
-| CourseCompletion | 4 | PASS |
-| CourseStructure | 17 | PASS |
-| AssignmentController | 26 | PASS |
-| GradebookController | 28 | PASS |
-| MaterialController | 24 | PASS |
-| QuizController | 34 | PASS |
-| SeedData | 21 | PASS |
-| FixtureGeneratorGuard | 5 | PASS |
-| FixtureValidity | 21 | PASS |
-| WorkloadGuard | 13 | PASS |
-| BenchmarkDashboard | 2 | PASS |
-| BenchmarkResultsService | 1 | PASS |
+**Endpoint:** `GET /api/courses/{courseId}/structure`  
+**Avg latency at 100 VU:** 186-409ms  
+**Avg latency at 1500 VU:** ~19.5s  
 
-### Known Simplifications
+Di `CourseStructureService::buildStructure()` (line 54-275), satu request melakukan:
 
-The following are documented simplifications where the benchmark differs from
-Moodle's architecture, as defined in [`CONTEXT.md`](../CONTEXT.md):
+1. **Query 1:** `course->sections()->with('learningModules.availabilityRules')`
+2. **Query 2:** `Material::whereIn(ids)` — load materials
+3. **Query 3:** `Quiz::whereIn(ids)` — load quizzes
+4. **Query 4:** `Assignment::whereIn(ids)` — load assignments
+5. **Query 5:** `QuizAttempt::whereIn(quizIds)` — count attempts (untuk student)
+6. **Query 6:** `Submission::whereIn(assignmentIds)` — latest submissions
+7. **Query 7:** `ModuleCompletion::whereIn(moduleIds)` — completion states
+8. **Query 8:** `Grade::whereIn(gradeItemIds)` — grades for availability rules
+9. **Query 9:** `CourseGroupMember::whereIn(groupIds)` — group membership
+10. **Query 10-11:** `CourseGrouping` + `CourseGroupingGroup` — grouping data
+11. **Authorization overhead** via `CourseAccessService::readableModulesFor()` — batch-load context, roles, capabilities, role assignments
 
-| Simplification | Description |
-|---|---|
-| **Partial Capability Model** | Context roles and inherited checks exist, but not Moodle's full capability matrix or role override rules. Currently the widest-reaching simplification. |
-| **Simplified Completion Aggregation** | Module completion and course completion criteria exist, but not every aggregation method, default setting, or cron-driven reaggregation. |
-| **Simple Enrolment Model** | Single `course_enrollments` table instead of Moodle's method instances (`enrol`) + user records (`user_enrolments`). |
-| **Non-Content-Addressed File Storage** | Owner-based lookup (`owner_type`/`owner_id`) instead of Moodle's content-addressed `files` table. |
+**Semua query jalan di setiap request**, bahkan dengan cache-aside (cache key per-actor, jadi setiap student punya cache terpisah).
 
-### Verification Snapshot
+---
 
-- **Date:** 2026-06-15
-- **API test suites:** 196+ tests, 1151+ assertions — all PASS
-- **ReadThroughStrategy:** 20 tests, 58 assertions — all PASS
-- **BenchmarkDashboard + ResultsService + WorkloadGuard:** 16 tests, 203 assertions — all PASS
-- **Fixture tests** (consolidated, 16 tests, 17943 assertions) — all PASS, sequential execution required
-- **Fixture test runtime:** ~104s (includes behavioral quiz submit test)
-- **Pilot benchmark:** both read-heavy and write-heavy completed with no unexpected errors
-- **PHPUnit metadata:** 122 deprecated `/** @test */` annotations across 7 API test files migrated to `#[Test]` attributes — zero metadata warnings remaining
-- **Pint formatting:** clean — 0 files changed
-- **k6 JavaScript syntax:** verified with `node --check` on all workload files
-- **k6 quiz answer payloads:** now use real question IDs instead of synthetic keys
-- **Quiz score semantics:** `isQuizPassingGrade()` no longer double-scales percentage by max points
-- **Fixture exhaustion guards:** spent-attempt check includes `finished` status matching service behavior
-- **Thesis-facing wording:** aligned with `CONTEXT.md` — "Moodle-Inspired Controlled LMS Benchmark"
+## Root Cause #3: Repository Layer — Zero Caching
 
-Non-blocking notes:
-- Fixture tests must be run sequentially after a clean test database reset.
-- PHPUnit deprecation warnings: fully resolved across all API and benchmark test files.
+**Semua repository method melakukan fresh SQL query.** Tidak ada `Cache::remember()` atau `Cache::tags()` di:
 
-### Implementation Notes
+- `GradeRepository::getCourseStatistics()` — expensive JOIN + aggregation
+- `GradeRepository::getTopPerformers()` — weighted average dengan JOIN
+- `QuizAttemptRepository::getAverageScore()` — recalculated on every read
+- `SubmissionRepository::getStatistics()` — CASE statements + aggregation
+- `BaseRepository::all()` — dumps entire table
 
-- No full Moodle question engine, role/capability system, availability plugin engine, grade formula system, or full Moodle file API introduced
-- Thesis-facing wording aligned with `CONTEXT.md`: "Moodle-Inspired Controlled LMS Benchmark"
+**Dampak:** Endpoint yang menampilkan statistics atau top-performers selalu memicu full-scan/aggregation query di MySQL, meskipun data tidak berubah.
+
+---
+
+## Root Cause #4: Authorisasi Heavy per Request
+
+**Class:** `CourseAccessService` (948 lines)
+
+`readableModulesFor()` (line 445-643) melakukan batch-load:
+
+1. **Context::query()** untuk batch module contexts
+2. **Context::query()** ancestor paths
+3. **Role::query()** — role lookups
+4. **Capability::query()** — capability lookups
+5. **RoleCapability::query()** — role-capability mappings
+6. **RoleAssignment::query()** — semua role assignments di contexts terkait
+7. **CourseGroupMember::query()** — group memberships
+
+Ini semua untuk menentukan apakah user bisa melihat module. Setiap authorization check (canReadCourse, canReadGradebook, isInstructorForCourse) menjalankan subquery sendiri.
+
+Setiap `canReadCourse()` memanggil `AuthorizationService::userHasCapabilityAt()` atau `userHasRoleAt()` yang melakukan context path walking — string manipulation di PHP.
+
+---
+
+## Root Cause #5: Course Completion Cascade — Write Amplification
+
+Ketika grade di-update (`GradebookService::updateGrade()`):
+
+1. Grade history record (INSERT)
+2. Grade update (UPDATE)
+3. **Mark course stale** (UPDATE)
+4. **Cache flush** tags (Redis ops)
+5. **CourseCompletionService::onGradeUpdate()** — load criteria, evaluasi semua criteria satu per satu, check complete all
+6. **Cache invalidation** completion cache
+
+`onGradeUpdate()` (line 197-224) di `CourseCompletionService`:
+
+- Load criteria untuk grade_item yang diupdate
+- Evaluate grade criterion (query grade)
+- **EvaluateAll()** — load semua criteria untuk course, batch load completions, batch load grades, iterate criteria
+
+Ini terjadi SETIAP KALI grade berubah. Pada write-heavy workload (60% write), cascade ini berulang terus.
+
+---
+
+## Root Cause #6: Cache Strategy Overhead
+
+**Cache-aside strategy (`CacheAsideStrategy::get()`, line 157-194):**
+
+```php
+// Always does this even on cache HIT:
+try {
+    if (!empty($this->cacheTags)) {
+        $value = Cache::tags($this->cacheTags)->get($prefixedKey);
+    } else {
+        $value = Cache::get($prefixedKey);
+    }
+    // ...
+    $this->put($key, $value); // On cache miss: serialize + store to Redis
+} finally {
+    $this->cacheTags = []; // Reset tags — O(n) array assignment
+}
+```
+
+**Masalah: Tags-based Redis operations add overhead.** Setiap `Cache::tags()` melibatkan multi-key Redis operations (SADD untuk tag set, kemudian SET untuk cache key).
+
+**Masalah: Serialization/Deserialization.** Data gradebook yang besar (array dengan ribuan item) di `serialize()` PHP → Redis setiap cache miss.
+
+**No-cache strategy (`NoCacheStrategy::get()`, line 223-243):**
+```php
+public function get(string $key, ?callable $callback = null): mixed
+{
+    // Skip cache entirely
+    if (!empty($this->cacheTags)) {
+        $this->cacheTags = [];
+    }
+    
+    if ($callback === null) {
+        throw new \RuntimeException("...");
+    }
+    
+    return $callback(); // Always hits DB
+}
+```
+
+**Cache hit ratio dari benchmark:**
+- cache-aside: 42-46% (read-heavy), 27-29% (write-heavy)
+- read-through: 45-47% (read-heavy), 28-29% (write-heavy)
+- write-through: 42-46% (read-heavy), 28-29% (write-heavy)
+
+Cache hit ratio rendah karena **cache key per-actor** — setiap student punya cache sendiri untuk course structure. Jika ada 500 student, 500 cache keys terpisah. Ditambah write-heavy workload sering invalidate cache.
+
+---
+
+## Root Cause #7: ORM Overhead
+
+**Eloquent N+1 patterns:**
+
+- `GradeRepository::getUserCourseGrades()` (line 31-39) — eager load `gradeable` tapi TIDAK `course`. Jika caller akses `$grade->course`, itu N+1.
+- `AssignmentRepository::getUpcomingByCourse()` (line 41-48) — **zero eager loading**. Akses `$assignment->course` atau `->learningModule` = N+1.
+- `MaterialRepository::getByTypeAndCourse()` — no `with()`, potensi N+1.
+
+**Polymorphic relations:** Grade memiliki `gradeable` polymorphic (quiz_attempt atau submission). Setiap akses `$grade->gradeable` memicu query tambahan jika tidak eager-loaded.
+
+---
+
+## Kesimpulan: Mengapa CPU 100%?
+
+**Flow satu request typical (gradebook read):**
+
+```
+PHP menerima request
+  ↓
+resolveActor() → load user dari DB (query)
+  ↓
+canReadGradebook() → 
+  ├─ contextService->find() (query)
+  └─ authorizationService->userHasCapabilityAt() (subquery)
+  ↓
+getCourseGradebook() → cache-aside miss →
+  ├─ activeStudentIds() (query)
+  ├─ GradeItem::where('course_id') (query + PHP hydration)
+  ├─ Grade::from('grades','g') JOIN grade_items (aggregation query + PHP hydration)
+  ├─ User::whereIn(ids) (query)
+  ├─ Grade::where('course_id') (query + 5000-10000 rows hydrated)
+  ├─ GradeCategory::with('gradeItems') (query)
+  ├─ buildCategoryTree() → recursive PHP loop
+  ├─ map() → filter() → values() → all() → PHP loops
+  ├─ serialize array → JSON response
+  └─ $this->put(key, value) → serialize + Redis SET + SADD tags
+  ↓
+Response JSON
+```
+
+**Setiap langkah memakan CPU:**
+1. **MySQL queries** — complex JOINs + aggregations (CPU di DB)
+2. **PHP hydration** — Eloquent hydrates setiap row jadi object (CPU di PHP)
+3. **Collection operations** — `filter()`, `map()`, `groupBy()`, `keyBy()` iterate arrays (CPU di PHP)
+4. **Authorization checks** — context path walking, string manipulation (CPU di PHP)
+5. **Cache serialization** — `serialize()`/`unserialize()` data besar (CPU di PHP)
+6. **JSON encoding** — `json_encode()` array besar (CPU di PHP)
+
+**Kenapa throughput stuck di ~65 req/s?** Karena setiap request memonopoli CPU untuk waktu yang lama. Pada 100 VU, CPU sudah 86-91%, sehingga request harus antri. Menambah VU tidak menambah throughput — hanya membuat antrian lebih panjang (latensi naik).
+
+---
+
+## Rekomendasi Perbaikan
+
+1. **Gradebook query optimization:** Pindahkan aggregation ke SQL sepenuhnya (`GROUP BY user_id` dengan window functions), jangan load semua grade ke PHP untuk di-loop.
+2. **Materialized view / cache warm:** Untuk gradebook yang tidak berubah cepat, pre-compute dan cache JSON response. Hindari recompute tiap request.
+3. **Reduce authorization overhead:** Cache context+role lookups per request (request-scoped cache sudah ada di beberapa method tapi tidak konsisten).
+4. **Batch grade operations:** Jangan flush cache per-student, gunakan tag-based invalidation yang lebih granular.
+5. **Course structure pagination:** Untuk course dengan 50+ module, jangan kirim semuanya dalam satu response.
+6. **Eloquent → Query Builder untuk hot path:** Untuk aggregation queries, gunakan `DB::raw()` langsung daripada Eloquent Collection methods yang heavy.
+7. **Warm cache proactively:** Jangan tunggu cache miss — pre-compute gradebook dan course structure setelah write operation.
+8. **Reduce tag granularity:** Gunakan prefix-based invalidation daripada tag-based untuk hot path read-heavy.
+9. **Deduplicate context queries:** Implement request-scoped cache di ContextService untuk menghindari 4× query yang sama.
+10. **Eliminate DB write on read path:** Hapus `markRecalculated()` dari gradebook cache callback.
+11. **Consolidate grade_items loading:** Load grade_items sekali per request, reuse.
+
+---
+
+## Additional Findings from Agent Analysis
+
+### Gradebook Service (GradebookService agent)
+- **DB write on read path (CRITICAL):** `markRecalculated()` executes UPDATE inside cache callback, adding 3-10ms write latency to every cache miss.
+- **Grade items loaded 3×:** line 127, 168, 196 — three separate SELECT * FROM grade_items in one request.
+- **PHP-side enrollment filtering:** `activeStudentIds()` SELECT * then PHP-filter with isActive() including 2× now() per enrollment.
+- **Recursive category tree:** `buildCategoryTree()` uses recursive closure for every cache miss.
+
+### Course Structure (CourseStructure agent)
+- **4× duplicate ContextService::find():** canReadCourse, isInstructorForCourse, isActiveEnrollee, readableModulesFor each independently query the same context row.
+- **Duplicate role assignment work:** isInstructorForCourse() queries roles, then readableModulesFor() re-fetches all roles again.
+- **hasActiveEnrolmentMethod() is a redundant EXISTS:** runs on every isActiveEnrollee() despite enrollment already verified.
+- **User-completions tag causes cascading invalidation:** completing any module invalidates ALL course structures for that user.
+
+### Cache Layer (CacheLayer agent)
+- **Zero throughput improvement from caching:** no-cache, cache-aside, read-through, write-through all converge on ~57-72 req/s cap.
+- **Cache tag overhead dominates:** every tagged operation involves multiple Redis SADD/SREM/FLUSH commands.
+- **Aggressive flushTags() after every write:** flushing 'course:{id}' invalidates structure + materials + assignments + gradebook for that course.
+- **Redis memory higher with caching:** cache-aside ~2GB vs no-cache ~1.5GB due to tag indices.
+
+### Quiz Service (QuizAssignment agent)
+- **Double scoring iteration:** calculate() iterates all questions, then main loop calls scoreQuestion() per question — 2N iterations.
+- **Quiz questions collection iterated 3×:** once in calculate(), once in main loop, once for sum('points').
+- **Step-data 4× creation per question:** each with is_array check + json_encode/cast — significant allocation.
+- **CourseCompletion cascade on every quiz submit:** triggers evaluateAll() loading ALL criteria + completions + grades.
+
+### Repositories (Repositories agent)
+- **Zero caching at repository layer:** every aggregate method (getCourseStatistics, getTopPerformers, getAverageScore) hits DB fresh each time.
+- **Inconsistent eager loading:** getByCourse loads relations, getUpcomingByCourse loads nothing — causing unpredictable N+1.
+- **PHP-level filtering after SQL:** getAllWithCourse() loads rows only to discard them via PHP filter().
+- **BaseRepository::all() is a table dump:** no limit, pagination, or caching on full-table reads.

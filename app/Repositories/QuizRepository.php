@@ -22,9 +22,9 @@ class QuizRepository extends BaseRepository
         return $this->model->newQuery()
             ->with(['course', 'learningModule'])
             ->where('is_active', true)
-            ->get()
-            ->filter(fn (Quiz $quiz): bool => $quiz->course?->is_active && $quiz->learningModule?->isAvailable())
-            ->values();
+            ->whereHas('course', fn($q) => $q->where('is_active', true))
+            ->whereHas('learningModule', fn($q) => $q->where('is_active', true)->where('visible', true))
+            ->get();
     }
 
     /**
@@ -52,7 +52,7 @@ class QuizRepository extends BaseRepository
      */
     public function getQuestions(int $quizId): Collection
     {
-        return $this->findOrFail($quizId, ['questions', 'learningModule', 'course'])->questions;
+        return \App\Models\QuizQuestion::where('quiz_id', $quizId)->get();
     }
 
     /**

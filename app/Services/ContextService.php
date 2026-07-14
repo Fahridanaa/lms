@@ -8,6 +8,13 @@ use Illuminate\Support\Collection;
 class ContextService
 {
     /**
+     * Request-scoped cache for find() results.
+     * Key: "{level}:{instanceId}" → Context|null
+     * Prevents 4+ redundant queries for the same context within a single request.
+     */
+    private array $findCache = [];
+
+    /**
      * Resolve a context by level+instance, creating it if it doesn't exist.
      * Generates materialized path based on the parent context.
      *
@@ -39,7 +46,13 @@ class ContextService
      */
     public function find(int $level, int $instanceId): ?Context
     {
-        return Context::query()
+        $cacheKey = "{$level}:{$instanceId}";
+
+        if (array_key_exists($cacheKey, $this->findCache)) {
+            return $this->findCache[$cacheKey];
+        }
+
+        return $this->findCache[$cacheKey] = Context::query()
             ->where('contextlevel', $level)
             ->where('instance_id', $instanceId)
             ->first();

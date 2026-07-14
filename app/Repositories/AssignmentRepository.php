@@ -41,8 +41,10 @@ class AssignmentRepository extends BaseRepository
     public function getUpcomingByCourse(int $courseId): Collection
     {
         return $this->model->newQuery()
+            ->with(['course', 'learningModule'])
             ->where('course_id', $courseId)
             ->where('due_date', '>=', now())
+            ->where('is_active', true)
             ->orderBy('due_date', 'asc')
             ->get();
     }
@@ -53,8 +55,10 @@ class AssignmentRepository extends BaseRepository
     public function getPastByCourse(int $courseId): Collection
     {
         return $this->model->newQuery()
+            ->with(['course', 'learningModule'])
             ->where('course_id', $courseId)
             ->where('due_date', '<', now())
+            ->where('is_active', true)
             ->orderBy('due_date', 'desc')
             ->get();
     }

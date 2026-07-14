@@ -40,6 +40,7 @@ class MaterialRepository extends BaseRepository
     public function getByTypeAndCourse(int $courseId, string $type): Collection
     {
         return $this->model->newQuery()
+            ->with(['course', 'learningModule'])
             ->where('course_id', $courseId)
             ->where('type', $type)
             ->orderBy('created_at', 'desc')

@@ -4,6 +4,7 @@ namespace App\Repositories;
 
 use App\Models\Grade;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Cache;
 
 class GradeRepository extends BaseRepository
 {
@@ -31,7 +32,7 @@ class GradeRepository extends BaseRepository
     public function getUserCourseGrades(int $userId, int $courseId): Collection
     {
         return $this->model->newQuery()
-            ->with(['gradeable'])
+            ->with(['gradeable', 'course'])
             ->where('user_id', $userId)
             ->where('course_id', $courseId)
             ->where('status', 'final')
@@ -73,6 +74,8 @@ class GradeRepository extends BaseRepository
      */
     public function getTopPerformers(int $courseId, int $limit = 10, array $activeStudentIds = []): Collection
     {
+        $cacheKey = "grade_repo:top_performers:{$courseId}:{$limit}:" . md5(implode(',', $activeStudentIds));
+        return Cache::remember($cacheKey, 300, function () use ($courseId, $limit, $activeStudentIds) {
         $q = $this->model->newQuery()
             ->from('grades', 'g')
             ->withoutGlobalScope(\Illuminate\Database\Eloquent\SoftDeletingScope::class)
@@ -95,6 +98,7 @@ class GradeRepository extends BaseRepository
         }
 
         return $q->get();
+        });
     }
 
     /**
@@ -102,6 +106,8 @@ class GradeRepository extends BaseRepository
      */
     public function getCourseStatistics(int $courseId): array
     {
+        $cacheKey = "grade_repo:course_stats:{$courseId}";
+        return Cache::remember($cacheKey, 300, function () use ($courseId) {
         $stats = $this->model->newQuery()
             ->from('grades', 'g')
             ->withoutGlobalScope(\Illuminate\Database\Eloquent\SoftDeletingScope::class)
@@ -127,6 +133,7 @@ class GradeRepository extends BaseRepository
             'lowest_percentage' => $stats->lowest_percentage ?? 0,
             'passing_rate' => $total > 0 ? ($stats->passing_count / $total) * 100 : 0,
         ];
+        });
     }
 
     /**
@@ -134,11 +141,14 @@ class GradeRepository extends BaseRepository
      */
     public function getUserCourseAverage(int $userId, int $courseId): float
     {
+        $cacheKey = "grade_repo:user_avg:{$userId}:{$courseId}";
+        return Cache::remember($cacheKey, 300, function () use ($userId, $courseId) {
         return $this->model->newQuery()
             ->where('user_id', $userId)
             ->where('course_id', $courseId)
             ->where('status', 'final')
             ->avg('percentage') ?? 0.0;
+        });
     }
 
     /**

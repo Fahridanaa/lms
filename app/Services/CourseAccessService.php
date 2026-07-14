@@ -21,6 +21,30 @@ class CourseAccessService
 
     private ContextService $contextService;
 
+    /**
+     * Request-scoped cache for isInstructorForCourse results.
+     * Key: "instructor:{actorId}:{courseId}" → bool
+     */
+    private array $instructorCache = [];
+
+    /**
+     * Request-scoped cache for isActiveEnrollee results.
+     * Key: "enrollee:{actorId}:{courseId}" → bool
+     */
+    private array $enrolleeCache = [];
+
+    /**
+     * Request-scoped cache for canReadCourse results.
+     * Key: "canRead:{actorId}:{courseId}" → bool
+     */
+    private array $canReadCourseCache = [];
+
+    /**
+     * Request-scoped cache for hasActiveEnrolmentMethod results.
+     * Key: "hasMethod:{courseId}" → bool
+     */
+    private array $enrolmentMethodCache = [];
+
     public function __construct(AuthorizationService $authorizationService, ContextService $contextService)
     {
         $this->authorizationService = $authorizationService;
@@ -61,6 +85,11 @@ class CourseAccessService
      */
     public function canReadCourse(User $actor, Course $course): bool
     {
+        $cacheKey = "canRead:{$actor->id}:{$course->id}";
+        if (isset($this->canReadCourseCache[$cacheKey])) {
+            return $this->canReadCourseCache[$cacheKey];
+        }
+
         if (! $course->is_active) {
             return false;
         }
@@ -72,7 +101,7 @@ class CourseAccessService
                 || $this->isInstructorForCourse($actor, $course);
         }
 
-        return $this->authorizationService->userHasCapabilityAt($actor, 'course:view', $courseContext);
+        return $this->canReadCourseCache[$cacheKey] = $this->authorizationService->userHasCapabilityAt($actor, 'course:view', $courseContext);
     }
 
     /**
@@ -845,7 +874,12 @@ class CourseAccessService
      */
     public function hasActiveEnrolmentMethod(Course $course): bool
     {
-        return \App\Models\CourseEnrolmentMethod::query()
+        $cacheKey = "hasMethod:{$course->id}";
+        if (isset($this->enrolmentMethodCache[$cacheKey])) {
+            return $this->enrolmentMethodCache[$cacheKey];
+        }
+
+        return $this->enrolmentMethodCache[$cacheKey] = \App\Models\CourseEnrolmentMethod::query()
             ->where('course_id', $course->id)
             ->where('status', 'active')
             ->where(function ($q) {
@@ -865,6 +899,11 @@ class CourseAccessService
      */
     public function isActiveEnrollee(User $actor, Course $course): bool
     {
+        $cacheKey = "enrollee:{$actor->id}:{$course->id}";
+        if (isset($this->enrolleeCache[$cacheKey])) {
+            return $this->enrolleeCache[$cacheKey];
+        }
+
         // First check the course has an active enrolment method
         if (! $this->hasActiveEnrolmentMethod($course)) {
             return false;
@@ -880,7 +919,7 @@ class CourseAccessService
             return $this->flatEnrolleeCheck($actor, $course);
         }
 
-        return $this->authorizationService->userHasRoleAt($actor, 'student', $courseContext);
+        return $this->enrolleeCache[$cacheKey] = $this->authorizationService->userHasRoleAt($actor, 'student', $courseContext);
     }
 
     /**
@@ -890,6 +929,11 @@ class CourseAccessService
      */
     public function isInstructorForCourse(User $actor, Course $course): bool
     {
+        $cacheKey = "instructor:{$actor->id}:{$course->id}";
+        if (isset($this->instructorCache[$cacheKey])) {
+            return $this->instructorCache[$cacheKey];
+        }
+
         // Course owner is always an instructor
         if ($course->instructor_id === $actor->id) {
             return true;
@@ -905,7 +949,7 @@ class CourseAccessService
             return $this->flatInstructorCheck($actor, $course);
         }
 
-        return $this->authorizationService->userHasRoleAt($actor, 'instructor', $courseContext);
+        return $this->instructorCache[$cacheKey] = $this->authorizationService->userHasRoleAt($actor, 'instructor', $courseContext);
     }
 
     /**

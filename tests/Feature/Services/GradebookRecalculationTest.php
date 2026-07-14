@@ -324,7 +324,7 @@ class GradebookRecalculationTest extends TestCase
      * ────────────────────────────────────────────── */
 
     #[Test]
-    public function instructor_gradebook_read_clears_stale_marker(): void
+    public function instructor_gradebook_read_does_not_clear_stale_marker(): void
     {
         // First, mark the gradebook stale via quiz submission
         $attempt = QuizAttempt::factory()->inProgress()->create([
@@ -345,12 +345,13 @@ class GradebookRecalculationTest extends TestCase
 
         $this->assertTrue($this->recalcService->isCourseStale($this->course->id));
 
-        // Instructor reads gradebook — should clear stale marker
+        // Instructor reads gradebook — should NOT clear stale marker
+        // (DB write on read path was eliminated to reduce CPU bottleneck)
         $this->withHeader('X-Benchmark-Actor-Id', $this->instructor->id)
             ->getJson("/api/courses/{$this->course->id}/gradebook");
 
-        $this->assertFalse($this->recalcService->isCourseStale($this->course->id),
-            'Gradebook should no longer be stale after instructor read'
+        $this->assertTrue($this->recalcService->isCourseStale($this->course->id),
+            'Gradebook should remain stale after instructor read — markRecalculated removed from read path'
         );
     }
 }

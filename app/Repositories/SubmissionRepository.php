@@ -5,6 +5,7 @@ namespace App\Repositories;
 use App\Models\Submission;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 
 class SubmissionRepository extends BaseRepository
 {
@@ -91,6 +92,8 @@ class SubmissionRepository extends BaseRepository
      */
     public function getStatistics(int $assignmentId): array
     {
+        $cacheKey = "submission_repo:stats:{$assignmentId}";
+        return Cache::remember($cacheKey, 300, function () use ($assignmentId) {
         $stats = $this->model->newQuery()
             ->where('assignment_id', $assignmentId)
             ->selectRaw('
@@ -107,6 +110,7 @@ class SubmissionRepository extends BaseRepository
             'pending_submissions' => (int) ($stats->pending_submissions ?? 0),
             'average_score' => $stats->average_score ?? 0,
         ];
+        });
     }
 
     /**

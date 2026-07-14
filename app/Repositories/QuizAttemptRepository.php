@@ -4,6 +4,7 @@ namespace App\Repositories;
 
 use App\Models\QuizAttempt;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Database\Eloquent\Model;
 
 class QuizAttemptRepository extends BaseRepository
@@ -106,10 +107,13 @@ class QuizAttemptRepository extends BaseRepository
      */
     public function getAverageScore(int $quizId): float
     {
+        $cacheKey = "quiz_attempt_repo:avg_score:{$quizId}";
+        return Cache::remember($cacheKey, 300, function () use ($quizId) {
         return $this->model->newQuery()
             ->where('quiz_id', $quizId)
             ->whereNotNull('completed_at')
             ->avg('score') ?? 0.0;
+        });
     }
 
     /**
@@ -117,9 +121,12 @@ class QuizAttemptRepository extends BaseRepository
      */
     public function countUserAttempts(int $userId, int $quizId): int
     {
+        $cacheKey = "quiz_attempt_repo:count:{$userId}:{$quizId}";
+        return Cache::remember($cacheKey, 300, function () use ($userId, $quizId) {
         return $this->count([
             'user_id' => $userId,
             'quiz_id' => $quizId,
         ]);
+        });
     }
 }

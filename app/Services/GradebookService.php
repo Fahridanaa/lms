@@ -114,8 +114,6 @@ class GradebookService
         return $this->cacheStrategy
             ->tags(['gradebook', "course:{$courseId}"])
             ->get("course:{$courseId}:gradebook:instructor", function () use ($courseId, $actor) {
-                // Clear gradebook stale marker on read (acts as implicit recalculation)
-                app(\App\Services\GradebookRecalculationService::class)->markRecalculated($courseId);
 
                 $activeStudentIds = $this->activeStudentIds($courseId);
 
@@ -124,13 +122,10 @@ class GradebookService
                 }
 
                 // Load all grade items for the course (instructor view — no hidden filtering)
-                $gradeItems = GradeItem::query()
+                // Load only grade item IDs — full models loaded via with('gradeItem') below
+                $gradeItemIds = GradeItem::query()
                     ->where('course_id', $courseId)
-                    ->get();
-
-                $gradeItemIds = $gradeItems->pluck('id');
-
-                // Aggregate grades per student scoped to visible grade items.
+                    ->pluck('id');
                 // Also include legacy grades without a grade_item_id for backward compatibility.
                 // Uses weighted average based on grade_items.weight.
                 // Use table alias 'g' for grades to avoid ambiguity in the join; suppress
@@ -620,8 +615,15 @@ class GradebookService
         return CourseEnrollment::query()
             ->where('course_id', $courseId)
             ->where('role', 'student')
-            ->get()
-            ->filter(fn (CourseEnrollment $enrollment): bool => $enrollment->isActive())
+            ->where('status', 'active')
+            ->where(function ($q) {
+                $q->whereNull('starts_at')
+                  ->orWhere('starts_at', '<=', now());
+            })
+            ->where(function ($q) {
+                $q->whereNull('ends_at')
+                  ->orWhere('ends_at', '>=', now());
+            })
             ->pluck('user_id')
             ->all();
     }
