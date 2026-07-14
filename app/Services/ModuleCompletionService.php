@@ -265,7 +265,6 @@ class ModuleCompletionService
     protected function invalidateCaches(LearningModule $module, User $actor): void
     {
         $this->cacheStrategy->flushTags([
-            "course:{$module->course_id}",
             "course:{$module->course_id}:structure:{$actor->id}",
             "user:{$actor->id}:completions",
         ]);

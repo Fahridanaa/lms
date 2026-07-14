@@ -183,9 +183,9 @@ class CourseCompletionService
             );
         }
 
-        // Check if this triggers course completion (once per course, not per criterion)
+        // Check if this triggers course completion (deferred to queue)
         if ($moduleCriteria->isNotEmpty()) {
-            $this->evaluateAll($courseId, $user->id);
+            \App\Jobs\EvaluateCourseCompletion::dispatch($courseId, $user->id);
         }
 
         $this->invalidateProgressCache($courseId, $user->id);
@@ -215,10 +215,10 @@ class CourseCompletionService
             }
         }
 
-        // Check completion once per unique course
+        // Check completion once per unique course (deferred to queue)
         $courseIds = $gradeCriteria->pluck('course_id')->unique();
         foreach ($courseIds as $courseId) {
-            $this->evaluateAll($courseId, $userId);
+            \App\Jobs\EvaluateCourseCompletion::dispatch($courseId, $userId);
             $this->invalidateProgressCache($courseId, $userId);
         }
     }

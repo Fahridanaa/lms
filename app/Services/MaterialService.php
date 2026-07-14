@@ -37,7 +37,7 @@ class MaterialService
         }
 
         return $this->cacheStrategy
-            ->tags(['materials', "course:{$courseId}"])
+            ->tags(["course:{$courseId}:materials"])
             ->get(
                 "course:{$courseId}:materials:actor:{$actor->id}",
                 function () use ($courseId, $actor, $course) {
@@ -265,8 +265,7 @@ class MaterialService
         ]);
 
         $this->cacheStrategy->flushTags([
-            'materials',
-            "course:{$material->course_id}",
+            "course:{$material->course_id}:materials",
         ]);
 
         return $material;
@@ -299,8 +298,8 @@ class MaterialService
 
         // Invalidate actor-specific material list caches
         $this->cacheStrategy->flushTags([
-            'materials',
-            "course:{$material->course_id}",
+            "course:{$material->course_id}:materials",
+            "material:{$materialId}",
         ]);
 
         return $updatedMaterial;
@@ -318,9 +317,8 @@ class MaterialService
 
         // Invalidate caches
         $this->cacheStrategy->flushTags([
-            'materials',
+            "course:{$courseId}:materials",
             "material:{$materialId}",
-            "course:{$courseId}",
         ]);
 
         return $deleted;

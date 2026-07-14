@@ -508,7 +508,7 @@ class AssignmentService
             $this->cacheStrategy->flushTags([
                 "assignment:{$submission->assignment_id}:submissions",
                 "user:{$submission->user_id}:submissions",
-                'gradebook',
+                "course:{$assignment->course_id}:gradebook",
                 "course:{$assignment->course_id}",
                 "user:{$submission->user_id}:grades",
                 "grade_item:{$gradeItem->id}",
@@ -616,7 +616,7 @@ class AssignmentService
         $this->cacheStrategy->flushTags([
             "assignment:{$submission->assignment_id}:submissions",
             "user:{$submission->user_id}:submissions",
-            'gradebook',
+            "course:{$submission->assignment->course_id}:gradebook",
             "course:{$submission->assignment->course_id}",
             "user:{$submission->user_id}:grades",
             "submission:{$submissionId}:marks",
@@ -715,6 +715,11 @@ class AssignmentService
             return ['submission' => $updatedSubmission, 'gradeItem' => $gradeItem];
         });
 
+        // Invalidate repository-level caches
+        \Illuminate\Support\Facades\Cache::forget("submission_repo:stats:{$submission->assignment_id}");
+        \Illuminate\Support\Facades\Cache::forget("grade_repo:course_stats:{$assignment->course_id}");
+        \Illuminate\Support\Facades\Cache::forget("grade_repo:user_avg:{$submission->user_id}:{$assignment->course_id}");
+
         $finalSubmission = $updatedSubmission['submission'];
         $gradeItem = $updatedSubmission['gradeItem'];
 
@@ -731,7 +736,7 @@ class AssignmentService
         $this->cacheStrategy->flushTags([
             "assignment:{$submission->assignment_id}:submissions",
             "user:{$submission->user_id}:submissions",
-            'gradebook',
+            "course:{$assignment->course_id}:gradebook",
             "course:{$assignment->course_id}",
             "user:{$submission->user_id}:grades",
             "grade_item:{$gradeItem->id}",

@@ -112,7 +112,7 @@ class GradebookService
     public function getCourseGradebook(int $courseId, User $actor): array
     {
         return $this->cacheStrategy
-            ->tags(['gradebook', "course:{$courseId}"])
+            ->tags(["course:{$courseId}:gradebook"])
             ->get("course:{$courseId}:gradebook:instructor", function () use ($courseId, $actor) {
 
                 $activeStudentIds = $this->activeStudentIds($courseId);
@@ -187,15 +187,7 @@ class GradebookService
                     ])
                     ->groupBy('user_id');
 
-                // Load grade categories for the course (Plan 003: category hierarchy)
-                $categories = GradeCategory::query()
-                    ->where('course_id', $courseId)
-                    ->with('gradeItems')
-                    ->orderBy('depth')
-                    ->orderBy('id')
-                    ->get();
-
-                $categoryTree = $this->buildCategoryTree($categories);
+                $categoryTree = $this->getCachedCategoryTree($courseId);
 
                 return $studentAverages->map(function ($row) use ($gradesByStudent, $students, $categoryTree) {
                     $student = $students->get($row->user_id);
@@ -235,7 +227,7 @@ class GradebookService
 
         if ($isSelf) {
             return $this->cacheStrategy
-                ->tags(['gradebook', "user:{$userId}:grades"])
+                ->tags(["user:{$userId}:grades"])
                 ->get("user:{$userId}:grades:student-visible", function () use ($userId) {
                     $grades = $this->gradeRepository->getUserGrades($userId);
 
@@ -279,7 +271,7 @@ class GradebookService
         }
 
         return $this->cacheStrategy
-            ->tags(['gradebook', "user:{$userId}:grades", "instructor:{$actor->id}"])
+            ->tags(["user:{$userId}:grades", "instructor:{$actor->id}"])
             ->get("user:{$userId}:grades:instructor:{$actor->id}", function () use ($userId, $actor, $taughtCourseIds) {
                 return $this->gradeRepository->getUserGrades($userId)
                     ->filter(fn ($grade) => $taughtCourseIds->contains($grade->course_id))
@@ -299,7 +291,7 @@ class GradebookService
         $visibilityMode = $isSelf ? 'student-visible' : 'instructor';
 
         return $this->cacheStrategy
-            ->tags(['gradebook', "course:{$courseId}", "user:{$userId}:grades"])
+            ->tags(["course:{$courseId}:gradebook", "user:{$userId}:grades"])
             ->get("course:{$courseId}:user:{$userId}:grades:{$visibilityMode}", function () use ($courseId, $userId, $isSelf) {
                 $grades = $this->gradeRepository->getUserCourseGrades($userId, $courseId);
 
@@ -318,22 +310,11 @@ class GradebookService
 
                 $grades->load('gradeItem');
 
-                // Load grade categories for the course (Plan 003)
-                $categories = GradeCategory::query()
-                    ->where('course_id', $courseId)
-                    ->when($isSelf, fn ($q) => $q->where('hidden', false))
-                    ->with(['gradeItems' => function ($q) use ($isSelf) {
-                        if ($isSelf) {
-                            $q->where('hidden', false);
-                        }
-                    }])
-                    ->orderBy('depth')
-                    ->orderBy('id')
-                    ->get();
+                $categoryTree = $this->getCachedCategoryTree($courseId, $isSelf);
 
                 return [
                     'grades' => $grades,
-                    'categories' => $this->buildCategoryTree($categories),
+                    'categories' => $categoryTree,
                     'average_percentage' => $this->computeWeightedAverage($grades),
                     'total_grades' => $grades->count(),
                     'quiz_grades' => $grades->where('gradeable_type', 'quiz_attempt'),
@@ -384,13 +365,18 @@ class GradebookService
             return $this->gradeRepository->update($gradeId, $data);
         });
 
+                // Invalidate repository-level caches (TTL-based Cache::remember)
+                \Illuminate\Support\Facades\Cache::forget("grade_repo:course_stats:{$grade->course_id}");
+                \Illuminate\Support\Facades\Cache::forget("grade_repo:user_avg:{$grade->user_id}:{$grade->course_id}");
+                // Top-performers key includes student IDs hash — can't predict the key,
+                // but the 300s TTL means it self-heals within 5 minutes
+
         // Post-commit: stale marking, completion cascade, and cache flush
         app(\App\Services\GradebookRecalculationService::class)
             ->markCourseStale($grade->course_id, 'direct_grade_update', 'grade', $gradeId);
 
         $flushTags = [
-            'gradebook',
-            "course:{$grade->course_id}",
+            "course:{$grade->course_id}:gradebook",
             "user:{$grade->user_id}:grades",
         ];
 
@@ -415,7 +401,7 @@ class GradebookService
     public function getCourseStatistics(int $courseId)
     {
         return $this->cacheStrategy
-            ->tags(['gradebook', "course:{$courseId}"])
+            ->tags(["course:{$courseId}:gradebook"])
             ->get("course:{$courseId}:statistics", fn () => $this->gradeRepository->getCourseStatistics($courseId));
     }
 
@@ -520,7 +506,7 @@ class GradebookService
     public function getTopPerformers(int $courseId, int $limit = 10): mixed
     {
         return $this->cacheStrategy
-            ->tags(['gradebook', "course:{$courseId}"])
+            ->tags(["course:{$courseId}:gradebook"])
             ->get("course:{$courseId}:top-performers:{$limit}", function () use ($courseId, $limit) {
                 $activeStudentIds = $this->activeStudentIds($courseId);
 
@@ -555,6 +541,37 @@ class GradebookService
             ['course_id' => $courseId, 'item_type' => $itemType, 'item_id' => $itemId],
             ['name' => $name, 'max_score' => 100, 'source' => $itemType]
         );
+    }
+
+    /**
+     * Get cached category tree for a course.
+     *
+     * The category tree depends only on course structure, not on the actor.
+     * Cached separately from gradebook data so it survives across gradebook
+     * cache invalidations and is reused by multiple users/endpoints.
+     * Invalidated when the 'gradebook' tag is flushed (e.g., grade update).
+     */
+    private function getCachedCategoryTree(int $courseId, bool $isSelf = false): array
+    {
+        $cacheKey = "course:{$courseId}:category_tree:" . ($isSelf ? 'student' : 'instructor');
+
+        return $this->cacheStrategy
+            ->tags(["course:{$courseId}:gradebook"])
+            ->get($cacheKey, function () use ($courseId, $isSelf) {
+                $categories = GradeCategory::query()
+                    ->where('course_id', $courseId)
+                    ->when($isSelf, fn ($q) => $q->where('hidden', false))
+                    ->with(['gradeItems' => function ($q) use ($isSelf) {
+                        if ($isSelf) {
+                            $q->where('hidden', false);
+                        }
+                    }])
+                    ->orderBy('depth')
+                    ->orderBy('id')
+                    ->get();
+
+                return $this->buildCategoryTree($categories);
+            });
     }
 
     /**

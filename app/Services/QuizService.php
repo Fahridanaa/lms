@@ -459,6 +459,12 @@ class QuizService
             return ['attempt' => $updatedAttempt, 'gradeItem' => $gradeItem];
         });
 
+        // Invalidate repository-level caches
+        \Illuminate\Support\Facades\Cache::forget("quiz_attempt_repo:avg_score:{$attempt->quiz_id}");
+        \Illuminate\Support\Facades\Cache::forget("quiz_attempt_repo:count:{$actor->id}:{$attempt->quiz_id}");
+        \Illuminate\Support\Facades\Cache::forget("grade_repo:course_stats:{$attempt->quiz->course_id}");
+        \Illuminate\Support\Facades\Cache::forget("grade_repo:user_avg:{$actor->id}:{$attempt->quiz->course_id}");
+
         $updatedAttempt = $transactionResult['attempt'];
         $gradeItem = $transactionResult['gradeItem'];
 
@@ -473,7 +479,7 @@ class QuizService
             "quiz:{$attempt->quiz_id}:attempts",
             "attempt:{$attempt->id}:detail",
             "quiz_grade:{$attempt->quiz_id}:{$attempt->user_id}",
-            'gradebook',
+            "course:{$attempt->quiz->course_id}:gradebook",
             "course:{$attempt->quiz->course_id}",
             "user:{$attempt->user_id}:grades",
             "grade_item:{$gradeItem->id}",

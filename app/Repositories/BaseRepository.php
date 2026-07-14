@@ -10,12 +10,23 @@ abstract class BaseRepository implements RepositoryInterface
 {
     protected Model $model;
 
-    public function all(array $relations = []): Collection
+    /**
+     * Get all records with optional relations and limit.
+     *
+     * WARNING: Without specifying a limit, this will load the ENTIRE table.
+     * For large tables (grades, submissions, quiz_attempts), you MUST pass
+     * a limit or use a paginated/filtered method instead.
+     */
+    public function all(array $relations = [], ?int $limit = null): Collection
     {
         $query = $this->model->newQuery();
 
         if (!empty($relations)) {
             $query->with($relations);
+        }
+
+        if ($limit !== null) {
+            $query->limit($limit);
         }
 
         return $query->get();
