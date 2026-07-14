@@ -162,12 +162,16 @@ class CacheAsideStrategy implements CacheStrategyInterface
 
         $prefixedKey = $this->getPrefixedKey($key);
 
-        // Gunakan try/finally untuk memastikan tags selalu di-reset,
-        // baik setelah sukses maupun jika terjadi exception.
+        // Simpan snapshot tags SEBELUM callback, karena nested cacheStrategy
+        // calls (misal getCachedCategoryTree) akan mereset $this->cacheTags
+        // di finally block mereka. Restore sebelum put() agar cache write
+        // menggunakan tags yang benar.
+        $savedTags = $this->cacheTags;
+
         try {
             // STEP 1-2: Cek cache (dengan atau tanpa tags)
-            if (!empty($this->cacheTags)) {
-                $value = Cache::tags($this->cacheTags)->get($prefixedKey);
+            if (!empty($savedTags)) {
+                $value = Cache::tags($savedTags)->get($prefixedKey);
             } else {
                 $value = Cache::get($prefixedKey);
             }
@@ -180,9 +184,8 @@ class CacheAsideStrategy implements CacheStrategyInterface
             // STEP 3: CACHE MISS - eksekusi callback untuk fetch dari database
             $value = $callback();
 
-            // STEP 4: Simpan ke cache untuk request berikutnya
-            // Catatan: $this->cacheTags masih berisi tags dari chain sebelumnya,
-            // sehingga put() internal akan menggunakan tags yang sama.
+            // STEP 4: Restore tags yang mungkin direset oleh nested cache calls
+            $this->cacheTags = $savedTags;
             $this->put($key, $value);
 
             // STEP 5: Return data

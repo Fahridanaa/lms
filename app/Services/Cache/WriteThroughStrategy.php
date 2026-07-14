@@ -113,10 +113,14 @@ class WriteThroughStrategy implements CacheStrategyInterface
     {
         $prefixedKey = $this->getPrefixedKey($key);
 
+        // Simpan snapshot tags SEBELUM callback, karena nested cacheStrategy
+        // calls akan mereset $this->cacheTags di finally block mereka.
+        $savedTags = $this->cacheTags;
+
         try {
             // Check cache
-            if (! empty($this->cacheTags)) {
-                $value = Cache::tags($this->cacheTags)->get($prefixedKey);
+            if (! empty($savedTags)) {
+                $value = Cache::tags($savedTags)->get($prefixedKey);
             } else {
                 $value = Cache::get($prefixedKey);
             }
@@ -130,6 +134,7 @@ class WriteThroughStrategy implements CacheStrategyInterface
             // apply policy checks before loading the model.
             if ($callback !== null) {
                 $value = $callback();
+                $this->cacheTags = $savedTags;
                 $this->storeInCache($prefixedKey, $value);
 
                 return $value;
@@ -139,6 +144,7 @@ class WriteThroughStrategy implements CacheStrategyInterface
             $store = $this->findStore($key);
             if ($store !== null) {
                 $value = $store->load($key);
+                $this->cacheTags = $savedTags;
                 $this->storeInCache($prefixedKey, $value);
 
                 return $value;
